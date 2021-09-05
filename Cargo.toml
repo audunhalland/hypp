@@ -1,0 +1,15 @@
+[package]
+name = "yay"
+version = "0.1.0"
+authors = ["Audun Halland <audun.halldand@pm.me>"]
+edition = "2018"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+yay_macros = { path = "yay_macros", version = "0.1.0" }
+web-sys = { version = "0.3", features = [ "Document", "Element", "HtmlElement", "Node", "Window", "Text"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
