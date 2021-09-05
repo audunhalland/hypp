@@ -8,7 +8,7 @@ pub struct Template {
     pub node_fields: Vec<NodeField>,
     pub static_initializers: Vec<TokenStream>,
     pub vars: Vec<TemplateVar>,
-    pub nodes: Vec<TemplateNode>,
+    pub component_updates: Vec<syn::Stmt>,
 }
 
 enum Ref {
@@ -22,7 +22,7 @@ impl Template {
             node_fields: vec![],
             static_initializers: vec![],
             vars: vec![],
-            nodes: vec![],
+            component_updates: vec![],
         };
 
         template.analyze_node(root, None);
@@ -37,6 +37,11 @@ impl Template {
     fn gen_var_field_ident(&self) -> syn::Ident {
         let index = self.vars.len();
         quote::format_ident!("var{}", index)
+    }
+
+    fn gen_comp_field_ident(&self) -> syn::Ident {
+        let index = self.component_updates.len();
+        quote::format_ident!("comp{}", index)
     }
 
     fn analyze_node(&mut self, node: markup::Node, parent: Option<&syn::Ident>) {
@@ -143,17 +148,48 @@ impl Template {
     fn analyze_component(&mut self, component: markup::Component) -> Ref {
         let mut type_path = component.type_path;
 
-        let ident = quote::format_ident!("todo_fixme_component");
+        let ident = self.gen_comp_field_ident();
 
         self.static_initializers.push(quote! {
             let #ident = #type_path::new(y)?;
         });
 
-        if let Some(last_segment) = type_path.path.segments.last_mut() {
-            last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
-                <Y>
+        let mut last_segment = type_path.path.segments.last_mut().unwrap();
+        // Add generics to it:
+        last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
+            <Y>
+        });
+        let component_ident = last_segment.ident.clone();
+
+        let prop_list = component
+            .attrs
+            .into_iter()
+            .map(|(name, value)| match value {
+                markup::AttrValue::ImplicitTrue => quote! {
+                    #name: true,
+                },
+                markup::AttrValue::Literal(lit) => quote! {
+                    #name: #lit,
+                },
+                markup::AttrValue::Eval(ident) => quote! {
+                    #name: #ident,
+                },
             });
+
+        let mut props_path = type_path.path.clone();
+        if let Some(last_props_path_segment) = props_path.segments.last_mut() {
+            last_props_path_segment.ident = quote::format_ident!("{}Props", component_ident);
+            last_props_path_segment.arguments = syn::PathArguments::None;
         }
+
+        let stmt: syn::Stmt = syn::parse_quote! {
+            self.#ident.update(#props_path {
+                #(#prop_list)*
+                __phantom: std::marker::PhantomData
+            });
+        };
+
+        self.component_updates.push(stmt);
 
         self.node_fields.push(NodeField {
             ident: ident.clone(),
@@ -167,11 +203,6 @@ impl Template {
 pub struct NodeField {
     pub ident: syn::Ident,
     pub ty: syn::Type,
-}
-
-pub struct TemplateNode {
-    pub ty: syn::Type,
-    pub must_store: bool,
 }
 
 pub struct TemplateVar {

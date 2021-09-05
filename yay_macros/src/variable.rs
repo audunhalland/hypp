@@ -9,7 +9,7 @@ impl Variable {
         Self {
             ident,
             ty: syn::parse_quote! {
-                &'static str
+                String
             },
         }
     }

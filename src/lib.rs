@@ -15,7 +15,7 @@ pub trait Yay: Sized {
 
     fn body(&self) -> &Self::Element;
 
-    fn mount_at_body(&self, component: &impl Component<Self>) -> Result<(), Error> {
+    fn mount_at_body<'c>(&self, component: &impl Component<'c, Self>) -> Result<(), Error> {
         component.mount(MountPoint {
             yay: &self,
             parent: self.body(),
@@ -42,15 +42,18 @@ impl<T: Eq> Var<T> {
         Self { value: None }
     }
 
-    pub fn update(&mut self, value: T) -> Option<&T> {
+    pub fn update<V>(&mut self, value: V) -> Option<&T>
+    where
+        T: From<V> + PartialEq<V>,
+    {
         match &self.value {
             None => {
-                self.value = Some(value);
+                self.value = Some(T::from(value));
                 self.value.as_ref()
             }
             Some(old_value) => {
                 if old_value != &value {
-                    self.value = Some(value);
+                    self.value = Some(T::from(value));
                     self.value.as_ref()
                 } else {
                     None
@@ -65,12 +68,18 @@ pub struct MountPoint<'y, 'p, Y: Yay> {
     parent: &'p Y::Element,
 }
 
-pub trait Component<Y: Yay> {
-    type Props;
+pub trait Component<'p, Y: Yay> {
+    type Props: 'p;
 
     fn mount(&self, mount_point: MountPoint<Y>) -> Result<(), Error>;
 
     fn update(&mut self, props: Self::Props);
+}
+
+pub struct PhantomProp;
+
+mod debugging {
+    //use super::*;
 }
 
 #[cfg(test)]
@@ -79,57 +88,50 @@ mod tests {
 
     use wasm_bindgen_test::*;
 
-    use yay_macros::component;
+    use yay_macros::*;
 
     #[component(
-        Foo,
         <div>
             <p>
                 <span>{label}</span>
             </p>
         </div>
     )]
-    fn foo(is_cool: bool) {
+    fn Foo(is_cool: bool) {
         let label = if is_cool { "cool" } else { "dull" };
     }
-
-    mod inside {
-        use super::*;
-
-        #[component(Bar, <p>"Bar!"</p>)]
-        fn bar() {}
-    }
-
-    #[component(
-        Baz,
-        <div>
-            <inside::Bar/>
-        </div>
-    )]
-    fn baz() {}
 
     #[wasm_bindgen_test]
     fn render_foo_web() {
         let yay = web::WebYay::new();
         let mut comp = Foo::new(&yay).unwrap();
         yay.mount_at_body(&comp).unwrap();
-        comp.update(FooProps { is_cool: true });
+        comp.update(FooProps {
+            is_cool: true,
+            __phantom: std::marker::PhantomData,
+        });
     }
 
     #[test]
-    fn render_foobar_server() {
+    fn render_foo_server() {
         let yay = server::ServerYay::new();
         let mut comp = Foo::new(&yay).unwrap();
         yay.mount_at_body(&comp).unwrap();
 
-        comp.update(FooProps { is_cool: true });
+        comp.update(FooProps {
+            is_cool: true,
+            __phantom: std::marker::PhantomData,
+        });
 
         assert_eq!(
             &yay.body().to_string(),
             "<body><div><p><span>cool</span></p></div></body>"
         );
 
-        comp.update(FooProps { is_cool: false });
+        comp.update(FooProps {
+            is_cool: false,
+            __phantom: std::marker::PhantomData,
+        });
 
         assert_eq!(
             &yay.body().to_string(),
@@ -137,17 +139,37 @@ mod tests {
         );
     }
 
+    mod inside {
+        use super::*;
+
+        #[component(<p>{text}</p>)]
+        fn P1(text: &'p str) {}
+
+        #[component(<p>"static"</p>)]
+        fn P2() {}
+    }
+
+    #[component(
+        <div>
+            <inside::P1 text="variable"/>
+            <inside::P2/>
+        </div>
+    )]
+    fn Baz() {}
+
     #[test]
     fn render_baz_server() {
         let yay = server::ServerYay::new();
         let mut comp = Baz::new(&yay).unwrap();
         yay.mount_at_body(&comp).unwrap();
 
-        comp.update(BazProps {});
+        comp.update(BazProps {
+            __phantom: std::marker::PhantomData,
+        });
 
         assert_eq!(
             &yay.body().to_string(),
-            "<body><div><p>Bar!</p></div></body>"
+            "<body><div><p>variable</p><p>static</p></div></body>"
         );
     }
 }
