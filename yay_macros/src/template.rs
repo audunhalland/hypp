@@ -56,6 +56,7 @@ impl Template {
             markup::Node::Text(text) => self.analyze_text(text),
             markup::Node::Variable(variable) => self.analyze_variable(variable),
             markup::Node::Component(component) => self.analyze_component(component),
+            markup::Node::If(_if_expr) => unimplemented!("TODO: Support if"),
         };
 
         if let Some(parent_ident) = parent {

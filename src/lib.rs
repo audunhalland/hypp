@@ -15,7 +15,7 @@ pub trait Yay: Sized {
 
     fn body(&self) -> &Self::Element;
 
-    fn mount_at_body<'c>(&self, component: &impl Component<'c, Self>) -> Result<(), Error> {
+    fn mount_at_body<'p>(&self, component: &impl Component<'p, Self>) -> Result<(), Error> {
         component.mount(MountPoint {
             yay: &self,
             parent: self.body(),
@@ -172,4 +172,16 @@ mod tests {
             "<body><div><p>variable</p><p>static</p></div></body>"
         );
     }
+
+    #[component(
+        <div>
+            /*
+            if draw_stuff {
+                <div>
+                </div>
+            }
+            */
+        </div>
+    )]
+    fn Conditional(draw_stuff: bool) {}
 }

@@ -11,6 +11,7 @@ pub enum Node {
     Text(Text),
     Variable(Variable),
     Component(Component),
+    If(If),
 }
 
 type Attr = (syn::Ident, AttrValue);
@@ -20,26 +21,6 @@ pub enum AttrValue {
     ImplicitTrue,
     Literal(syn::Lit),
     Eval(syn::Ident),
-}
-
-impl Parse for Node {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(syn::Token!(<)) {
-            return Ok(parse_element_or_fragment(input)?);
-        }
-
-        if let Ok(text) = input.parse::<Text>() {
-            return Ok(Self::Text(text));
-        }
-
-        // Fallback: evaluate expression in {}
-        let content;
-        let _brace_token = syn::braced!(content in input);
-
-        let ident: syn::Ident = content.parse()?;
-
-        Ok(Self::Variable(Variable::with_ident(ident)))
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -63,6 +44,44 @@ pub struct Element {
 pub struct Component {
     pub type_path: syn::TypePath,
     pub attrs: Vec<Attr>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct If {
+    pub if_token: syn::Token![if],
+    pub cond: syn::Expr,
+    pub then_branch: Box<Node>,
+    pub else_branch: Option<Else>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum Else {
+    If(syn::Token![else], Box<If>),
+    Node(syn::Token![else], Box<Node>),
+}
+
+impl Parse for Node {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.peek(syn::Token!(<)) {
+            return Ok(parse_element_or_fragment(input)?);
+        }
+
+        if let Ok(text) = input.parse::<Text>() {
+            return Ok(Self::Text(text));
+        }
+
+        if input.peek(syn::Token!(if)) {
+            return Ok(Node::If(parse_if(input)?));
+        }
+
+        // Fallback: evaluate expression in {}
+        let content;
+        let _brace_token = syn::braced!(content in input);
+
+        let ident: syn::Ident = content.parse()?;
+
+        Ok(Self::Variable(Variable::with_ident(ident)))
+    }
 }
 
 fn parse_element_or_fragment(input: ParseStream) -> syn::Result<Node> {
@@ -161,6 +180,7 @@ fn parse_name(input: ParseStream) -> syn::Result<Name> {
     })
 }
 
+/// Parse the attributes to an element or component
 fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
     let mut attrs = vec![];
 
@@ -194,6 +214,7 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
     Ok(attrs)
 }
 
+/// Parse children until we see the start of a closing tag
 fn parse_children(input: ParseStream) -> syn::Result<Vec<Node>> {
     let mut children = vec![];
     while !input.is_empty() {
@@ -205,6 +226,60 @@ fn parse_children(input: ParseStream) -> syn::Result<Vec<Node>> {
     }
 
     Ok(children)
+}
+
+/// Parse something like `{ a b }`
+fn parse_braced_fragment(input: ParseStream) -> syn::Result<Node> {
+    let content;
+    let _brace_token = syn::braced!(content in input);
+
+    let mut nodes = vec![];
+    while !content.is_empty() {
+        nodes.push(content.parse()?);
+    }
+
+    if nodes.len() == 1 {
+        Ok(nodes.into_iter().next().unwrap())
+    } else {
+        Ok(Node::Fragment(nodes))
+    }
+}
+
+fn parse_if(input: ParseStream) -> syn::Result<If> {
+    let if_token = input.parse::<syn::Token!(if)>()?;
+    let cond = syn::Expr::parse_without_eager_brace(input)?;
+
+    let then_branch = Box::new(parse_braced_fragment(input)?);
+
+    let else_branch = if input.peek(syn::Token!(else)) {
+        Some(parse_else(input)?)
+    } else {
+        None
+    };
+
+    Ok(If {
+        if_token,
+        cond,
+        then_branch,
+        else_branch,
+    })
+}
+
+fn parse_else(input: ParseStream) -> syn::Result<Else> {
+    let else_token = input.parse::<syn::Token!(else)>()?;
+
+    let lookahead = input.lookahead1();
+
+    if input.peek(syn::Token!(if)) {
+        Ok(Else::If(else_token, Box::new(parse_if(input)?)))
+    } else if input.peek(syn::token::Brace) {
+        Ok(Else::Node(
+            else_token,
+            Box::new(parse_braced_fragment(input)?),
+        ))
+    } else {
+        Err(lookahead.error())
+    }
 }
 
 #[cfg(test)]
@@ -375,6 +450,60 @@ mod tests {
                     attr("d", AttrValue::Eval(syn::parse_quote! { foo })),
                 ],
                 vec![]
+            )
+        );
+    }
+
+    #[test]
+    fn parse_if() {
+        let node: Node = syn::parse2(quote! {
+            <div>
+                if something {
+                    <p />
+                    <span />
+                }
+            </div>
+        })
+        .unwrap();
+        assert_eq!(
+            node,
+            element(
+                "div",
+                vec![],
+                vec![Node::If(If {
+                    if_token: syn::parse_quote! { if },
+                    cond: syn::parse_quote! { something },
+                    then_branch: Box::new(fragment(vec![
+                        element("p", vec![], vec![]),
+                        element("span", vec![], vec![])
+                    ])),
+                    else_branch: None
+                })]
+            )
+        );
+    }
+
+    #[test]
+    fn parse_if_let() {
+        let node: Node = syn::parse2(quote! {
+            <div>
+                if let Some(for_sure) = maybe {
+                    <p>{for_sure}</p>
+                }
+            </div>
+        })
+        .unwrap();
+        assert_eq!(
+            node,
+            element(
+                "div",
+                vec![],
+                vec![Node::If(If {
+                    if_token: syn::parse_quote! { if },
+                    cond: syn::parse_quote! { let Some(for_sure) = maybe },
+                    then_branch: Box::new(element("p", vec![], vec![var("for_sure")])),
+                    else_branch: None
+                })]
             )
         );
     }
