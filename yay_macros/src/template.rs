@@ -6,7 +6,7 @@ use crate::variable;
 
 pub struct Template {
     pub node_fields: Vec<NodeField>,
-    pub static_initializers: Vec<TokenStream>,
+    pub constructor_stmts: Vec<TokenStream>,
     pub vars: Vec<TemplateVar>,
     pub component_updates: Vec<syn::Stmt>,
 }
@@ -20,7 +20,7 @@ impl Template {
     pub fn analyze(root: markup::Node) -> Self {
         let mut template = Template {
             node_fields: vec![],
-            static_initializers: vec![],
+            constructor_stmts: vec![],
             vars: vec![],
             component_updates: vec![],
         };
@@ -30,7 +30,7 @@ impl Template {
     }
 
     fn gen_node_ident(&self) -> syn::Ident {
-        let index = self.static_initializers.len();
+        let index = self.constructor_stmts.len();
         quote::format_ident!("node{}", index)
     }
 
@@ -58,45 +58,24 @@ impl Template {
             markup::Node::Component(component) => self.analyze_component(component),
             markup::Node::If(_if_expr) => unimplemented!("TODO: Support if"),
         };
-
-        if let Some(parent_ident) = parent {
-            match result_ref {
-                Ref::Node(ident) => {
-                    self.static_initializers.push(quote! {
-                        A::insert_child_before(& #parent_ident, #ident.as_node(), None)?;
-                    });
-                }
-                Ref::Component(ident) => self.static_initializers.push(quote! {
-                    #ident.mount(MountPoint {
-                        awe: a,
-                        parent: & #parent_ident,
-                    })?;
-                }),
-            }
-        }
     }
 
     fn analyze_element(&mut self, element: markup::Element) -> Ref {
         let ident = self.gen_node_ident();
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
-        if self.static_initializers.is_empty() {
-            // Root field
-            self.node_fields.push(NodeField {
-                ident: ident.clone(),
-                ty: syn::parse_quote! {
-                    A::Element
-                },
-            })
-        }
-
-        self.static_initializers.push(quote! {
-            let #ident = a.create_element(#tag_name);
+        self.constructor_stmts.push(quote! {
+            vm.enter_element(#tag_name)?;
         });
 
         for child in element.children {
             self.analyze_node(child, Some(&ident));
         }
+
+        self.constructor_stmts.push(quote! {
+            vm.leave_element()?;
+        });
+
         Ref::Node(ident)
     }
 
@@ -104,28 +83,18 @@ impl Template {
         let ident = self.gen_node_ident();
         let lit_str = text.0;
 
-        if self.static_initializers.is_empty() {
-            // Root field
-            self.node_fields.push(NodeField {
-                ident: ident.clone(),
-                ty: syn::parse_quote! {
-                    A::Text
-                },
-            })
-        }
-
-        self.static_initializers.push(quote! {
-            let #ident = a.create_empty_text();
-            A::set_text(&#ident, #lit_str);
+        self.constructor_stmts.push(quote! {
+            vm.text(#lit_str)?;
         });
+
         Ref::Node(ident)
     }
 
     fn analyze_variable(&mut self, variable: variable::Variable) -> Ref {
         let node_ident = self.gen_node_ident();
 
-        self.static_initializers.push(quote! {
-            let #node_ident = a.create_empty_text();
+        self.constructor_stmts.push(quote! {
+            let #node_ident = vm.text("")?;
         });
 
         self.node_fields.push(NodeField {
@@ -151,8 +120,8 @@ impl Template {
 
         let ident = self.gen_comp_field_ident();
 
-        self.static_initializers.push(quote! {
-            let #ident = #type_path::new(a)?;
+        self.constructor_stmts.push(quote! {
+            let #ident = #type_path::new(vm)?;
         });
 
         let mut last_segment = type_path.path.segments.last_mut().unwrap();

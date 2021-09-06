@@ -1,5 +1,4 @@
 pub mod dom_index;
-pub mod dom_vm;
 pub mod error;
 pub mod server;
 pub mod web;
@@ -17,24 +16,16 @@ pub trait Awe: Sized {
 
     fn body(&self) -> &Self::Element;
 
-    fn mount_at_body<'p>(&self, component: &impl Component<'p, Self>) -> Result<(), Error> {
-        component.mount(MountPoint {
-            awe: &self,
-            parent: self.body(),
-        })
-    }
-
-    fn create_element(&self, tag_name: &'static str) -> Self::Element;
-    fn create_empty_text(&self) -> Self::Text;
-
-    fn insert_child_before(
-        parent: &Self::Element,
-        node: &Self::Node,
-        before: Option<&Self::Node>,
-    ) -> Result<(), Error>;
     fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error>;
 
     fn set_text(node: &Self::Text, text: &str);
+}
+
+pub trait DomVM<A: Awe> {
+    fn enter_element(&mut self, tag_name: &'static str) -> Result<A::Element, Error>;
+    fn attribute(&mut self, name: &'static str, value: &'static str) -> Result<(), Error>;
+    fn text(&mut self, text: &'static str) -> Result<A::Text, Error>;
+    fn leave_element(&mut self) -> Result<(), Error>;
 }
 
 pub struct State<T: Default> {
@@ -71,47 +62,8 @@ impl<T: Eq> Var<T> {
     }
 }
 
-pub struct MountPoint<'a, 'p, A: Awe> {
-    awe: &'a A,
-    parent: &'p A::Element,
-}
-
-pub struct DomCursor<'n, A: Awe> {
-    parent: &'n A::Element,
-    child: Option<&'n A::Node>,
-}
-
-// BUG: Should be able to know whether something is in th DOM? So more of a "Slot"-like design?
-impl<'n, A: Awe> DomCursor<'n, A> {
-    /// Insert a node at this cursor position,
-    /// then advancing the cursor to look past the inserted node.
-    pub fn mount(self, node: &'n A::Node) -> Self {
-        // TODO: Should not unwrap()? Error propagation?
-        A::insert_child_before(self.parent, node, self.child).unwrap();
-        self
-    }
-
-    /// Unmount the node at this cursor position,
-    /// Then advance the cursor position to look past the inserted node.
-    pub fn unmount(self) -> Self {
-        if let Some(child) = self.child {
-            A::remove_child(self.parent, child).unwrap();
-        }
-        self
-    }
-
-    pub fn next_sibling(self) -> Self {
-        Self {
-            parent: self.parent,
-            child: panic!(),
-        }
-    }
-}
-
 pub trait Component<'p, A: Awe> {
     type Props: 'p;
-
-    fn mount(&self, mount_point: MountPoint<A>) -> Result<(), Error>;
 
     fn update(&mut self, props: Self::Props);
 }
@@ -144,8 +96,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn render_foo_web() {
         let awe = web::WebAwe::new();
-        let mut comp = Foo::new(&awe).unwrap();
-        awe.mount_at_body(&comp).unwrap();
+        let mut comp = Foo::new(&mut awe.builder_at_body()).unwrap();
         comp.update(FooProps {
             is_cool: true,
             __phantom: std::marker::PhantomData,
@@ -155,8 +106,8 @@ mod tests {
     #[test]
     fn render_foo_server() {
         let awe = server::ServerAwe::new();
-        let mut comp = Foo::new(&awe).unwrap();
-        awe.mount_at_body(&comp).unwrap();
+        let mut builder = awe.builder_at_body();
+        let mut comp = Foo::new(&mut builder).unwrap();
 
         comp.update(FooProps {
             is_cool: true,
@@ -185,11 +136,11 @@ mod tests {
         #[component(<p>{text}</p>)]
         fn P1(text: &'p str) {}
 
-        #[component(<p>"static"</p>)]
+        #[component_dbg(<p>"static"</p>)]
         fn P2() {}
     }
 
-    #[component_dbg(
+    #[component(
         <div>
             // En kommentar
             <inside::P1 text="variable"/>
@@ -201,8 +152,7 @@ mod tests {
     #[test]
     fn render_baz_server() {
         let awe = server::ServerAwe::new();
-        let mut comp = Baz::new(&awe).unwrap();
-        awe.mount_at_body(&comp).unwrap();
+        let mut comp = Baz::new(&mut awe.builder_at_body()).unwrap();
 
         comp.update(BazProps {
             __phantom: std::marker::PhantomData,
@@ -248,10 +198,6 @@ mod tests {
 
             impl<'p, A: Awe> Component<'p, A> for Inner<A> {
                 type Props = InnerProps<'p>;
-
-                fn mount(&self, mount_point: MountPoint<A>) -> Result<(), Error> {
-                    panic!()
-                }
 
                 fn update(&mut self, Self::Props { str, .. }: Self::Props) {}
             }
@@ -303,10 +249,6 @@ mod tests {
 
         impl<'p, A: Awe> Component<'p, A> for Cond<A> {
             type Props = CondProps<'p>;
-
-            fn mount(&self, mount_point: MountPoint<A>) -> Result<(), Error> {
-                panic!()
-            }
 
             fn update(&mut self, Self::Props { maybe_str, .. }: Self::Props) {
                 if let Some(str) = maybe_str {

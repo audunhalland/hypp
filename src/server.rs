@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::error::Error;
 
-use super::{AsNode, Awe};
+use super::{AsNode, Awe, DomVM};
 
 type Node = Rc<ServerNode>;
 
@@ -27,6 +27,12 @@ impl ServerAwe {
             })),
         }
     }
+
+    pub fn builder_at_body(&self) -> ServerBuilder {
+        ServerBuilder {
+            stack: vec![self.body.clone()],
+        }
+    }
 }
 
 impl Awe for ServerAwe {
@@ -36,31 +42,6 @@ impl Awe for ServerAwe {
 
     fn body(&self) -> &Self::Element {
         &self.body
-    }
-
-    fn create_element(&self, tag_name: &'static str) -> Self::Element {
-        Rc::new(ServerNode::Element(Element {
-            tag_name,
-            children: RefCell::new(vec![]),
-        }))
-    }
-
-    fn create_empty_text(&self) -> Self::Text {
-        Rc::new(ServerNode::Text(RefCell::new(String::new())))
-    }
-
-    fn insert_child_before(
-        parent: &Self::Element,
-        child: &Self::Node,
-        before: Option<&Self::Node>,
-    ) -> Result<(), Error> {
-        match parent.as_ref() {
-            ServerNode::Element(element) => {
-                element.children.borrow_mut().push(child.clone());
-                Ok(())
-            }
-            _ => Err(Error::AddChild),
-        }
     }
 
     fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
@@ -80,7 +61,7 @@ impl Awe for ServerAwe {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ServerNode {
     Element(Element),
     Fragment(RefCell<Vec<Node>>),
@@ -130,7 +111,7 @@ impl ToString for ServerNode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Element {
     tag_name: &'static str,
     children: RefCell<Vec<Node>>,
@@ -144,5 +125,51 @@ impl Element {
         } else {
             Err(Error::RemoveChild)
         }
+    }
+}
+
+pub struct ServerBuilder {
+    stack: Vec<Node>,
+}
+
+impl ServerBuilder {
+    fn append_child(&mut self, child: &Node) -> Result<(), Error> {
+        let parent = self.stack.last_mut().unwrap();
+
+        match parent.as_ref() {
+            ServerNode::Element(element) => {
+                element.children.borrow_mut().push(child.clone());
+                Ok(())
+            }
+            _ => Err(Error::AddChild),
+        }
+    }
+}
+
+impl DomVM<ServerAwe> for ServerBuilder {
+    fn enter_element(&mut self, tag_name: &'static str) -> Result<Node, Error> {
+        let element = Rc::new(ServerNode::Element(Element {
+            tag_name,
+            children: RefCell::new(vec![]),
+        }));
+        self.append_child(&element)?;
+        self.stack.push(element.clone());
+        Ok(element)
+    }
+
+    fn attribute(&mut self, _name: &'static str, _value: &'static str) -> Result<(), Error> {
+        Err(Error::SetAttribute)
+    }
+
+    fn text(&mut self, text: &'static str) -> Result<Node, Error> {
+        let text_node = Rc::new(ServerNode::Text(RefCell::new(text.to_string())));
+        self.append_child(&text_node)?;
+
+        Ok(text_node)
+    }
+
+    fn leave_element(&mut self) -> Result<(), Error> {
+        self.stack.pop();
+        Ok(())
     }
 }

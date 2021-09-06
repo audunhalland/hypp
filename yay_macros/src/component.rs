@@ -12,7 +12,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         update_fn,
         props_struct,
         node_fields,
-        static_initializers,
+        constructor_stmts,
         vars,
     } = apply_template(template, input_fn);
 
@@ -34,8 +34,6 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         }
     });
 
-    let static_initializers = static_initializers;
-
     let var_struct_params = vars.iter().map(|var| {
         let ident = &var.field_ident;
         quote! {
@@ -51,40 +49,31 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         }
     });
 
-    let mount_impl = if let Some(root) = node_fields.first() {
-        let root_ident = &root.ident;
-        quote! {
-            A::insert_child_before(mount_point.parent, &self.#root_ident.as_node(), None)
-        }
-    } else {
-        quote! {}
-    };
-
     quote! {
         #props_struct
 
         pub struct #component_ident<A: Awe> {
             #(#node_var_params)*
             #(#node_field_defs)*
+
+            __phantom: std::marker::PhantomData<A>
         }
 
         impl<A: Awe> #component_ident<A> {
-            pub fn new(a: &A) -> Result<Self, Error> {
-                #(#static_initializers)*
+            pub fn new(vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
+                #(#constructor_stmts)*
 
                 Ok(Self {
                     #(#var_struct_params)*
                     #(#node_struct_params)*
+
+                    __phantom: std::marker::PhantomData
                 })
             }
         }
 
         impl<'p, A: Awe> Component<'p, A> for #component_ident<A> {
             type Props = #props_ident<'p>;
-
-            fn mount(&self, mount_point: MountPoint<A>) -> Result<(), Error> {
-                #mount_impl
-            }
 
             #update_fn
         }
@@ -94,7 +83,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 fn apply_template(
     template::Template {
         node_fields,
-        static_initializers,
+        constructor_stmts,
         vars,
         component_updates,
     }: template::Template,
@@ -148,7 +137,7 @@ fn apply_template(
         update_fn,
         props_struct,
         node_fields,
-        static_initializers,
+        constructor_stmts,
         vars,
     }
 }
@@ -201,7 +190,7 @@ struct AppliedTemplate {
     update_fn: syn::ItemFn,
     props_struct: syn::ItemStruct,
     node_fields: Vec<template::NodeField>,
-    static_initializers: Vec<TokenStream>,
+    constructor_stmts: Vec<TokenStream>,
     vars: Vec<template::TemplateVar>,
 }
 
