@@ -3,22 +3,22 @@ use std::rc::Rc;
 
 use crate::error::Error;
 
-use super::{AsNode, Yay};
+use super::{AsNode, Awe};
 
 type Node = Rc<ServerNode>;
 
-impl AsNode<ServerYay> for Node {
+impl AsNode<ServerAwe> for Node {
     #[inline]
     fn as_node(&self) -> &Node {
         self
     }
 }
 
-pub struct ServerYay {
+pub struct ServerAwe {
     body: Node,
 }
 
-impl ServerYay {
+impl ServerAwe {
     pub fn new() -> Self {
         Self {
             body: Rc::new(ServerNode::Element(Element {
@@ -29,7 +29,7 @@ impl ServerYay {
     }
 }
 
-impl Yay for ServerYay {
+impl Awe for ServerAwe {
     type Node = Node;
     type Element = Node;
     type Text = Node;
@@ -49,13 +49,24 @@ impl Yay for ServerYay {
         Rc::new(ServerNode::Text(RefCell::new(String::new())))
     }
 
-    fn append_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
+    fn insert_child_before(
+        parent: &Self::Element,
+        child: &Self::Node,
+        before: Option<&Self::Node>,
+    ) -> Result<(), Error> {
         match parent.as_ref() {
             ServerNode::Element(element) => {
                 element.children.borrow_mut().push(child.clone());
                 Ok(())
             }
-            _ => Err(Error::AppendChild),
+            _ => Err(Error::AddChild),
+        }
+    }
+
+    fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
+        match parent.as_ref() {
+            ServerNode::Element(element) => element.remove_child(child),
+            _ => Err(Error::AddChild),
         }
     }
 
@@ -74,6 +85,15 @@ pub enum ServerNode {
     Element(Element),
     Fragment(RefCell<Vec<Node>>),
     Text(RefCell<String>),
+}
+
+impl ServerNode {
+    fn is(&self, other: &Self) -> bool {
+        let a = self as *const _;
+        let b = other as *const _;
+
+        a == b
+    }
 }
 
 impl ToString for ServerNode {
@@ -114,4 +134,15 @@ impl ToString for ServerNode {
 pub struct Element {
     tag_name: &'static str,
     children: RefCell<Vec<Node>>,
+}
+
+impl Element {
+    fn remove_child(&self, child: &Node) -> Result<(), Error> {
+        if let Some(index) = self.children.borrow().iter().position(|it| it.is(child)) {
+            self.children.borrow_mut().remove(index);
+            Ok(())
+        } else {
+            Err(Error::RemoveChild)
+        }
+    }
 }

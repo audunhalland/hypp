@@ -1,14 +1,14 @@
 use crate::error::Error;
 
-use super::{AsNode, Yay};
+use super::{AsNode, Awe};
 
-pub struct WebYay {
+pub struct WebAwe {
     _window: web_sys::Window,
     document: web_sys::Document,
     body: web_sys::HtmlElement,
 }
 
-impl WebYay {
+impl WebAwe {
     pub fn new() -> Self {
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
@@ -26,20 +26,20 @@ impl WebYay {
     }
 }
 
-impl AsNode<WebYay> for web_sys::Element {
+impl AsNode<WebAwe> for web_sys::Element {
     #[inline]
     fn as_node(&self) -> &web_sys::Node {
         self
     }
 }
 
-impl AsNode<WebYay> for web_sys::Text {
+impl AsNode<WebAwe> for web_sys::Text {
     fn as_node(&self) -> &web_sys::Node {
         self
     }
 }
 
-impl Yay for WebYay {
+impl Awe for WebAwe {
     type Node = web_sys::Node;
     type Element = web_sys::Element;
     type Text = web_sys::Text;
@@ -56,10 +56,21 @@ impl Yay for WebYay {
         self.document.create_text_node("")
     }
 
-    fn append_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
-        match parent.append_child(child) {
+    fn insert_child_before(
+        parent: &Self::Element,
+        child: &Self::Node,
+        before: Option<&Self::Node>,
+    ) -> Result<(), Error> {
+        match parent.insert_before(child, before) {
             Ok(_) => Ok(()),
-            Err(_) => Err(Error::AppendChild),
+            Err(_) => Err(Error::AddChild),
+        }
+    }
+
+    fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
+        match parent.remove_child(child) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::AddChild), // FIXME
         }
     }
 

@@ -54,7 +54,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
     let mount_impl = if let Some(root) = node_fields.first() {
         let root_ident = &root.ident;
         quote! {
-            Y::append_child(mount_point.parent, &self.#root_ident.as_node())
+            A::insert_child_before(mount_point.parent, &self.#root_ident.as_node(), None)
         }
     } else {
         quote! {}
@@ -63,13 +63,13 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
     quote! {
         #props_struct
 
-        pub struct #component_ident<Y: Yay> {
+        pub struct #component_ident<A: Awe> {
             #(#node_var_params)*
             #(#node_field_defs)*
         }
 
-        impl<Y: Yay> #component_ident<Y> {
-            pub fn new(y: &Y) -> Result<Self, Error> {
+        impl<A: Awe> #component_ident<A> {
+            pub fn new(a: &A) -> Result<Self, Error> {
                 #(#static_initializers)*
 
                 Ok(Self {
@@ -79,10 +79,10 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
             }
         }
 
-        impl<'p, Y: Yay> Component<'p, Y> for #component_ident<Y> {
+        impl<'p, A: Awe> Component<'p, A> for #component_ident<A> {
             type Props = #props_ident<'p>;
 
-            fn mount(&self, mount_point: MountPoint<Y>) -> Result<(), Error> {
+            fn mount(&self, mount_point: MountPoint<A>) -> Result<(), Error> {
                 #mount_impl
             }
 
@@ -134,7 +134,7 @@ fn apply_template(
 
         let stmt: syn::Stmt = syn::parse_quote! {
             if let Some(v) = self.#field_ident.update(#ident) {
-                Y::set_text(&self.#node_ident, v);
+                A::set_text(&self.#node_ident, v);
             }
         };
 

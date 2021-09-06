@@ -63,12 +63,12 @@ impl Template {
             match result_ref {
                 Ref::Node(ident) => {
                     self.static_initializers.push(quote! {
-                        Y::append_child(& #parent_ident, #ident.as_node())?;
+                        A::insert_child_before(& #parent_ident, #ident.as_node(), None)?;
                     });
                 }
                 Ref::Component(ident) => self.static_initializers.push(quote! {
                     #ident.mount(MountPoint {
-                        yay: y,
+                        awe: a,
                         parent: & #parent_ident,
                     })?;
                 }),
@@ -85,13 +85,13 @@ impl Template {
             self.node_fields.push(NodeField {
                 ident: ident.clone(),
                 ty: syn::parse_quote! {
-                    Y::Element
+                    A::Element
                 },
             })
         }
 
         self.static_initializers.push(quote! {
-            let #ident = y.create_element(#tag_name);
+            let #ident = a.create_element(#tag_name);
         });
 
         for child in element.children {
@@ -109,14 +109,14 @@ impl Template {
             self.node_fields.push(NodeField {
                 ident: ident.clone(),
                 ty: syn::parse_quote! {
-                    Y::Text
+                    A::Text
                 },
             })
         }
 
         self.static_initializers.push(quote! {
-            let #ident = y.create_empty_text();
-            Y::set_text(&#ident, #lit_str);
+            let #ident = a.create_empty_text();
+            A::set_text(&#ident, #lit_str);
         });
         Ref::Node(ident)
     }
@@ -125,13 +125,13 @@ impl Template {
         let node_ident = self.gen_node_ident();
 
         self.static_initializers.push(quote! {
-            let #node_ident = y.create_empty_text();
+            let #node_ident = a.create_empty_text();
         });
 
         self.node_fields.push(NodeField {
             ident: node_ident.clone(),
             ty: syn::parse_quote! {
-                Y::Text
+                A::Text
             },
         });
 
@@ -152,13 +152,13 @@ impl Template {
         let ident = self.gen_comp_field_ident();
 
         self.static_initializers.push(quote! {
-            let #ident = #type_path::new(y)?;
+            let #ident = #type_path::new(a)?;
         });
 
         let mut last_segment = type_path.path.segments.last_mut().unwrap();
         // Add generics to it:
         last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
-            <Y>
+            <A>
         });
         let component_ident = last_segment.ident.clone();
 
