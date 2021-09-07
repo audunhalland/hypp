@@ -97,7 +97,7 @@ impl<'a> DomVM<WebAwe> for WebBuilder<'a> {
         Err(Error::SetAttribute)
     }
 
-    fn text(&mut self, text: &'static str) -> Result<web_sys::Text, Error> {
+    fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
         let text_node = self.awe.document.create_text_node(text);
         self.append_child(text_node.as_node())?;
         Ok(text_node)

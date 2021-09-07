@@ -65,7 +65,7 @@ impl Template {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         self.constructor_stmts.push(quote! {
-            vm.enter_element(#tag_name)?;
+            __vm.enter_element(#tag_name)?;
         });
 
         for child in element.children {
@@ -73,7 +73,7 @@ impl Template {
         }
 
         self.constructor_stmts.push(quote! {
-            vm.leave_element()?;
+            __vm.leave_element()?;
         });
 
         Ref::Node(ident)
@@ -84,7 +84,7 @@ impl Template {
         let lit_str = text.0;
 
         self.constructor_stmts.push(quote! {
-            vm.text(#lit_str)?;
+            __vm.text(#lit_str)?;
         });
 
         Ref::Node(ident)
@@ -92,9 +92,10 @@ impl Template {
 
     fn analyze_variable(&mut self, variable: variable::Variable) -> Ref {
         let node_ident = self.gen_node_ident();
+        let variable_ident = &variable.ident;
 
         self.constructor_stmts.push(quote! {
-            let #node_ident = vm.text("")?;
+            let #node_ident = __vm.text(#variable_ident)?;
         });
 
         self.node_fields.push(NodeField {
@@ -115,23 +116,22 @@ impl Template {
         Ref::Node(node_ident)
     }
 
-    fn analyze_component(&mut self, component: markup::Component) -> Ref {
-        let mut type_path = component.type_path;
+    fn analyze_component(&mut self, mut component: markup::Component) -> Ref {
+        let type_path = component.type_path.clone();
 
         let ident = self.gen_comp_field_ident();
 
-        self.constructor_stmts.push(quote! {
-            let #ident = #type_path::new(vm)?;
-        });
+        let mut type_path_with_generics = component.type_path;
+        let component_ident = {
+            let mut last_segment = type_path_with_generics.path.segments.last_mut().unwrap();
+            // Add generics to it:
+            last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
+                <A>
+            });
+            last_segment.ident.clone()
+        };
 
-        let mut last_segment = type_path.path.segments.last_mut().unwrap();
-        // Add generics to it:
-        last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
-            <A>
-        });
-        let component_ident = last_segment.ident.clone();
-
-        let prop_list = component
+        let prop_list: Vec<_> = component
             .attrs
             .into_iter()
             .map(|(name, value)| match value {
@@ -144,13 +144,24 @@ impl Template {
                 markup::AttrValue::Eval(ident) => quote! {
                     #name: #ident,
                 },
-            });
+            })
+            .collect();
 
         let mut props_path = type_path.path.clone();
         if let Some(last_props_path_segment) = props_path.segments.last_mut() {
             last_props_path_segment.ident = quote::format_ident!("{}Props", component_ident);
             last_props_path_segment.arguments = syn::PathArguments::None;
         }
+
+        self.constructor_stmts.push(quote! {
+            let #ident = #type_path::new(
+                #props_path {
+                    #(#prop_list)*
+                    __phantom: std::marker::PhantomData
+                },
+                __vm
+            )?;
+        });
 
         let stmt: syn::Stmt = syn::parse_quote! {
             self.#ident.update(#props_path {
@@ -163,7 +174,7 @@ impl Template {
 
         self.node_fields.push(NodeField {
             ident: ident.clone(),
-            ty: syn::Type::Path(type_path),
+            ty: syn::Type::Path(type_path_with_generics),
         });
 
         Ref::Component(ident)

@@ -161,7 +161,7 @@ impl DomVM<ServerAwe> for ServerBuilder {
         Err(Error::SetAttribute)
     }
 
-    fn text(&mut self, text: &'static str) -> Result<Node, Error> {
+    fn text(&mut self, text: &str) -> Result<Node, Error> {
         let text_node = Rc::new(ServerNode::Text(RefCell::new(text.to_string())));
         self.append_child(&text_node)?;
 

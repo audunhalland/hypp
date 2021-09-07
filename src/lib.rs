@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 pub mod dom_index;
 pub mod error;
 pub mod server;
@@ -24,7 +26,7 @@ pub trait Awe: Sized {
 pub trait DomVM<A: Awe> {
     fn enter_element(&mut self, tag_name: &'static str) -> Result<A::Element, Error>;
     fn attribute(&mut self, name: &'static str, value: &'static str) -> Result<(), Error>;
-    fn text(&mut self, text: &'static str) -> Result<A::Text, Error>;
+    fn text(&mut self, text: &str) -> Result<A::Text, Error>;
     fn leave_element(&mut self) -> Result<(), Error>;
 }
 
@@ -68,11 +70,10 @@ pub trait Component<'p, A: Awe> {
     fn update(&mut self, props: Self::Props);
 }
 
-pub struct PhantomProp;
+pub type PhantomProp<'p> = PhantomData<&'p ()>;
+pub type PhantomField<A> = PhantomData<A>;
 
-mod debugging {
-    //use super::*;
-}
+mod debugging {}
 
 #[cfg(test)]
 mod tests {
@@ -96,23 +97,27 @@ mod tests {
     #[wasm_bindgen_test]
     fn render_foo_web() {
         let awe = web::WebAwe::new();
-        let mut comp = Foo::new(&mut awe.builder_at_body()).unwrap();
-        comp.update(FooProps {
-            is_cool: true,
-            __phantom: std::marker::PhantomData,
-        });
+        let _comp = Foo::new(
+            FooProps {
+                is_cool: true,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut awe.builder_at_body(),
+        )
+        .unwrap();
     }
 
     #[test]
     fn render_foo_server() {
         let awe = server::ServerAwe::new();
-        let mut builder = awe.builder_at_body();
-        let mut comp = Foo::new(&mut builder).unwrap();
-
-        comp.update(FooProps {
-            is_cool: true,
-            __phantom: std::marker::PhantomData,
-        });
+        let mut comp = Foo::new(
+            FooProps {
+                is_cool: true,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut awe.builder_at_body(),
+        )
+        .unwrap();
 
         assert_eq!(
             &awe.body().to_string(),
@@ -136,7 +141,7 @@ mod tests {
         #[component(<p>{text}</p>)]
         fn P1(text: &'p str) {}
 
-        #[component_dbg(<p>"static"</p>)]
+        #[component(<p>"static"</p>)]
         fn P2() {}
     }
 
@@ -152,11 +157,13 @@ mod tests {
     #[test]
     fn render_baz_server() {
         let awe = server::ServerAwe::new();
-        let mut comp = Baz::new(&mut awe.builder_at_body()).unwrap();
-
-        comp.update(BazProps {
-            __phantom: std::marker::PhantomData,
-        });
+        Baz::new(
+            BazProps {
+                __phantom: std::marker::PhantomData,
+            },
+            &mut awe.builder_at_body(),
+        )
+        .unwrap();
 
         assert_eq!(
             &awe.body().to_string(),

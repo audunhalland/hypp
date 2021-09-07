@@ -9,10 +9,12 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
             component_ident,
             props_ident,
         },
-        update_fn,
         props_struct,
         node_fields,
+        props_destructuring,
         constructor_stmts,
+        fn_stmts,
+        update_stmts,
         vars,
     } = apply_template(template, input_fn);
 
@@ -56,11 +58,12 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
             #(#node_var_params)*
             #(#node_field_defs)*
 
-            __phantom: std::marker::PhantomData<A>
+            __phantom: PhantomField<A>
         }
 
         impl<A: Awe> #component_ident<A> {
-            pub fn new(vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
+            pub fn new(#props_destructuring, __vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
+                #(#fn_stmts)*
                 #(#constructor_stmts)*
 
                 Ok(Self {
@@ -75,7 +78,10 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         impl<'p, A: Awe> Component<'p, A> for #component_ident<A> {
             type Props = #props_ident<'p>;
 
-            #update_fn
+            fn update(&mut self, #props_destructuring) {
+                #(#fn_stmts)*
+                #(#update_stmts)*
+            }
         }
     }
 }
@@ -87,11 +93,9 @@ fn apply_template(
         vars,
         component_updates,
     }: template::Template,
-    mut update_fn: syn::ItemFn,
+    input_fn: syn::ItemFn,
 ) -> AppliedTemplate {
-    let mut ident = syn::parse_quote! { update };
-    std::mem::swap(&mut update_fn.sig.ident, &mut ident);
-
+    let ident = input_fn.sig.ident;
     let props_ident = quote::format_ident!("{}Props", ident);
 
     let idents = Idents {
@@ -99,22 +103,10 @@ fn apply_template(
         props_ident,
     };
 
-    let mut original_inputs: syn::punctuated::Punctuated<syn::FnArg, syn::Token![,]> =
-        syn::parse_quote!();
-    std::mem::swap(&mut update_fn.sig.inputs, &mut original_inputs);
+    let props_struct = create_props_struct(&input_fn.sig.inputs, &idents);
+    let props_destructuring = create_props_destructuring(&input_fn.sig.inputs, &idents);
 
-    let props_struct = create_props_struct(&original_inputs, &idents);
-
-    update_fn.sig.inputs.push(syn::parse_quote! {
-        &mut self
-    });
-
-    update_fn
-        .sig
-        .inputs
-        .push(create_props_destructuring(&original_inputs, &idents));
-
-    let stmts = &mut update_fn.block.stmts;
+    let mut update_stmts = vec![];
 
     for var in vars.iter() {
         let ident = &var.variable.ident;
@@ -127,17 +119,19 @@ fn apply_template(
             }
         };
 
-        stmts.push(stmt);
+        update_stmts.push(stmt);
     }
 
-    stmts.extend(component_updates);
+    update_stmts.extend(component_updates);
 
     AppliedTemplate {
         idents,
-        update_fn,
         props_struct,
         node_fields,
+        props_destructuring,
         constructor_stmts,
+        fn_stmts: input_fn.block.stmts,
+        update_stmts,
         vars,
     }
 }
@@ -159,7 +153,7 @@ fn create_props_struct(
         pub struct #props_ident<'p> {
             #(#fields)*
 
-            pub __phantom: std::marker::PhantomData<&'p PhantomProp>
+            pub __phantom: PhantomProp<'p>
         }
     }
 }
@@ -187,10 +181,12 @@ fn create_props_destructuring(
 
 struct AppliedTemplate {
     idents: Idents,
-    update_fn: syn::ItemFn,
     props_struct: syn::ItemStruct,
     node_fields: Vec<template::NodeField>,
+    props_destructuring: syn::FnArg,
     constructor_stmts: Vec<TokenStream>,
+    fn_stmts: Vec<syn::Stmt>,
+    update_stmts: Vec<syn::Stmt>,
     vars: Vec<template::TemplateVar>,
 }
 
