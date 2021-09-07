@@ -51,10 +51,6 @@ impl Awe for WebAwe {
     type Element = web_sys::Element;
     type Text = web_sys::Text;
 
-    fn body(&self) -> &Self::Element {
-        &self.body
-    }
-
     fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
         match parent.remove_child(child) {
             Ok(_) => Ok(()),
@@ -85,7 +81,7 @@ impl<'a> WebBuilder<'a> {
     }
 }
 
-impl<'a> DomVM<WebAwe> for WebBuilder<'a> {
+impl<'doc> DomVM<'doc, WebAwe> for WebBuilder<'doc> {
     fn enter_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
         let element = self.awe.document.create_element(tag_name).unwrap();
         self.append_child(element.as_node())?;
@@ -103,8 +99,20 @@ impl<'a> DomVM<WebAwe> for WebBuilder<'a> {
         Ok(text_node)
     }
 
-    fn leave_element(&mut self) -> Result<(), Error> {
+    fn exit_element(&mut self) -> Result<(), Error> {
         self.element_stack.pop();
         Ok(())
+    }
+
+    fn remove_element(&mut self, _tag_name: &'static str) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    fn push_element_context(&mut self, element: web_sys::Element) {
+        self.element_stack.push(element);
+    }
+
+    fn pop_element_context(&mut self) {
+        self.element_stack.pop();
     }
 }

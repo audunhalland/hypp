@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-pub mod dom_index;
+// pub mod dom_index;
 pub mod error;
 pub mod server;
 pub mod web;
@@ -16,18 +16,46 @@ pub trait Awe: Sized {
     type Element: Clone + AsNode<Self>;
     type Text: Clone + AsNode<Self>;
 
-    fn body(&self) -> &Self::Element;
-
     fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error>;
 
     fn set_text(node: &Self::Text, text: &str);
 }
 
-pub trait DomVM<A: Awe> {
+///
+/// DomVM
+///
+/// An abstract cursor at some DOM position, allowing users of the trait
+/// to do various operations to mutate it.
+///
+pub trait DomVM<'doc, A: Awe> {
+    /// Enter an element at the current location, and return it.
+    /// The cursor position moves into that element's first child.
     fn enter_element(&mut self, tag_name: &'static str) -> Result<A::Element, Error>;
+
+    /// Define an attribute on the current element (and return it perhaps?)
     fn attribute(&mut self, name: &'static str, value: &'static str) -> Result<(), Error>;
+
+    /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<A::Text, Error>;
-    fn leave_element(&mut self) -> Result<(), Error>;
+
+    /// Exit the current element, advancing the cursor position to
+    /// the element's next sibling.
+    fn exit_element(&mut self) -> Result<(), Error>;
+
+    /// Remove the element at the current cursor position.
+    /// The element's name must match the tag name passed.
+    /// The cursor moves to point at the next sibling.
+    fn remove_element(&mut self, tag_name: &'static str) -> Result<(), Error>;
+
+    /// Push context.
+    /// Does not mutate the DOM.
+    /// This means we can skip parts of the DOM tree, moving the cursor directly
+    /// into this element's first child.
+    fn push_element_context(&mut self, element: A::Element);
+
+    /// Pop element context,
+    /// Restoring the state to what it was before `push_element_context`.
+    fn pop_element_context(&mut self);
 }
 
 pub struct State<T: Default> {
@@ -67,7 +95,13 @@ impl<T: Eq> Var<T> {
 pub trait Component<'p, A: Awe> {
     type Props: 'p;
 
-    fn update(&mut self, props: Self::Props);
+    /// Update the component, synchronizing its resulting
+    /// state using the DomVM.
+    fn update(&mut self, _props: Self::Props, __vm: &mut dyn DomVM<A>) {}
+
+    /// Unmount the component, removing all its nodes
+    /// from under its mount point in the tree, using the DomVM.
+    fn unmount(&mut self, __vm: &mut dyn DomVM<A>);
 }
 
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
@@ -120,17 +154,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            &awe.body().to_string(),
+            &awe.render(),
             "<body><div><p><span>cool</span></p></div></body>"
         );
 
-        comp.update(FooProps {
-            is_cool: false,
-            __phantom: std::marker::PhantomData,
-        });
+        comp.update(
+            FooProps {
+                is_cool: false,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut awe.builder_at_body(),
+        );
 
         assert_eq!(
-            &awe.body().to_string(),
+            &awe.render(),
             "<body><div><p><span>dull</span></p></div></body>"
         );
     }
@@ -166,7 +203,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            &awe.body().to_string(),
+            &awe.render(),
             "<body><div><p>variable</p><p>static</p></div></body>"
         );
     }
@@ -193,56 +230,39 @@ mod tests {
                 pub str: &'p str,
             }
 
-            pub struct Inner<Y: Awe> {
-                root: Y::Element,
+            pub struct Inner<A: Awe> {
+                element: A::Element,
             }
 
-            impl<Y: Awe> Inner<Y> {
-                pub fn new() -> Self {
-                    unimplemented!()
+            impl<A: Awe> Inner<A> {
+                pub fn new(props: InnerProps, __vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
+                    let element = __vm.enter_element("span")?;
+                    __vm.exit_element()?;
+                    Ok(Self { element })
                 }
             }
 
             impl<'p, A: Awe> Component<'p, A> for Inner<A> {
                 type Props = InnerProps<'p>;
 
-                fn update(&mut self, Self::Props { str, .. }: Self::Props) {}
-            }
-
-            pub enum InnerVariant<Y: Awe> {
-                One(inner::Inner<Y>),
-                Nothing,
-            }
-
-            impl<'p, A: Awe> InnerVariant<A> {
-                pub fn update_variant_one(&mut self, props: inner::InnerProps<'p>) {
-                    let instance = match self {
-                        Self::One(instance) => instance,
-                        _ => {
-                            self.unmount();
-                            *self = Self::One(inner::Inner::new());
-                            match self {
-                                Self::One(instance) => instance,
-                                _ => panic!(),
-                            }
-                        }
-                    };
-
-                    instance.update(props);
+                fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
+                    __vm.remove_element("span").unwrap();
                 }
+            }
 
-                pub fn update_variant_nothing(&mut self) {
+            pub enum InnerVariant<A: Awe> {
+                V0(inner::Inner<A>),
+                V1,
+            }
+
+            impl<A: Awe> InnerVariant<A> {
+                pub fn reset(&mut self, variant: Self, __vm: &mut dyn DomVM<A>) {
                     match self {
-                        Self::Nothing => {}
-                        _ => {
-                            // TODO: Unmount
-                            self.unmount();
-                            *self = Self::Nothing;
-                        }
+                        Self::V0(comp) => comp.unmount(__vm),
+                        Self::V1 => {}
                     }
+                    *self = variant;
                 }
-
-                fn unmount(&mut self) {}
             }
         }
 
@@ -250,20 +270,38 @@ mod tests {
             maybe_str: Option<&'p str>,
         }
 
-        struct Cond<Y: Awe> {
-            inner_variant: inner::InnerVariant<Y>,
+        struct Cond<A: Awe> {
+            inner_variant: inner::InnerVariant<A>,
         }
 
         impl<'p, A: Awe> Component<'p, A> for Cond<A> {
             type Props = CondProps<'p>;
 
-            fn update(&mut self, Self::Props { maybe_str, .. }: Self::Props) {
-                if let Some(str) = maybe_str {
-                    self.inner_variant
-                        .update_variant_one(inner::InnerProps { str });
-                } else {
-                    self.inner_variant.update_variant_nothing();
+            fn update(&mut self, CondProps { maybe_str, .. }: CondProps, __vm: &mut dyn DomVM<A>) {
+                match (&mut self.inner_variant, maybe_str) {
+                    // First variants where props and instance correlate:
+                    (inner::InnerVariant::V0(variant), Some(str)) => {
+                        // FIXME: Add the doc method
+                        variant.update(inner::InnerProps { str }, __vm);
+                    }
+                    // Then the "reset" variants
+                    (_, Some(str)) => {
+                        self.inner_variant.reset(
+                            inner::InnerVariant::V0(
+                                inner::Inner::new(inner::InnerProps { str }, __vm).unwrap(),
+                            ),
+                            __vm,
+                        );
+                    }
+                    (_, None) => {
+                        self.inner_variant.reset(inner::InnerVariant::V1, __vm);
+                    }
+                    _ => {}
                 }
+            }
+
+            fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
+                panic!();
             }
         }
     }

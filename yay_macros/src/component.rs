@@ -78,9 +78,14 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         impl<'p, A: Awe> Component<'p, A> for #component_ident<A> {
             type Props = #props_ident<'p>;
 
-            fn update(&mut self, #props_destructuring) {
+            fn update(&mut self, #props_destructuring, __vm: &mut dyn DomVM<A>) {
                 #(#fn_stmts)*
                 #(#update_stmts)*
+            }
+
+            fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
+                // TODO: we actually want to panic here if things are not OK?
+                panic!("implement unmount")
             }
         }
     }

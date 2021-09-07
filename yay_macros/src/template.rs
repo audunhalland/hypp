@@ -73,7 +73,7 @@ impl Template {
         }
 
         self.constructor_stmts.push(quote! {
-            __vm.leave_element()?;
+            __vm.exit_element()?;
         });
 
         Ref::Node(ident)
@@ -167,7 +167,7 @@ impl Template {
             self.#ident.update(#props_path {
                 #(#prop_list)*
                 __phantom: std::marker::PhantomData
-            });
+            }, __vm);
         };
 
         self.component_updates.push(stmt);

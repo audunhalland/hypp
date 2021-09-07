@@ -33,16 +33,16 @@ impl ServerAwe {
             stack: vec![self.body.clone()],
         }
     }
+
+    pub fn render(&self) -> String {
+        self.body.to_string()
+    }
 }
 
 impl Awe for ServerAwe {
     type Node = Node;
     type Element = Node;
     type Text = Node;
-
-    fn body(&self) -> &Self::Element {
-        &self.body
-    }
 
     fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
         match parent.as_ref() {
@@ -129,6 +129,8 @@ impl Element {
 }
 
 pub struct ServerBuilder {
+    // TODO: Distinguish between parent/child stack nodes and "context" stack nodes,
+    // for better stack traces
     stack: Vec<Node>,
 }
 
@@ -146,7 +148,7 @@ impl ServerBuilder {
     }
 }
 
-impl DomVM<ServerAwe> for ServerBuilder {
+impl<'doc> DomVM<'doc, ServerAwe> for ServerBuilder {
     fn enter_element(&mut self, tag_name: &'static str) -> Result<Node, Error> {
         let element = Rc::new(ServerNode::Element(Element {
             tag_name,
@@ -168,8 +170,20 @@ impl DomVM<ServerAwe> for ServerBuilder {
         Ok(text_node)
     }
 
-    fn leave_element(&mut self) -> Result<(), Error> {
+    fn exit_element(&mut self) -> Result<(), Error> {
         self.stack.pop();
         Ok(())
+    }
+
+    fn remove_element(&mut self, _tag_name: &'static str) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    fn push_element_context(&mut self, element: Node) {
+        self.stack.push(element);
+    }
+
+    fn pop_element_context(&mut self) {
+        self.stack.pop();
     }
 }
