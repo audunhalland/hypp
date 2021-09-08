@@ -3,6 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 mod component;
+mod ir;
 mod markup;
 mod template;
 mod variable;

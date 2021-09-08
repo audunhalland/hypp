@@ -1,16 +1,16 @@
-use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::ir;
 use crate::markup;
 use crate::variable;
 
 pub struct Template {
-    pub root_block: Block,
+    pub root_block: ir::Block,
 }
 
 impl Template {
     pub fn analyze(root: markup::Node) -> Self {
-        let mut root_block = Block::default();
+        let mut root_block = ir::Block::default();
 
         let mut ctx = Context { enum_count: 0 };
 
@@ -33,75 +33,7 @@ impl Context {
     }
 }
 
-/// A 'block' of code that should run atomically.
-#[derive(Default)]
-pub struct Block {
-    pub struct_fields: Vec<StructField>,
-    pub constructor_stmts: Vec<TokenStream>,
-    pub vars: Vec<TemplateVar>,
-    pub component_updates: Vec<syn::Stmt>,
-    pub matches: Vec<Match>,
-}
-
-/// A node reference that needs to be stored within the component
-pub struct StructField {
-    pub ident: syn::Ident,
-    pub ty: StructFieldType,
-}
-
-/// Type of a struct field
-#[derive(Clone)]
-pub enum StructFieldType {
-    DomText,
-    Component(ComponentPath),
-    Enum(usize),
-}
-
-// A type path representing another component
-#[derive(Clone)]
-pub struct ComponentPath {
-    pub type_path: syn::TypePath,
-}
-
-impl ComponentPath {
-    fn new(mut type_path: syn::TypePath) -> Self {
-        let mut last_segment = type_path.path.segments.last_mut().unwrap();
-        last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
-            <A>
-        });
-        Self { type_path }
-    }
-
-    fn ident(&self) -> syn::Ident {
-        self.type_path.path.segments.last().unwrap().ident.clone()
-    }
-}
-
-pub struct TemplateVar {
-    pub variable: variable::Variable,
-    pub node_ident: syn::Ident,
-    pub field_ident: syn::Ident,
-}
-
-/// A conditional modelled over a match expression
-pub struct Match {
-    pub enum_type: StructFieldType,
-    pub variant_field_ident: syn::Ident,
-    pub expr: syn::Expr,
-    pub arms: Vec<Arm>,
-}
-
-/// An arm of a conditional
-pub struct Arm {
-    /// The ident of the enum variant to instantiate
-    pub enum_variant_ident: syn::Ident,
-    /// The value match pattern matching this arm
-    pub pattern: syn::Pat,
-    /// The code 'block' to execute
-    pub block: Block,
-}
-
-impl Block {
+impl ir::Block {
     fn gen_node_ident(&self) -> syn::Ident {
         let index = self.constructor_stmts.len();
         quote::format_ident!("node{}", index)
@@ -165,14 +97,14 @@ impl Block {
             let #node_ident = __vm.text(#variable_ident)?;
         });
 
-        self.struct_fields.push(StructField {
+        self.struct_fields.push(ir::StructField {
             ident: node_ident.clone(),
-            ty: StructFieldType::DomText,
+            ty: ir::StructFieldType::DomText,
         });
 
         let field_ident = self.gen_var_field_ident();
 
-        self.vars.push(TemplateVar {
+        self.vars.push(ir::TemplateVar {
             variable,
             node_ident: node_ident.clone(),
             field_ident,
@@ -184,7 +116,7 @@ impl Block {
 
         let ident = self.gen_comp_field_ident();
 
-        let component_path = ComponentPath::new(component.type_path);
+        let component_path = ir::ComponentPath::new(component.type_path);
         let component_ident = component_path.ident();
 
         let prop_list: Vec<_> = component
@@ -228,21 +160,21 @@ impl Block {
 
         self.component_updates.push(stmt);
 
-        self.struct_fields.push(StructField {
+        self.struct_fields.push(ir::StructField {
             ident: ident.clone(),
-            ty: StructFieldType::Component(component_path),
+            ty: ir::StructFieldType::Component(component_path),
         });
     }
 
     fn analyze_if(&mut self, mut the_if: markup::If, ctx: &mut Context) {
         let test = the_if.test;
         let variant_field_ident = self.gen_var_field_ident();
-        let enum_type = StructFieldType::Enum(ctx.next_enum_index());
+        let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
-        let mut then_block = Block::default();
+        let mut then_block = ir::Block::default();
         then_block.analyze_node(*the_if.then_branch, ctx);
 
-        let mut else_block = Block::default();
+        let mut else_block = ir::Block::default();
 
         match the_if.else_branch {
             Some(markup::Else::If(_, else_if)) => {
@@ -254,22 +186,22 @@ impl Block {
             None => {}
         }
 
-        self.struct_fields.push(StructField {
+        self.struct_fields.push(ir::StructField {
             ident: variant_field_ident.clone(),
             ty: enum_type.clone(),
         });
 
-        self.matches.push(Match {
+        self.matches.push(ir::Match {
             enum_type,
             variant_field_ident,
             expr: test,
             arms: vec![
-                Arm {
+                ir::Arm {
                     enum_variant_ident: quote::format_ident!("True"),
                     pattern: syn::parse_quote! { true },
                     block: then_block,
                 },
-                Arm {
+                ir::Arm {
                     enum_variant_ident: quote::format_ident!("False"),
                     pattern: syn::parse_quote! { false },
                     block: else_block,

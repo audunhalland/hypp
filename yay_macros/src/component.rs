@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::ir;
 use crate::template;
 
 pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -> TokenStream {
@@ -45,9 +46,9 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 
     let node_struct_params = struct_fields
         .iter()
-        .map(template::StructField::struct_param_tokens);
+        .map(ir::StructField::struct_param_tokens);
 
-    let matches = matches.iter().map(template::Match::to_match_stmt);
+    let matches = matches.iter().map(ir::Match::to_match_stmt);
 
     quote! {
         #props_struct
@@ -93,13 +94,13 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 }
 
 fn apply_root_block(
-    template::Block {
+    ir::Block {
         struct_fields,
         constructor_stmts,
         vars,
         component_updates,
         matches,
-    }: template::Block,
+    }: ir::Block,
     input_fn: syn::ItemFn,
 ) -> RootBlock {
     let ident = input_fn.sig.ident;
@@ -194,7 +195,7 @@ fn create_props_destructuring(
 }
 
 fn collect_variant_enums(
-    matches: &[template::Match],
+    matches: &[ir::Match],
     root_idents: &RootIdents,
     output: &mut Vec<TokenStream>,
 ) {
@@ -207,7 +208,7 @@ fn collect_variant_enums(
                 .block
                 .struct_fields
                 .iter()
-                .map(template::StructField::struct_param_tokens);
+                .map(ir::StructField::struct_param_tokens);
 
             quote! {
                 #ident { #(#struct_params)* },
@@ -230,7 +231,7 @@ struct RootBlock {
     root_idents: RootIdents,
     props_struct: syn::ItemStruct,
     variant_enums: Vec<TokenStream>,
-    struct_fields: Vec<template::StructField>,
+    struct_fields: Vec<ir::StructField>,
     block_stmts: BlockStmts,
     fn_stmts: Vec<syn::Stmt>,
 }
@@ -250,11 +251,11 @@ struct BlockStmts {
     props_destructuring: syn::FnArg,
     constructor_stmts: Vec<TokenStream>,
     update_stmts: Vec<syn::Stmt>,
-    vars: Vec<template::TemplateVar>,
-    matches: Vec<template::Match>,
+    vars: Vec<ir::TemplateVar>,
+    matches: Vec<ir::Match>,
 }
 
-impl template::StructField {
+impl ir::StructField {
     fn field_def_tokens(&self, root_idents: &RootIdents) -> TokenStream {
         let ident = &self.ident;
         let ty = self.ty.to_tokens(root_idents);
@@ -273,7 +274,7 @@ impl template::StructField {
     }
 }
 
-impl template::Match {
+impl ir::Match {
     fn to_match_stmt(&self) -> TokenStream {
         /*
         let variant_field_ident = &self.variant_field_ident;
@@ -289,7 +290,7 @@ impl template::Match {
     }
 }
 
-impl template::StructFieldType {
+impl ir::StructFieldType {
     fn to_tokens(&self, root_idents: &RootIdents) -> TokenStream {
         match self {
             Self::DomText => quote! { A::Text },
