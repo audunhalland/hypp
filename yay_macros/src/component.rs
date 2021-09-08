@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::ir;
+use crate::markup;
 use crate::template;
 
 pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -> TokenStream {
@@ -117,6 +118,11 @@ fn apply_root_block(
     let mut variant_enums = vec![];
     collect_variant_enums(&matches, &root_idents, &mut variant_enums);
 
+    let constructor_stmts = constructor_stmts
+        .into_iter()
+        .map(|statement| statement.to_tokens(&root_idents))
+        .collect();
+
     let mut update_stmts = vec![];
 
     for var in vars.iter() {
@@ -124,16 +130,18 @@ fn apply_root_block(
         let field_ident = &var.field_ident;
         let node_ident = &var.node_ident;
 
-        let stmt: syn::Stmt = syn::parse_quote! {
+        update_stmts.push(quote! {
             if let Some(v) = self.#field_ident.update(#ident) {
                 A::set_text(&self.#node_ident, v);
             }
-        };
-
-        update_stmts.push(stmt);
+        });
     }
 
-    update_stmts.extend(component_updates);
+    update_stmts.extend(
+        component_updates
+            .into_iter()
+            .map(|statement| statement.to_tokens(&root_idents)),
+    );
 
     RootBlock {
         variant_enums,
@@ -241,16 +249,10 @@ struct RootIdents {
     props_ident: syn::Ident,
 }
 
-impl RootIdents {
-    fn format_enum_ident(&self, enum_index: usize) -> syn::Ident {
-        quote::format_ident!("{}Cond{}", self.component_ident, enum_index)
-    }
-}
-
 struct BlockStmts {
     props_destructuring: syn::FnArg,
     constructor_stmts: Vec<TokenStream>,
-    update_stmts: Vec<syn::Stmt>,
+    update_stmts: Vec<TokenStream>,
     vars: Vec<ir::TemplateVar>,
     matches: Vec<ir::Match>,
 }
@@ -270,6 +272,94 @@ impl ir::StructField {
 
         quote! {
             #ident,
+        }
+    }
+}
+
+impl ir::Statement {
+    fn to_tokens(&self, root_idents: &RootIdents) -> TokenStream {
+        match self {
+            Self::EnterElement { tag_name } => quote! {
+                __vm.enter_element(#tag_name)?;
+            },
+            Self::TextConst { text } => quote! {
+                __vm.text(#text)?;
+            },
+            Self::LetTextVar { binding, var } => quote! {
+                let #binding = __vm.text(#var)?;
+            },
+            Self::ExitElement => quote! {
+                __vm.exit_element()?;
+            },
+            Self::LetInstantiateComponent {
+                binding,
+                path,
+                props,
+            } => {
+                let prop_list: Vec<_> = props
+                    .iter()
+                    .map(|(name, value)| match value {
+                        markup::AttrValue::ImplicitTrue => quote! {
+                            #name: true,
+                        },
+                        markup::AttrValue::Literal(lit) => quote! {
+                            #name: #lit,
+                        },
+                        markup::AttrValue::Eval(ident) => quote! {
+                            #name: #ident,
+                        },
+                    })
+                    .collect();
+                let component_path = &path.type_path;
+                let props_path = path.props_path();
+
+                quote! {
+                    let #binding = #component_path::new(
+                        #props_path {
+                            #(#prop_list)*
+                            __phantom: std::marker::PhantomData
+                        },
+                        __vm
+                    )?;
+                }
+            }
+            Self::UpdateComponent {
+                in_self,
+                ident,
+                path,
+                props,
+            } => {
+                let prop_list: Vec<_> = props
+                    .iter()
+                    .map(|(name, value)| match value {
+                        markup::AttrValue::ImplicitTrue => quote! {
+                            #name: true,
+                        },
+                        markup::AttrValue::Literal(lit) => quote! {
+                            #name: #lit,
+                        },
+                        markup::AttrValue::Eval(ident) => quote! {
+                            #name: #ident,
+                        },
+                    })
+                    .collect();
+                let props_path = path.props_path();
+
+                let field = if *in_self {
+                    quote! { self.#ident }
+                } else {
+                    quote! { #ident }
+                };
+
+                quote! {
+                    #field.update(#props_path {
+                        #(#prop_list)*
+                        __phantom: std::marker::PhantomData
+                        },
+                        __vm
+                    );
+                }
+            }
         }
     }
 }

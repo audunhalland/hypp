@@ -278,7 +278,6 @@ mod tests {
                 match (&mut self.inner_variant, maybe_str) {
                     // First variants where props and instance correlate (updates)
                     (inner::InnerVariant::V0(variant), Some(str)) => {
-                        // FIXME: Add the doc method
                         variant.update(inner::InnerProps { str }, __vm);
                     }
                     // Then the "reset" variants (constructors)

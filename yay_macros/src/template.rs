@@ -1,5 +1,3 @@
-use quote::quote;
-
 use crate::ir;
 use crate::markup;
 use crate::variable;
@@ -68,33 +66,27 @@ impl ir::Block {
     fn analyze_element(&mut self, element: markup::Element, ctx: &mut Context) {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
-        self.constructor_stmts.push(quote! {
-            __vm.enter_element(#tag_name)?;
-        });
+        self.constructor_stmts
+            .push(ir::Statement::EnterElement { tag_name });
 
         for child in element.children {
             self.analyze_node(child, ctx);
         }
 
-        self.constructor_stmts.push(quote! {
-            __vm.exit_element()?;
-        });
+        self.constructor_stmts.push(ir::Statement::ExitElement);
     }
 
     fn analyze_text(&mut self, text: markup::Text) {
-        let lit_str = text.0;
-
-        self.constructor_stmts.push(quote! {
-            __vm.text(#lit_str)?;
-        });
+        self.constructor_stmts
+            .push(ir::Statement::TextConst { text: text.0 });
     }
 
     fn analyze_variable(&mut self, variable: variable::Variable) {
         let node_ident = self.gen_node_ident();
-        let variable_ident = &variable.ident;
 
-        self.constructor_stmts.push(quote! {
-            let #node_ident = __vm.text(#variable_ident)?;
+        self.constructor_stmts.push(ir::Statement::LetTextVar {
+            binding: node_ident.clone(),
+            var: variable.ident.clone(),
         });
 
         self.struct_fields.push(ir::StructField {
@@ -112,61 +104,31 @@ impl ir::Block {
     }
 
     fn analyze_component(&mut self, component: markup::Component) {
-        let type_path = component.type_path.clone();
-
         let ident = self.gen_comp_field_ident();
 
         let component_path = ir::ComponentPath::new(component.type_path);
-        let component_ident = component_path.ident();
 
-        let prop_list: Vec<_> = component
-            .attrs
-            .into_iter()
-            .map(|(name, value)| match value {
-                markup::AttrValue::ImplicitTrue => quote! {
-                    #name: true,
-                },
-                markup::AttrValue::Literal(lit) => quote! {
-                    #name: #lit,
-                },
-                markup::AttrValue::Eval(ident) => quote! {
-                    #name: #ident,
-                },
-            })
-            .collect();
+        self.constructor_stmts
+            .push(ir::Statement::LetInstantiateComponent {
+                binding: ident.clone(),
+                path: component_path.clone(),
+                props: component.attrs.clone(),
+            });
 
-        let mut props_path = type_path.path.clone();
-        if let Some(last_props_path_segment) = props_path.segments.last_mut() {
-            last_props_path_segment.ident = quote::format_ident!("{}Props", component_ident);
-            last_props_path_segment.arguments = syn::PathArguments::None;
-        }
-
-        self.constructor_stmts.push(quote! {
-            let #ident = #type_path::new(
-                #props_path {
-                    #(#prop_list)*
-                    __phantom: std::marker::PhantomData
-                },
-                __vm
-            )?;
+        self.component_updates.push(ir::Statement::UpdateComponent {
+            in_self: true,
+            ident: ident.clone(),
+            path: component_path.clone(),
+            props: component.attrs,
         });
 
-        let stmt: syn::Stmt = syn::parse_quote! {
-            self.#ident.update(#props_path {
-                #(#prop_list)*
-                __phantom: std::marker::PhantomData
-            }, __vm);
-        };
-
-        self.component_updates.push(stmt);
-
         self.struct_fields.push(ir::StructField {
-            ident: ident.clone(),
+            ident,
             ty: ir::StructFieldType::Component(component_path),
         });
     }
 
-    fn analyze_if(&mut self, mut the_if: markup::If, ctx: &mut Context) {
+    fn analyze_if(&mut self, the_if: markup::If, ctx: &mut Context) {
         let test = the_if.test;
         let variant_field_ident = self.gen_var_field_ident();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());

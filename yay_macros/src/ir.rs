@@ -1,7 +1,6 @@
 //! Intermediate Representation used during codegen
 
-use proc_macro2::TokenStream;
-
+use crate::markup;
 use crate::variable;
 
 /// A node reference that needs to be stored within the component
@@ -33,8 +32,17 @@ impl ComponentPath {
         Self { type_path }
     }
 
-    pub fn ident(&self) -> syn::Ident {
-        self.type_path.path.segments.last().unwrap().ident.clone()
+    pub fn ident(&self) -> &syn::Ident {
+        &self.type_path.path.segments.last().unwrap().ident
+    }
+
+    pub fn props_path(&self) -> syn::Path {
+        let mut props_path = self.type_path.path.clone();
+        if let Some(last_props_path_segment) = props_path.segments.last_mut() {
+            last_props_path_segment.ident = quote::format_ident!("{}Props", self.ident());
+            last_props_path_segment.arguments = syn::PathArguments::None;
+        }
+        props_path
     }
 }
 
@@ -42,10 +50,42 @@ impl ComponentPath {
 #[derive(Default)]
 pub struct Block {
     pub struct_fields: Vec<StructField>,
-    pub constructor_stmts: Vec<TokenStream>,
+    pub constructor_stmts: Vec<Statement>,
     pub vars: Vec<TemplateVar>,
-    pub component_updates: Vec<syn::Stmt>,
+    pub component_updates: Vec<Statement>,
     pub matches: Vec<Match>,
+}
+
+pub enum Statement {
+    /// __vm.enter_element(tag_name)?
+    EnterElement { tag_name: syn::LitStr },
+
+    /// __vm.text(text)?
+    TextConst { text: syn::LitStr },
+
+    /// let binding = __vm.text(var)?;
+    LetTextVar {
+        binding: syn::Ident,
+        var: syn::Ident,
+    },
+
+    /// __vm.exit_element()?
+    ExitElement,
+
+    /// let binding = path::new(props, __vm)
+    LetInstantiateComponent {
+        binding: syn::Ident,
+        path: ComponentPath,
+        props: Vec<(syn::Ident, markup::AttrValue)>,
+    },
+
+    /// ident.update(props, __vm);
+    UpdateComponent {
+        in_self: bool,
+        ident: syn::Ident,
+        path: ComponentPath,
+        props: Vec<(syn::Ident, markup::AttrValue)>,
+    },
 }
 
 pub struct TemplateVar {

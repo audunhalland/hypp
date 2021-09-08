@@ -16,7 +16,7 @@ pub enum Node {
 
 type Attr = (syn::Ident, AttrValue);
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttrValue {
     ImplicitTrue,
     Literal(syn::Lit),
