@@ -49,7 +49,7 @@ pub struct Component {
 #[derive(Debug, Eq, PartialEq)]
 pub struct If {
     pub if_token: syn::Token![if],
-    pub cond: syn::Expr,
+    pub test: syn::Expr,
     pub then_branch: Box<Node>,
     pub else_branch: Option<Else>,
 }
@@ -247,7 +247,7 @@ fn parse_braced_fragment(input: ParseStream) -> syn::Result<Node> {
 
 fn parse_if(input: ParseStream) -> syn::Result<If> {
     let if_token = input.parse::<syn::Token!(if)>()?;
-    let cond = syn::Expr::parse_without_eager_brace(input)?;
+    let test = syn::Expr::parse_without_eager_brace(input)?;
 
     let then_branch = Box::new(parse_braced_fragment(input)?);
 
@@ -259,7 +259,7 @@ fn parse_if(input: ParseStream) -> syn::Result<If> {
 
     Ok(If {
         if_token,
-        cond,
+        test,
         then_branch,
         else_branch,
     })
@@ -472,7 +472,7 @@ mod tests {
                 vec![],
                 vec![Node::If(If {
                     if_token: syn::parse_quote! { if },
-                    cond: syn::parse_quote! { something },
+                    test: syn::parse_quote! { something },
                     then_branch: Box::new(fragment(vec![
                         element("p", vec![], vec![]),
                         element("span", vec![], vec![])
@@ -500,7 +500,7 @@ mod tests {
                 vec![],
                 vec![Node::If(If {
                     if_token: syn::parse_quote! { if },
-                    cond: syn::parse_quote! { let Some(for_sure) = maybe },
+                    test: syn::parse_quote! { let Some(for_sure) = maybe },
                     then_branch: Box::new(element("p", vec![], vec![var("for_sure")])),
                     else_branch: None
                 })]

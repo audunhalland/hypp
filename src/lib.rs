@@ -208,14 +208,12 @@ mod tests {
         );
     }
 
-    #[component(
+    #[component_dbg(
         <div>
-            /*
             if draw_stuff {
                 <div>
                 </div>
             }
-            */
         </div>
     )]
     fn Conditional(draw_stuff: bool) {}
@@ -256,12 +254,11 @@ mod tests {
             }
 
             impl<A: Awe> InnerVariant<A> {
-                pub fn reset(&mut self, variant: Self, __vm: &mut dyn DomVM<A>) {
+                pub fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
                     match self {
                         Self::V0(comp) => comp.unmount(__vm),
                         Self::V1 => {}
                     }
-                    *self = variant;
                 }
             }
         }
@@ -279,24 +276,24 @@ mod tests {
 
             fn update(&mut self, CondProps { maybe_str, .. }: CondProps, __vm: &mut dyn DomVM<A>) {
                 match (&mut self.inner_variant, maybe_str) {
-                    // First variants where props and instance correlate:
+                    // First variants where props and instance correlate (updates)
                     (inner::InnerVariant::V0(variant), Some(str)) => {
                         // FIXME: Add the doc method
                         variant.update(inner::InnerProps { str }, __vm);
                     }
-                    // Then the "reset" variants
+                    // Then the "reset" variants (constructors)
                     (_, Some(str)) => {
-                        self.inner_variant.reset(
-                            inner::InnerVariant::V0(
-                                inner::Inner::new(inner::InnerProps { str }, __vm).unwrap(),
-                            ),
-                            __vm,
+                        self.inner_variant.unmount(__vm);
+                        __vm.enter_element("div").unwrap();
+                        self.inner_variant = inner::InnerVariant::V0(
+                            inner::Inner::new(inner::InnerProps { str }, __vm).unwrap(),
                         );
+                        __vm.exit_element().unwrap();
                     }
                     (_, None) => {
-                        self.inner_variant.reset(inner::InnerVariant::V1, __vm);
+                        self.inner_variant.unmount(__vm);
+                        self.inner_variant = inner::InnerVariant::V1;
                     }
-                    _ => {}
                 }
             }
 
