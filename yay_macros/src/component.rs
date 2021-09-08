@@ -5,18 +5,19 @@ use crate::template;
 
 pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -> TokenStream {
     let RootBlock {
-        root_idents: RootIdents {
-            component_ident,
-            props_ident,
-        },
+        root_idents,
         props_struct,
         variant_enums,
-        node_fields,
-        props_destructuring,
-        constructor_stmts,
+        struct_fields,
+        block_stmts:
+            BlockStmts {
+                props_destructuring,
+                constructor_stmts,
+                update_stmts,
+                vars,
+                matches,
+            },
         fn_stmts,
-        update_stmts,
-        vars,
     } = apply_root_block(template.root_block, input_fn);
 
     let node_var_params = vars.iter().map(|var| {
@@ -28,9 +29,12 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         }
     });
 
-    let node_field_defs = node_fields
+    let component_ident = &root_idents.component_ident;
+    let props_ident = &root_idents.props_ident;
+
+    let struct_field_defs = struct_fields
         .iter()
-        .map(template::NodeField::field_def_tokens);
+        .map(|field| field.field_def_tokens(&root_idents));
 
     let var_struct_params = vars.iter().map(|var| {
         let ident = &var.field_ident;
@@ -39,9 +43,11 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         }
     });
 
-    let node_struct_params = node_fields
+    let node_struct_params = struct_fields
         .iter()
-        .map(template::NodeField::struct_param_tokens);
+        .map(template::StructField::struct_param_tokens);
+
+    let matches = matches.iter().map(template::Match::to_match_stmt);
 
     quote! {
         #props_struct
@@ -50,7 +56,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 
         pub struct #component_ident<A: Awe> {
             #(#node_var_params)*
-            #(#node_field_defs)*
+            #(#struct_field_defs)*
 
             __phantom: PhantomField<A>
         }
@@ -75,6 +81,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
             fn update(&mut self, #props_destructuring, __vm: &mut dyn DomVM<A>) {
                 #(#fn_stmts)*
                 #(#update_stmts)*
+                #(#matches)*
             }
 
             fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
@@ -87,7 +94,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 
 fn apply_root_block(
     template::Block {
-        node_fields,
+        struct_fields,
         constructor_stmts,
         vars,
         component_updates,
@@ -131,12 +138,15 @@ fn apply_root_block(
         variant_enums,
         root_idents,
         props_struct,
-        node_fields,
-        props_destructuring,
-        constructor_stmts,
+        struct_fields,
+        block_stmts: BlockStmts {
+            props_destructuring,
+            constructor_stmts,
+            update_stmts,
+            vars,
+            matches,
+        },
         fn_stmts: input_fn.block.stmts,
-        update_stmts,
-        vars,
     }
 }
 
@@ -189,15 +199,15 @@ fn collect_variant_enums(
     output: &mut Vec<TokenStream>,
 ) {
     for the_match in matches {
-        let enum_ident = root_idents.format_enum_ident(the_match.enum_index);
+        let enum_ident = the_match.enum_type.to_tokens(root_idents);
 
         let variants = the_match.arms.iter().map(|arm| {
             let ident = &arm.enum_variant_ident;
             let struct_params = arm
                 .block
-                .node_fields
+                .struct_fields
                 .iter()
-                .map(template::NodeField::struct_param_tokens);
+                .map(template::StructField::struct_param_tokens);
 
             quote! {
                 #ident { #(#struct_params)* },
@@ -220,12 +230,9 @@ struct RootBlock {
     root_idents: RootIdents,
     props_struct: syn::ItemStruct,
     variant_enums: Vec<TokenStream>,
-    node_fields: Vec<template::NodeField>,
-    props_destructuring: syn::FnArg,
-    constructor_stmts: Vec<TokenStream>,
+    struct_fields: Vec<template::StructField>,
+    block_stmts: BlockStmts,
     fn_stmts: Vec<syn::Stmt>,
-    update_stmts: Vec<syn::Stmt>,
-    vars: Vec<template::TemplateVar>,
 }
 
 struct RootIdents {
@@ -239,10 +246,18 @@ impl RootIdents {
     }
 }
 
-impl template::NodeField {
-    fn field_def_tokens(&self) -> TokenStream {
+struct BlockStmts {
+    props_destructuring: syn::FnArg,
+    constructor_stmts: Vec<TokenStream>,
+    update_stmts: Vec<syn::Stmt>,
+    vars: Vec<template::TemplateVar>,
+    matches: Vec<template::Match>,
+}
+
+impl template::StructField {
+    fn field_def_tokens(&self, root_idents: &RootIdents) -> TokenStream {
         let ident = &self.ident;
-        let ty = &self.ty;
+        let ty = self.ty.to_tokens(root_idents);
 
         quote! {
             #ident: #ty,
@@ -254,6 +269,39 @@ impl template::NodeField {
 
         quote! {
             #ident,
+        }
+    }
+}
+
+impl template::Match {
+    fn to_match_stmt(&self) -> TokenStream {
+        /*
+        let variant_field_ident = &self.variant_field_ident;
+        let expr = &self.expr;
+
+        quote! {
+            match (&mut self.#variant_field_ident, #expr) {
+            }
+        }
+        */
+
+        quote! {}
+    }
+}
+
+impl template::StructFieldType {
+    fn to_tokens(&self, root_idents: &RootIdents) -> TokenStream {
+        match self {
+            Self::DomText => quote! { A::Text },
+            Self::Component(path) => {
+                let type_path = &path.type_path;
+                quote! { #type_path }
+            }
+            Self::Enum(enum_index) => {
+                let ident =
+                    quote::format_ident!("{}Enum{}", root_idents.component_ident, enum_index);
+                quote! { #ident }
+            }
         }
     }
 }

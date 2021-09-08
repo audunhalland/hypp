@@ -26,17 +26,17 @@ pub struct Context {
 }
 
 impl Context {
-    fn gen_enum_ident(&mut self) -> syn::Ident {
-        let ident = quote::format_ident!("Enum{}", self.enum_count);
+    fn next_enum_index(&mut self) -> usize {
+        let index = self.enum_count;
         self.enum_count += 1;
-        ident
+        index
     }
 }
 
 /// A 'block' of code that should run atomically.
 #[derive(Default)]
 pub struct Block {
-    pub node_fields: Vec<NodeField>,
+    pub struct_fields: Vec<StructField>,
     pub constructor_stmts: Vec<TokenStream>,
     pub vars: Vec<TemplateVar>,
     pub component_updates: Vec<syn::Stmt>,
@@ -44,9 +44,37 @@ pub struct Block {
 }
 
 /// A node reference that needs to be stored within the component
-pub struct NodeField {
+pub struct StructField {
     pub ident: syn::Ident,
-    pub ty: syn::Type,
+    pub ty: StructFieldType,
+}
+
+/// Type of a struct field
+#[derive(Clone)]
+pub enum StructFieldType {
+    DomText,
+    Component(ComponentPath),
+    Enum(usize),
+}
+
+// A type path representing another component
+#[derive(Clone)]
+pub struct ComponentPath {
+    pub type_path: syn::TypePath,
+}
+
+impl ComponentPath {
+    fn new(mut type_path: syn::TypePath) -> Self {
+        let mut last_segment = type_path.path.segments.last_mut().unwrap();
+        last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
+            <A>
+        });
+        Self { type_path }
+    }
+
+    fn ident(&self) -> syn::Ident {
+        self.type_path.path.segments.last().unwrap().ident.clone()
+    }
 }
 
 pub struct TemplateVar {
@@ -57,7 +85,8 @@ pub struct TemplateVar {
 
 /// A conditional modelled over a match expression
 pub struct Match {
-    pub enum_index: usize,
+    pub enum_type: StructFieldType,
+    pub variant_field_ident: syn::Ident,
     pub expr: syn::Expr,
     pub arms: Vec<Arm>,
 }
@@ -136,11 +165,9 @@ impl Block {
             let #node_ident = __vm.text(#variable_ident)?;
         });
 
-        self.node_fields.push(NodeField {
+        self.struct_fields.push(StructField {
             ident: node_ident.clone(),
-            ty: syn::parse_quote! {
-                A::Text
-            },
+            ty: StructFieldType::DomText,
         });
 
         let field_ident = self.gen_var_field_ident();
@@ -157,15 +184,8 @@ impl Block {
 
         let ident = self.gen_comp_field_ident();
 
-        let mut type_path_with_generics = component.type_path;
-        let component_ident = {
-            let mut last_segment = type_path_with_generics.path.segments.last_mut().unwrap();
-            // Add generics to it:
-            last_segment.arguments = syn::PathArguments::AngleBracketed(syn::parse_quote! {
-                <A>
-            });
-            last_segment.ident.clone()
-        };
+        let component_path = ComponentPath::new(component.type_path);
+        let component_ident = component_path.ident();
 
         let prop_list: Vec<_> = component
             .attrs
@@ -208,14 +228,16 @@ impl Block {
 
         self.component_updates.push(stmt);
 
-        self.node_fields.push(NodeField {
+        self.struct_fields.push(StructField {
             ident: ident.clone(),
-            ty: syn::Type::Path(type_path_with_generics),
+            ty: StructFieldType::Component(component_path),
         });
     }
 
     fn analyze_if(&mut self, mut the_if: markup::If, ctx: &mut Context) {
         let test = the_if.test;
+        let variant_field_ident = self.gen_var_field_ident();
+        let enum_type = StructFieldType::Enum(ctx.next_enum_index());
 
         let mut then_block = Block::default();
         then_block.analyze_node(*the_if.then_branch, ctx);
@@ -232,11 +254,14 @@ impl Block {
             None => {}
         }
 
-        let enum_index = ctx.enum_count;
-        ctx.enum_count += 1;
+        self.struct_fields.push(StructField {
+            ident: variant_field_ident.clone(),
+            ty: enum_type.clone(),
+        });
 
         self.matches.push(Match {
-            enum_index,
+            enum_type,
+            variant_field_ident,
             expr: test,
             arms: vec![
                 Arm {
