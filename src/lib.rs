@@ -131,7 +131,7 @@ mod tests {
     #[wasm_bindgen_test]
     fn render_foo_web() {
         let awe = web::WebAwe::new();
-        let _comp = Foo::new(
+        let _comp = Foo::mount(
             FooProps {
                 is_cool: true,
                 __phantom: std::marker::PhantomData,
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn render_foo_server() {
         let awe = server::ServerAwe::new();
-        let mut comp = Foo::new(
+        let mut comp = Foo::mount(
             FooProps {
                 is_cool: true,
                 __phantom: std::marker::PhantomData,
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn render_baz_server() {
         let awe = server::ServerAwe::new();
-        Baz::new(
+        Baz::mount(
             BazProps {
                 __phantom: std::marker::PhantomData,
             },
@@ -217,88 +217,4 @@ mod tests {
         </div>
     )]
     fn Conditional(draw_stuff: bool) {}
-
-    mod expr_conditional {
-        use super::*;
-
-        mod inner {
-            use super::*;
-
-            pub struct InnerProps<'p> {
-                pub str: &'p str,
-            }
-
-            pub struct Inner<A: Awe> {
-                element: A::Element,
-            }
-
-            impl<A: Awe> Inner<A> {
-                pub fn new(props: InnerProps, __vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
-                    let element = __vm.enter_element("span")?;
-                    __vm.exit_element()?;
-                    Ok(Self { element })
-                }
-            }
-
-            impl<'p, A: Awe> Component<'p, A> for Inner<A> {
-                type Props = InnerProps<'p>;
-
-                fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
-                    __vm.remove_element("span").unwrap();
-                }
-            }
-
-            pub enum InnerVariant<A: Awe> {
-                V0(inner::Inner<A>),
-                V1,
-            }
-
-            impl<A: Awe> InnerVariant<A> {
-                pub fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
-                    match self {
-                        Self::V0(comp) => comp.unmount(__vm),
-                        Self::V1 => {}
-                    }
-                }
-            }
-        }
-
-        struct CondProps<'p> {
-            maybe_str: Option<&'p str>,
-        }
-
-        struct Cond<A: Awe> {
-            inner_variant: inner::InnerVariant<A>,
-        }
-
-        impl<'p, A: Awe> Component<'p, A> for Cond<A> {
-            type Props = CondProps<'p>;
-
-            fn update(&mut self, CondProps { maybe_str, .. }: CondProps, __vm: &mut dyn DomVM<A>) {
-                match (&mut self.inner_variant, maybe_str) {
-                    // First variants where props and instance correlate (updates)
-                    (inner::InnerVariant::V0(variant), Some(str)) => {
-                        variant.update(inner::InnerProps { str }, __vm);
-                    }
-                    // Then the "reset" variants (constructors)
-                    (_, Some(str)) => {
-                        self.inner_variant.unmount(__vm);
-                        __vm.enter_element("div").unwrap();
-                        self.inner_variant = inner::InnerVariant::V0(
-                            inner::Inner::new(inner::InnerProps { str }, __vm).unwrap(),
-                        );
-                        __vm.exit_element().unwrap();
-                    }
-                    (_, None) => {
-                        self.inner_variant.unmount(__vm);
-                        self.inner_variant = inner::InnerVariant::V1;
-                    }
-                }
-            }
-
-            fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
-                panic!();
-            }
-        }
-    }
 }

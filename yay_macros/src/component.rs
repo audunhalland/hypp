@@ -11,13 +11,9 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         props_struct,
         variant_enums,
         struct_fields,
-        block_stmts:
-            BlockStmts {
-                props_destructuring,
-                constructor_stmts,
-                update_stmts,
-            },
+        props_destructuring,
         fn_stmts,
+        program,
     } = apply_root_block(template.root_block, input_fn);
 
     let component_ident = &root_idents.component_ident;
@@ -31,6 +27,16 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         .iter()
         .map(ir::StructField::struct_param_tokens);
 
+    let mount_stmts = program
+        .iter()
+        .map(|opcode| opcode.mount_stmts(&root_idents, Lifecycle::Mount));
+
+    let update_stmts = program
+        .iter()
+        .map(|opcode| opcode.update_stmts(&root_idents, 0));
+
+    let unmount_stmts = unmount_stmts(&program);
+
     quote! {
         #props_struct
 
@@ -43,9 +49,9 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         }
 
         impl<A: Awe> #component_ident<A> {
-            pub fn new(#props_destructuring, __vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
+            pub fn mount(#props_destructuring, __vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
                 #(#fn_stmts)*
-                #(#constructor_stmts)*
+                #(#mount_stmts)*
 
                 Ok(Self {
                     #(#struct_params)*
@@ -64,8 +70,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
             }
 
             fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
-                // TODO: we actually want to panic here if things are not OK?
-                panic!("implement unmount")
+                #unmount_stmts
             }
         }
     }
@@ -93,27 +98,14 @@ fn apply_root_block(
     let mut variant_enums = vec![];
     collect_variant_enums(&program, &root_idents, &mut variant_enums);
 
-    let constructor_stmts = program
-        .iter()
-        .map(|opcode| opcode.to_constructor_tokens(&root_idents))
-        .collect();
-
-    let update_stmts = program
-        .iter()
-        .filter_map(|opcode| opcode.to_update_tokens(&root_idents, 0))
-        .collect();
-
     RootBlock {
         variant_enums,
         root_idents,
         props_struct,
         struct_fields,
-        block_stmts: BlockStmts {
-            props_destructuring,
-            constructor_stmts,
-            update_stmts,
-        },
+        props_destructuring,
         fn_stmts: input_fn.block.stmts,
+        program,
     }
 }
 
@@ -172,7 +164,7 @@ fn collect_variant_enums(
             } => {
                 let enum_ident = enum_type.to_tokens(root_idents);
 
-                let variants = arms.iter().map(|arm| {
+                let variant_defs = arms.iter().map(|arm| {
                     let ident = &arm.enum_variant_ident;
                     let struct_params = arm
                         .block
@@ -185,9 +177,40 @@ fn collect_variant_enums(
                     }
                 });
 
+                let unmount_arms = arms.iter().map(
+                    |ir::Arm {
+                         enum_variant_ident,
+                         block,
+                         ..
+                     }| {
+                        let fields = block.struct_fields.iter().map(|field| {
+                            let ident = &field.ident;
+
+                            quote! {
+                                #ident,
+                            }
+                        });
+                        let unmount_stmts = unmount_stmts(&block.program);
+
+                        quote! {
+                            Self::#enum_variant_ident { #(#fields)* } => {
+                                #unmount_stmts
+                            },
+                        }
+                    },
+                );
+
                 output.push(quote! {
                     enum #enum_ident {
-                        #(#variants)*
+                        #(#variant_defs)*
+                    }
+
+                    impl #enum_ident {
+                        pub fn unmount<A: Awe>(&mut self, __vm: &mut dyn DomVM<A>) {
+                            match self {
+                                #(#unmount_arms)*
+                            }
+                        }
                     }
                 });
 
@@ -205,8 +228,9 @@ struct RootBlock {
     props_struct: syn::ItemStruct,
     variant_enums: Vec<TokenStream>,
     struct_fields: Vec<ir::StructField>,
-    block_stmts: BlockStmts,
+    props_destructuring: syn::FnArg,
     fn_stmts: Vec<syn::Stmt>,
+    program: Vec<ir::OpCode>,
 }
 
 struct RootIdents {
@@ -214,10 +238,9 @@ struct RootIdents {
     props_ident: syn::Ident,
 }
 
-struct BlockStmts {
-    props_destructuring: syn::FnArg,
-    constructor_stmts: Vec<TokenStream>,
-    update_stmts: Vec<TokenStream>,
+enum Lifecycle {
+    Mount,
+    Update,
 }
 
 impl ir::StructField {
@@ -240,24 +263,31 @@ impl ir::StructField {
 }
 
 impl ir::OpCode {
-    fn to_constructor_tokens(&self, root_idents: &RootIdents) -> TokenStream {
+    /// Map an opcode into the rust statements used when mounting
+    fn mount_stmts(&self, root_idents: &RootIdents, lifecycle: Lifecycle) -> TokenStream {
+        // Mount is error-tolerant:
+        let err_handler = match lifecycle {
+            Lifecycle::Mount => quote! { ? },
+            Lifecycle::Update => quote! { .unwrap() },
+        };
+
         match self {
             Self::EnterElement { tag_name } => quote! {
-                __vm.enter_element(#tag_name)?;
+                __vm.enter_element(#tag_name)#err_handler;
             },
             Self::TextConst { text } => quote! {
-                __vm.text(#text)?;
+                __vm.text(#text)#err_handler;
             },
             Self::TextVar {
                 node_binding,
                 variable_binding,
                 expr,
             } => quote! {
-                let #node_binding = __vm.text(#expr)?;
+                let #node_binding = __vm.text(#expr)#err_handler;
                 let #variable_binding = Var::new();
             },
             Self::ExitElement => quote! {
-                __vm.exit_element()?;
+                __vm.exit_element()#err_handler;
             },
             Self::Component {
                 binding,
@@ -279,13 +309,13 @@ impl ir::OpCode {
                 let props_path = path.props_path();
 
                 quote! {
-                    let #binding = #component_path::new(
+                    let #binding = #component_path::mount(
                         #props_path {
                             #(#prop_list)*
                             __phantom: std::marker::PhantomData
                         },
                         __vm
-                    )?;
+                    )#err_handler;
                 }
             }
             Self::Match {
@@ -302,10 +332,10 @@ impl ir::OpCode {
                          pattern,
                          block,
                      }| {
-                        let program_tokens = block
+                        let mount_stmts = block
                             .program
                             .iter()
-                            .map(|opcode| opcode.to_constructor_tokens(&root_idents));
+                            .map(|opcode| opcode.mount_stmts(&root_idents, Lifecycle::Mount));
                         let struct_params = block
                             .struct_fields
                             .iter()
@@ -313,7 +343,7 @@ impl ir::OpCode {
 
                         quote! {
                             #pattern => {
-                                #(#program_tokens)*
+                                #(#mount_stmts)*
 
                                 #enum_ident::#enum_variant_ident {
                                     #(#struct_params)*
@@ -332,17 +362,18 @@ impl ir::OpCode {
         }
     }
 
-    fn to_update_tokens(&self, root_idents: &RootIdents, nesting: usize) -> Option<TokenStream> {
+    /// Map an opcode into the rust tokens used when updating
+    fn update_stmts(&self, root_idents: &RootIdents, nesting: usize) -> TokenStream {
         match self {
             Self::TextVar {
                 node_binding,
                 variable_binding,
                 expr,
-            } => Some(quote! {
+            } => quote! {
                 if let Some(v) = self.#variable_binding.update(#expr) {
                     A::set_text(&self.#node_binding, v);
                 }
-            }),
+            },
             Self::Component {
                 binding,
                 path,
@@ -359,7 +390,6 @@ impl ir::OpCode {
                         #name: #ident,
                     },
                 });
-                let component_path = &path.type_path;
                 let props_path = path.props_path();
 
                 let field_path = if nesting == 0 {
@@ -368,16 +398,145 @@ impl ir::OpCode {
                     quote! { #binding }
                 };
 
-                Some(quote! {
+                quote! {
                     #field_path.update(#props_path {
                         #(#prop_list)*
                         __phantom: std::marker::PhantomData,
                     }, __vm);
-                })
+                }
             }
-            Self::Match { .. } => None,
-            _ => None,
+            Self::Match {
+                binding,
+                enum_type,
+                expr,
+                arms,
+            } => {
+                // The match arms generated here should be twice as many as in the mounter.
+                // We match a tuple of two things: the existing value and the new value.
+                // The first match arms are for when the existing value matches the old value.
+                // The rest of the matches are for mismatches, one for each new value.
+
+                let enum_ident = enum_type.to_tokens(root_idents);
+
+                let matching_arms = arms.iter().map(
+                    |ir::Arm {
+                         enum_variant_ident,
+                         pattern,
+                         block,
+                     }| {
+                        let fields = block.struct_fields.iter().map(|field| {
+                            let ident = &field.ident;
+
+                            quote! {
+                                #ident,
+                            }
+                        });
+
+                        let update_stmts = block
+                            .program
+                            .iter()
+                            .map(|opcode| opcode.update_stmts(root_idents, nesting + 1));
+
+                        quote! {
+                           (#enum_ident::#enum_variant_ident { #(#fields)* }, #pattern) => {
+                               #(#update_stmts)*
+                           },
+                        }
+                    },
+                );
+
+                let nonmatching_arms = arms.iter().map(
+                    |ir::Arm {
+                         enum_variant_ident,
+                         pattern,
+                         block,
+                     }| {
+                        // BUG: Code duplication with constructor.
+                        // These are constant and could be moved to separate function?
+                        // But the problem then will be to formalize another param struct
+                        // to pass into that function.. :(
+                        // But it's better to have less runtime code.
+                        let mount_stmts = block
+                            .program
+                            .iter()
+                            .map(|opcode| opcode.mount_stmts(&root_idents, Lifecycle::Update));
+                        let struct_params = block
+                            .struct_fields
+                            .iter()
+                            .map(ir::StructField::struct_param_tokens);
+
+                        quote! {
+                            (_, #pattern) => {
+                                self.#binding.unmount(__vm);
+                                #(#mount_stmts)*
+
+                                self.#binding = #enum_ident::#enum_variant_ident {
+                                    #(#struct_params)*
+                                }
+                           },
+                        }
+                    },
+                );
+
+                quote! {
+                    match (&mut self.#binding, #expr) {
+                        #(#matching_arms)*
+                        #(#nonmatching_arms)*
+
+                        _ => {}
+                    }
+                }
+            }
+            _ => TokenStream::new(),
         }
+    }
+}
+
+///
+/// Generate the rust program required to appropriately unmount
+///
+fn unmount_stmts(program: &[ir::OpCode]) -> TokenStream {
+    let mut element_level = 0;
+
+    let mut unmount_calls = vec![];
+    let mut node_removals = vec![];
+
+    for opcode in program {
+        match opcode {
+            ir::OpCode::EnterElement { tag_name } => {
+                if element_level == 0 {
+                    node_removals.push(quote! {
+                        __vm.remove_element(#tag_name).unwrap();
+                    });
+                }
+                element_level += 1;
+            }
+            ir::OpCode::ExitElement => {
+                element_level -= 1;
+            }
+            ir::OpCode::TextConst { .. } | ir::OpCode::TextVar { .. } => {
+                if element_level == 0 {
+                    node_removals.push(quote! {
+                        __vm.remove_text().unwrap();
+                    });
+                }
+            }
+            ir::OpCode::Component { binding, .. } => {
+                unmount_calls.push(quote! {
+                    self.#binding.unmount(__vm);
+                });
+            }
+            ir::OpCode::Match { binding, .. } => {
+                unmount_calls.push(quote! {
+                    self.#binding.unmount(__vm);
+                });
+            }
+        }
+    }
+
+    quote! {
+        #(#unmount_calls)*
+        #(#node_removals)*
     }
 }
 

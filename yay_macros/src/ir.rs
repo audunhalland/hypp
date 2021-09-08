@@ -83,14 +83,6 @@ pub enum OpCode {
     },
 }
 
-/// A conditional modelled over a match expression
-pub struct Match {
-    pub enum_type: StructFieldType,
-    pub variant_field_ident: syn::Ident,
-    pub expr: syn::Expr,
-    pub arms: Vec<Arm>,
-}
-
 /// An arm of a conditional
 pub struct Arm {
     /// The ident of the enum variant to instantiate
