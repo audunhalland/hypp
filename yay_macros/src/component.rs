@@ -27,7 +27,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         .iter()
         .map(|field| field.field_def_tokens(&root_idents));
 
-    let node_struct_params = struct_fields
+    let struct_params = struct_fields
         .iter()
         .map(ir::StructField::struct_param_tokens);
 
@@ -48,7 +48,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
                 #(#constructor_stmts)*
 
                 Ok(Self {
-                    #(#node_struct_params)*
+                    #(#struct_params)*
 
                     __phantom: std::marker::PhantomData
                 })
@@ -288,9 +288,45 @@ impl ir::OpCode {
                     )?;
                 }
             }
-            Self::Match { binding, .. } => {
+            Self::Match {
+                binding,
+                enum_type,
+                expr,
+                arms,
+            } => {
+                let enum_ident = enum_type.to_tokens(root_idents);
+
+                let arms = arms.iter().map(
+                    |ir::Arm {
+                         enum_variant_ident,
+                         pattern,
+                         block,
+                     }| {
+                        let program_tokens = block
+                            .program
+                            .iter()
+                            .map(|opcode| opcode.to_constructor_tokens(&root_idents));
+                        let struct_params = block
+                            .struct_fields
+                            .iter()
+                            .map(ir::StructField::struct_param_tokens);
+
+                        quote! {
+                            #pattern => {
+                                #(#program_tokens)*
+
+                                #enum_ident::#enum_variant_ident {
+                                    #(#struct_params)*
+                                }
+                            },
+                        }
+                    },
+                );
+
                 quote! {
-                    let #binding = panic!();
+                    let #binding = match #expr {
+                        #(#arms)*
+                    };
                 }
             }
         }
