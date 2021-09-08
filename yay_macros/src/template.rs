@@ -32,19 +32,22 @@ impl Context {
 }
 
 impl ir::Block {
-    fn gen_node_ident(&self) -> syn::Ident {
-        let index = self.constructor_stmts.len();
-        quote::format_ident!("node{}", index)
+    fn next_variable_index(&mut self) -> usize {
+        let index = self.variable_count;
+        self.variable_count += 1;
+        index
     }
 
-    fn gen_var_field_ident(&self) -> syn::Ident {
-        let index = self.vars.len();
-        quote::format_ident!("var{}", index)
+    fn gen_node_ident(&mut self) -> syn::Ident {
+        quote::format_ident!("node{}", self.next_variable_index())
     }
 
-    fn gen_comp_field_ident(&self) -> syn::Ident {
-        let index = self.component_updates.len();
-        quote::format_ident!("comp{}", index)
+    fn gen_var_field_ident(&mut self) -> syn::Ident {
+        quote::format_ident!("var{}", self.next_variable_index())
+    }
+
+    fn gen_comp_field_ident(&mut self) -> syn::Ident {
+        quote::format_ident!("comp{}", self.next_variable_index())
     }
 
     fn analyze_node(&mut self, node: markup::Node, ctx: &mut Context) {
@@ -66,40 +69,36 @@ impl ir::Block {
     fn analyze_element(&mut self, element: markup::Element, ctx: &mut Context) {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
-        self.constructor_stmts
-            .push(ir::Statement::EnterElement { tag_name });
+        self.program.push(ir::OpCode::EnterElement { tag_name });
 
         for child in element.children {
             self.analyze_node(child, ctx);
         }
 
-        self.constructor_stmts.push(ir::Statement::ExitElement);
+        self.program.push(ir::OpCode::ExitElement);
     }
 
     fn analyze_text(&mut self, text: markup::Text) {
-        self.constructor_stmts
-            .push(ir::Statement::TextConst { text: text.0 });
+        self.program.push(ir::OpCode::TextConst { text: text.0 });
     }
 
     fn analyze_variable(&mut self, variable: variable::Variable) {
         let node_ident = self.gen_node_ident();
-
-        self.constructor_stmts.push(ir::Statement::LetTextVar {
-            binding: node_ident.clone(),
-            var: variable.ident.clone(),
-        });
-
         self.struct_fields.push(ir::StructField {
             ident: node_ident.clone(),
             ty: ir::StructFieldType::DomText,
         });
 
-        let field_ident = self.gen_var_field_ident();
+        let variable_ident = self.gen_var_field_ident();
+        self.struct_fields.push(ir::StructField {
+            ident: variable_ident.clone(),
+            ty: ir::StructFieldType::Variable(variable.ty),
+        });
 
-        self.vars.push(ir::TemplateVar {
-            variable,
-            node_ident: node_ident.clone(),
-            field_ident,
+        self.program.push(ir::OpCode::TextVar {
+            node_binding: node_ident.clone(),
+            variable_binding: variable_ident,
+            expr: variable.ident.clone(),
         });
     }
 
@@ -108,18 +107,10 @@ impl ir::Block {
 
         let component_path = ir::ComponentPath::new(component.type_path);
 
-        self.constructor_stmts
-            .push(ir::Statement::LetInstantiateComponent {
-                binding: ident.clone(),
-                path: component_path.clone(),
-                props: component.attrs.clone(),
-            });
-
-        self.component_updates.push(ir::Statement::UpdateComponent {
-            in_self: true,
-            ident: ident.clone(),
+        self.program.push(ir::OpCode::Component {
+            binding: ident.clone(),
             path: component_path.clone(),
-            props: component.attrs,
+            props: component.attrs.clone(),
         });
 
         self.struct_fields.push(ir::StructField {
@@ -148,14 +139,9 @@ impl ir::Block {
             None => {}
         }
 
-        self.struct_fields.push(ir::StructField {
-            ident: variant_field_ident.clone(),
-            ty: enum_type.clone(),
-        });
-
-        self.matches.push(ir::Match {
-            enum_type,
-            variant_field_ident,
+        self.program.push(ir::OpCode::Match {
+            binding: variant_field_ident.clone(),
+            enum_type: enum_type.clone(),
             expr: test,
             arms: vec![
                 ir::Arm {
@@ -169,6 +155,11 @@ impl ir::Block {
                     block: else_block,
                 },
             ],
+        });
+
+        self.struct_fields.push(ir::StructField {
+            ident: variant_field_ident,
+            ty: enum_type,
         });
     }
 }

@@ -208,7 +208,7 @@ mod tests {
         );
     }
 
-    #[component_dbg(
+    #[component(
         <div>
             if draw_stuff {
                 <div>
