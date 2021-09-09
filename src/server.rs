@@ -3,22 +3,22 @@ use std::rc::Rc;
 
 use crate::error::Error;
 
-use super::{AsNode, Awe, DomVM};
+use super::{AsNode, DomVM, Hypp};
 
 type Node = Rc<ServerNode>;
 
-impl AsNode<ServerAwe> for Node {
+impl AsNode<ServerHypp> for Node {
     #[inline]
     fn as_node(&self) -> &Node {
         self
     }
 }
 
-pub struct ServerAwe {
+pub struct ServerHypp {
     body: Node,
 }
 
-impl ServerAwe {
+impl ServerHypp {
     pub fn new() -> Self {
         Self {
             body: Rc::new(ServerNode::Element(Element {
@@ -39,7 +39,7 @@ impl ServerAwe {
     }
 }
 
-impl Awe for ServerAwe {
+impl Hypp for ServerHypp {
     type Node = Node;
     type Element = Node;
     type Text = Node;
@@ -158,7 +158,7 @@ impl ServerBuilder {
     }
 }
 
-impl<'doc> DomVM<'doc, ServerAwe> for ServerBuilder {
+impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
     fn enter_element(&mut self, tag_name: &'static str) -> Result<Node, Error> {
         let element = Rc::new(ServerNode::Element(Element {
             tag_name,

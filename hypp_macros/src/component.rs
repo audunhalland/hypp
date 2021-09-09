@@ -41,14 +41,14 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
 
         #(#variant_enums)*
 
-        pub struct #component_ident<A: Awe> {
+        pub struct #component_ident<H: Hypp> {
             #(#struct_field_defs)*
 
-            __phantom: PhantomField<A>
+            __phantom: PhantomField<H>
         }
 
-        impl<A: Awe> #component_ident<A> {
-            pub fn mount(#props_destructuring, __vm: &mut dyn DomVM<A>) -> Result<Self, Error> {
+        impl<H: Hypp> #component_ident<H> {
+            pub fn mount(#props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<Self, Error> {
                 #(#fn_stmts)*
                 #(#mount_stmts)*
 
@@ -60,15 +60,15 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
             }
         }
 
-        impl<'p, A: Awe> Component<'p, A> for #component_ident<A> {
+        impl<'p, H: Hypp> Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn update(&mut self, #props_destructuring, __vm: &mut dyn DomVM<A>) {
+            fn update(&mut self, #props_destructuring, __vm: &mut dyn DomVM<H>) {
                 #(#fn_stmts)*
                 #(#update_stmts)*
             }
 
-            fn unmount(&mut self, __vm: &mut dyn DomVM<A>) {
+            fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
                 #unmount_stmts
             }
         }
@@ -201,7 +201,7 @@ fn collect_variant_enums(
                     }
 
                     impl #enum_ident {
-                        pub fn unmount<A: Awe>(&mut self, __vm: &mut dyn DomVM<A>) {
+                        pub fn unmount<H: Hypp>(&mut self, __vm: &mut dyn DomVM<H>) {
                             match self {
                                 #(#unmount_arms)*
                             }
@@ -379,7 +379,7 @@ impl ir::OpCode {
                 expr,
             } => quote! {
                 if let Some(v) = self.#variable_field.update(#expr) {
-                    A::set_text(&self.#node_field, v);
+                    H::set_text(&self.#node_field, v);
                 }
             },
             Self::Component {
@@ -555,11 +555,11 @@ fn unmount_stmts(program: &[ir::OpCode], scope: Scope) -> TokenStream {
 impl ir::StructFieldType {
     fn to_tokens(&self, root_idents: &RootIdents) -> TokenStream {
         match self {
-            Self::DomElement => quote! { A::Element },
-            Self::DomText => quote! { A::Text },
+            Self::DomElement => quote! { H::Element },
+            Self::DomText => quote! { H::Text },
             Self::Component(path) => {
                 let type_path = &path.type_path;
-                quote! { #type_path<A> }
+                quote! { #type_path<H> }
             }
             Self::Enum(enum_index) => {
                 let ident =

@@ -7,11 +7,11 @@ pub mod web;
 
 use error::Error;
 
-pub trait AsNode<Y: Awe> {
-    fn as_node(&self) -> &Y::Node;
+pub trait AsNode<H: Hypp> {
+    fn as_node(&self) -> &H::Node;
 }
 
-pub trait Awe: Sized {
+pub trait Hypp: Sized {
     type Node: Clone;
     type Element: Clone + AsNode<Self>;
     type Text: Clone + AsNode<Self>;
@@ -27,16 +27,16 @@ pub trait Awe: Sized {
 /// An abstract cursor at some DOM position, allowing users of the trait
 /// to do various operations to mutate it.
 ///
-pub trait DomVM<'doc, A: Awe> {
+pub trait DomVM<'doc, H: Hypp> {
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
-    fn enter_element(&mut self, tag_name: &'static str) -> Result<A::Element, Error>;
+    fn enter_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
 
     /// Define an attribute on the current element (and return it perhaps?)
     fn attribute(&mut self, name: &'static str, value: &'static str) -> Result<(), Error>;
 
     /// Define a text. The cursor moves past this text.
-    fn text(&mut self, text: &str) -> Result<A::Text, Error>;
+    fn text(&mut self, text: &str) -> Result<H::Text, Error>;
 
     /// Exit the current element, advancing the cursor position to
     /// the element's next sibling.
@@ -51,7 +51,7 @@ pub trait DomVM<'doc, A: Awe> {
     /// Does not mutate the DOM.
     /// This means we can skip parts of the DOM tree, moving the cursor directly
     /// into this element's first child.
-    fn push_element_context(&mut self, element: A::Element);
+    fn push_element_context(&mut self, element: H::Element);
 
     /// Pop element context,
     /// Restoring the state to what it was before `push_element_context`.
@@ -92,24 +92,22 @@ impl<T: Eq> Var<T> {
     }
 }
 
-pub trait Component<'p, A: Awe> {
+pub trait Component<'p, H: Hypp> {
     type Props: 'p;
 
     /// Update the component, synchronizing its resulting
     /// state using the DomVM.
-    fn update(&mut self, _props: Self::Props, __vm: &mut dyn DomVM<A>) {}
+    fn update(&mut self, _props: Self::Props, __vm: &mut dyn DomVM<H>) {}
 
     /// Unmount the component, removing all its nodes
     /// from under its mount point in the tree, using the DomVM.
-    fn unmount(&mut self, __vm: &mut dyn DomVM<A>);
+    fn unmount(&mut self, __vm: &mut dyn DomVM<H>);
 }
 
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
 pub type PhantomField<A> = PhantomData<A>;
 
-mod debugging {
-    use super::*;
-}
+mod debugging {}
 
 #[cfg(test)]
 mod tests {
@@ -117,7 +115,7 @@ mod tests {
 
     use wasm_bindgen_test::*;
 
-    use yay_macros::*;
+    use hypp_macros::*;
 
     #[component(
         <div>
@@ -132,7 +130,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn render_foo_web() {
-        let awe = web::WebAwe::new();
+        let awe = web::WebHypp::new();
         let _comp = Foo::mount(
             FooProps {
                 is_cool: true,
@@ -145,7 +143,7 @@ mod tests {
 
     #[test]
     fn render_foo_server() {
-        let awe = server::ServerAwe::new();
+        let awe = server::ServerHypp::new();
         let mut comp = Foo::mount(
             FooProps {
                 is_cool: true,
@@ -195,7 +193,7 @@ mod tests {
 
     #[test]
     fn render_baz_server() {
-        let awe = server::ServerAwe::new();
+        let awe = server::ServerHypp::new();
         Baz::mount(
             BazProps {
                 __phantom: std::marker::PhantomData,
@@ -226,7 +224,7 @@ mod tests {
 
     #[test]
     fn render_conditional_server() {
-        let awe = server::ServerAwe::new();
+        let awe = server::ServerHypp::new();
         let mut builder = awe.builder_at_body();
         let mut comp = Conditional::mount(
             ConditionalProps {
