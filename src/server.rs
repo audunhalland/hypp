@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::error::Error;
 
-use super::{AsNode, DomVM, Hypp};
+use super::{AsNode, ConstOpCode, DomVM, Hypp};
 
 type Node = Rc<ServerNode>;
 
@@ -159,6 +159,14 @@ impl ServerBuilder {
 }
 
 impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
+    fn const_exec_element(&mut self, _program: &[ConstOpCode]) -> Result<Node, Error> {
+        panic!();
+    }
+
+    fn const_exec_text(&mut self, _program: &[ConstOpCode]) -> Result<Node, Error> {
+        panic!()
+    }
+
     fn enter_element(&mut self, tag_name: &'static str) -> Result<Node, Error> {
         let element = Rc::new(ServerNode::Element(Element {
             tag_name,

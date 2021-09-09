@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::{AsNode, DomVM, Hypp};
+use super::{AsNode, ConstOpCode, DomVM, Hypp};
 
 pub struct WebHypp {
     _window: web_sys::Window,
@@ -82,6 +82,14 @@ impl<'a> WebBuilder<'a> {
 }
 
 impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
+    fn const_exec_element(&mut self, _program: &[ConstOpCode]) -> Result<web_sys::Element, Error> {
+        panic!();
+    }
+
+    fn const_exec_text(&mut self, _program: &[ConstOpCode]) -> Result<web_sys::Text, Error> {
+        panic!()
+    }
+
     fn enter_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
         let element = self.hypp.document.create_element(tag_name).unwrap();
         self.append_child(element.as_node())?;

@@ -21,6 +21,14 @@ pub trait Hypp: Sized {
     fn set_text(node: &Self::Text, text: &str);
 }
 
+pub enum ConstOpCode {
+    EnterElement(&'static str),
+    TextAttribute(&'static str, &'static str),
+    Text(&'static str),
+    ExitElement,
+    RemoveElement(&'static str),
+}
+
 ///
 /// DomVM
 ///
@@ -28,6 +36,14 @@ pub trait Hypp: Sized {
 /// to do various operations to mutate it.
 ///
 pub trait DomVM<'doc, H: Hypp> {
+    /// Execute a series of opcodes.
+    /// The last opcode should produce an element.
+    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
+
+    /// Execute a series of opcodes.
+    /// The last opcode should produce a text node.
+    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
+
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
     fn enter_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
@@ -279,4 +295,6 @@ mod tests {
 
         assert_eq!(&awe.render(), "<body/>");
     }
+
+    mod test_code {}
 }

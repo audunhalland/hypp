@@ -103,6 +103,8 @@ pub enum OpCode {
 pub struct Arm {
     /// The ident of the enum variant to instantiate
     pub enum_variant_ident: syn::Ident,
+    /// The ident of the function that mounts the component arm
+    pub mount_fn_ident: syn::Ident,
     /// The value match pattern matching this arm
     pub pattern: syn::Pat,
     /// The code 'block' to execute

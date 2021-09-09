@@ -160,60 +160,67 @@ fn collect_variant_enums(
             ir::OpCode::Match {
                 enum_type, arms, ..
             } => {
-                let enum_ident = enum_type.to_tokens(root_idents);
-
-                let variant_defs = arms.iter().map(|arm| {
-                    let ident = &arm.enum_variant_ident;
-                    let struct_field_defs = arm
-                        .block
-                        .struct_fields
-                        .iter()
-                        .map(|field| field.field_def_tokens(root_idents));
-
-                    quote! {
-                        #ident { #(#struct_field_defs)* },
-                    }
-                });
-
-                let unmount_arms = arms.iter().map(
-                    |ir::Arm {
-                         enum_variant_ident,
-                         block,
-                         ..
-                     }| {
-                        let fields = block
-                            .struct_fields
-                            .iter()
-                            .map(ir::StructField::struct_param_tokens);
-                        let unmount_stmts = unmount_stmts(&block.program, Scope::Enum);
-
-                        quote! {
-                            Self::#enum_variant_ident { #(#fields)* } => {
-                                #unmount_stmts
-                            },
-                        }
-                    },
-                );
-
-                output.push(quote! {
-                    enum #enum_ident {
-                        #(#variant_defs)*
-                    }
-
-                    impl #enum_ident {
-                        pub fn unmount<H: Hypp>(&mut self, __vm: &mut dyn DomVM<H>) {
-                            match self {
-                                #(#unmount_arms)*
-                            }
-                        }
-                    }
-                });
-
+                output.push(generate_variant_enum(enum_type, arms, root_idents));
                 for arm in arms {
                     collect_variant_enums(&arm.block.program, root_idents, output);
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn generate_variant_enum(
+    enum_type: &ir::StructFieldType,
+    arms: &[ir::Arm],
+    root_idents: &RootIdents,
+) -> TokenStream {
+    let enum_ident = enum_type.to_tokens(root_idents);
+
+    let variant_defs = arms.iter().map(|arm| {
+        let ident = &arm.enum_variant_ident;
+        let struct_field_defs = arm
+            .block
+            .struct_fields
+            .iter()
+            .map(|field| field.field_def_tokens(root_idents));
+
+        quote! {
+            #ident { #(#struct_field_defs)* },
+        }
+    });
+
+    let unmount_arms = arms.iter().map(
+        |ir::Arm {
+             enum_variant_ident,
+             block,
+             ..
+         }| {
+            let fields = block
+                .struct_fields
+                .iter()
+                .map(ir::StructField::struct_param_tokens);
+            let unmount_stmts = unmount_stmts(&block.program, Scope::Enum);
+
+            quote! {
+                Self::#enum_variant_ident { #(#fields)* } => {
+                    #unmount_stmts
+                },
+            }
+        },
+    );
+
+    quote! {
+        enum #enum_ident {
+            #(#variant_defs)*
+        }
+
+        impl #enum_ident {
+            pub fn unmount<H: Hypp>(&mut self, __vm: &mut dyn DomVM<H>) {
+                match self {
+                    #(#unmount_arms)*
+                }
+            }
         }
     }
 }
@@ -296,10 +303,7 @@ impl ir::OpCode {
                 __vm.exit_element()#err_handler;
             },
             Self::Component {
-                parent,
-                field,
-                path,
-                props,
+                field, path, props, ..
             } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
                     ast::AttrValue::ImplicitTrue => quote! {
@@ -326,11 +330,11 @@ impl ir::OpCode {
                 }
             }
             Self::Match {
-                parent,
                 field,
                 enum_type,
                 expr,
                 arms,
+                ..
             } => {
                 let enum_ident = enum_type.to_tokens(root_idents);
 
@@ -339,6 +343,7 @@ impl ir::OpCode {
                          enum_variant_ident,
                          pattern,
                          block,
+                         ..
                      }| {
                         let mount_stmts = block
                             .program
@@ -429,6 +434,7 @@ impl ir::OpCode {
                          enum_variant_ident,
                          pattern,
                          block,
+                         ..
                      }| {
                         let fields = block
                             .struct_fields
@@ -453,6 +459,7 @@ impl ir::OpCode {
                          enum_variant_ident,
                          pattern,
                          block,
+                         ..
                      }| {
                         // BUG: Code duplication with constructor.
                         // These are constant and could be moved to separate function?
