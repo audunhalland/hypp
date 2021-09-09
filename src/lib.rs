@@ -211,10 +211,48 @@ mod tests {
     #[component_dbg(
         <div>
             if draw_stuff {
-                <div>
-                </div>
+                <span>"Hello world"</span>
             }
         </div>
     )]
     fn Conditional(draw_stuff: bool) {}
+
+    #[test]
+    fn render_conditional_server() {
+        let awe = server::ServerAwe::new();
+        let mut builder = awe.builder_at_body();
+        let mut comp = Conditional::mount(
+            ConditionalProps {
+                draw_stuff: false,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut builder,
+        )
+        .unwrap();
+
+        assert_eq!(&awe.render(), "<body><div/></body>");
+
+        comp.update(
+            ConditionalProps {
+                draw_stuff: true,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut builder,
+        );
+
+        assert_eq!(
+            &awe.render(),
+            "<body><div><span>Hello world</span></div></body>"
+        );
+
+        comp.update(
+            ConditionalProps {
+                draw_stuff: false,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut builder,
+        );
+
+        assert_eq!(&awe.render(), "<body><div/></body>");
+    }
 }

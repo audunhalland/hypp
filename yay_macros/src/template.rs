@@ -12,7 +12,7 @@ impl Template {
 
         let mut ctx = Context { enum_count: 0 };
 
-        root_block.analyze_node(root, &mut ctx);
+        root_block.analyze_node(root, None, &mut ctx);
 
         Self { root_block }
     }
@@ -31,116 +31,161 @@ impl Context {
     }
 }
 
+#[derive(Copy, Clone)]
+enum Constness {
+    Const,
+    Variable,
+}
+
+impl Constness {
+    fn and(self, other: Self) -> Self {
+        match self {
+            Self::Const => other,
+            Self::Variable => self,
+        }
+    }
+}
+
 impl ir::Block {
-    fn next_variable_index(&mut self) -> usize {
+    fn next_field_id(&mut self) -> ir::FieldId {
         let index = self.variable_count;
         self.variable_count += 1;
-        index
+        ir::FieldId(index)
     }
 
-    fn gen_node_ident(&mut self) -> syn::Ident {
-        quote::format_ident!("node{}", self.next_variable_index())
-    }
-
-    fn gen_var_field_ident(&mut self) -> syn::Ident {
-        quote::format_ident!("var{}", self.next_variable_index())
-    }
-
-    fn gen_comp_field_ident(&mut self) -> syn::Ident {
-        quote::format_ident!("comp{}", self.next_variable_index())
-    }
-
-    fn analyze_node(&mut self, node: markup::Node, ctx: &mut Context) {
+    fn analyze_node(
+        &mut self,
+        node: markup::Node,
+        parent: Option<ir::FieldId>,
+        ctx: &mut Context,
+    ) -> Constness {
         match node {
             markup::Node::Element(element) => self.analyze_element(element, ctx),
             markup::Node::Fragment(nodes) => {
+                let mut constness = Constness::Const;
                 for node in nodes {
-                    self.analyze_node(node, ctx);
+                    constness = constness.and(self.analyze_node(node, parent, ctx));
                 }
-                panic!("TODO: implement fragment");
+
+                constness
             }
             markup::Node::Text(text) => self.analyze_text(text),
             markup::Node::Variable(variable) => self.analyze_variable(variable),
-            markup::Node::Component(component) => self.analyze_component(component),
-            markup::Node::If(the_if) => self.analyze_if(the_if, ctx),
-        };
+            markup::Node::Component(component) => self.analyze_component(component, parent),
+            markup::Node::If(the_if) => self.analyze_if(the_if, parent, ctx),
+        }
     }
 
-    fn analyze_element(&mut self, element: markup::Element, ctx: &mut Context) {
+    fn analyze_element(&mut self, element: markup::Element, ctx: &mut Context) -> Constness {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
-        self.program.push(ir::OpCode::EnterElement { tag_name });
+        // We don't know if we should allocate this field yet
+        let field = self.next_field_id();
+
+        self.program
+            .push(ir::OpCode::EnterElement { field, tag_name });
+
+        let mut constness = Constness::Const;
 
         for child in element.children {
-            self.analyze_node(child, ctx);
+            constness = constness.and(self.analyze_node(child, Some(field), ctx));
         }
 
         self.program.push(ir::OpCode::ExitElement);
+
+        match constness {
+            Constness::Variable => {
+                // Need to store this field
+                self.struct_fields.push(ir::StructField {
+                    field,
+                    ty: ir::StructFieldType::DomElement,
+                });
+            }
+            _ => {}
+        }
+
+        constness
     }
 
-    fn analyze_text(&mut self, text: markup::Text) {
+    fn analyze_text(&mut self, text: markup::Text) -> Constness {
         self.program.push(ir::OpCode::TextConst { text: text.0 });
+        Constness::Const
     }
 
-    fn analyze_variable(&mut self, variable: variable::Variable) {
-        let node_ident = self.gen_node_ident();
+    fn analyze_variable(&mut self, variable: variable::Variable) -> Constness {
+        let node_field = self.next_field_id();
         self.struct_fields.push(ir::StructField {
-            ident: node_ident.clone(),
+            field: node_field,
             ty: ir::StructFieldType::DomText,
         });
 
-        let variable_ident = self.gen_var_field_ident();
+        let variable_field = self.next_field_id();
         self.struct_fields.push(ir::StructField {
-            ident: variable_ident.clone(),
+            field: variable_field,
             ty: ir::StructFieldType::Variable(variable.ty),
         });
 
         self.program.push(ir::OpCode::TextVar {
-            node_binding: node_ident.clone(),
-            variable_binding: variable_ident,
+            node_field,
+            variable_field,
             expr: variable.ident.clone(),
         });
+
+        Constness::Variable
     }
 
-    fn analyze_component(&mut self, component: markup::Component) {
-        let ident = self.gen_comp_field_ident();
+    fn analyze_component(
+        &mut self,
+        component: markup::Component,
+        parent: Option<ir::FieldId>,
+    ) -> Constness {
+        let field = self.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
 
         self.program.push(ir::OpCode::Component {
-            binding: ident.clone(),
+            parent,
+            field,
             path: component_path.clone(),
             props: component.attrs.clone(),
         });
 
         self.struct_fields.push(ir::StructField {
-            ident,
+            field,
             ty: ir::StructFieldType::Component(component_path),
         });
+
+        Constness::Variable
     }
 
-    fn analyze_if(&mut self, the_if: markup::If, ctx: &mut Context) {
+    fn analyze_if(
+        &mut self,
+        the_if: markup::If,
+        parent: Option<ir::FieldId>,
+        ctx: &mut Context,
+    ) -> Constness {
         let test = the_if.test;
-        let variant_field_ident = self.gen_var_field_ident();
+        let field = self.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
         let mut then_block = ir::Block::default();
-        then_block.analyze_node(*the_if.then_branch, ctx);
+        then_block.analyze_node(*the_if.then_branch, None, ctx);
 
         let mut else_block = ir::Block::default();
 
         match the_if.else_branch {
             Some(markup::Else::If(_, else_if)) => {
-                else_block.analyze_if(*else_if, ctx);
+                else_block.analyze_if(*else_if, None, ctx);
             }
             Some(markup::Else::Node(_, node)) => {
-                else_block.analyze_node(*node, ctx);
+                else_block.analyze_node(*node, None, ctx);
             }
             None => {}
         }
 
         self.program.push(ir::OpCode::Match {
-            binding: variant_field_ident.clone(),
+            parent,
+            field,
             enum_type: enum_type.clone(),
             expr: test,
             arms: vec![
@@ -158,8 +203,10 @@ impl ir::Block {
         });
 
         self.struct_fields.push(ir::StructField {
-            ident: variant_field_ident,
+            field,
             ty: enum_type,
         });
+
+        Constness::Variable
     }
 }

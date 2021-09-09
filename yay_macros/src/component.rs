@@ -183,13 +183,10 @@ fn collect_variant_enums(
                          block,
                          ..
                      }| {
-                        let fields = block.struct_fields.iter().map(|field| {
-                            let ident = &field.ident;
-
-                            quote! {
-                                #ident,
-                            }
-                        });
+                        let fields = block
+                            .struct_fields
+                            .iter()
+                            .map(ir::StructField::struct_param_tokens);
                         let unmount_stmts = unmount_stmts(&block.program);
 
                         quote! {
@@ -245,20 +242,16 @@ enum Lifecycle {
 
 impl ir::StructField {
     fn field_def_tokens(&self, root_idents: &RootIdents) -> TokenStream {
-        let ident = &self.ident;
+        let field = &self.field;
         let ty = self.ty.to_tokens(root_idents);
 
-        quote! {
-            #ident: #ty,
-        }
+        quote! { #field: #ty, }
     }
 
     fn struct_param_tokens(&self) -> TokenStream {
-        let ident = &self.ident;
+        let field = &self.field;
 
-        quote! {
-            #ident,
-        }
+        quote! { #field, }
     }
 }
 
@@ -272,25 +265,28 @@ impl ir::OpCode {
         };
 
         match self {
-            Self::EnterElement { tag_name } => quote! {
-                __vm.enter_element(#tag_name)#err_handler;
+            Self::EnterElement { field, tag_name } => quote! {
+                let #field = __vm.enter_element(#tag_name)#err_handler;
             },
             Self::TextConst { text } => quote! {
                 __vm.text(#text)#err_handler;
             },
             Self::TextVar {
-                node_binding,
-                variable_binding,
+                node_field,
+                variable_field,
                 expr,
-            } => quote! {
-                let #node_binding = __vm.text(#expr)#err_handler;
-                let #variable_binding = Var::new();
-            },
+            } => {
+                quote! {
+                    let #node_field = __vm.text(#expr)#err_handler;
+                    let #variable_field = Var::new();
+                }
+            }
             Self::ExitElement => quote! {
                 __vm.exit_element()#err_handler;
             },
             Self::Component {
-                binding,
+                parent,
+                field,
                 path,
                 props,
             } => {
@@ -309,7 +305,7 @@ impl ir::OpCode {
                 let props_path = path.props_path();
 
                 quote! {
-                    let #binding = #component_path::mount(
+                    let #field = #component_path::mount(
                         #props_path {
                             #(#prop_list)*
                             __phantom: std::marker::PhantomData
@@ -319,7 +315,8 @@ impl ir::OpCode {
                 }
             }
             Self::Match {
-                binding,
+                parent,
+                field,
                 enum_type,
                 expr,
                 arms,
@@ -354,7 +351,7 @@ impl ir::OpCode {
                 );
 
                 quote! {
-                    let #binding = match #expr {
+                    let #field = match #expr {
                         #(#arms)*
                     };
                 }
@@ -366,16 +363,17 @@ impl ir::OpCode {
     fn update_stmts(&self, root_idents: &RootIdents, nesting: usize) -> TokenStream {
         match self {
             Self::TextVar {
-                node_binding,
-                variable_binding,
+                node_field,
+                variable_field,
                 expr,
             } => quote! {
-                if let Some(v) = self.#variable_binding.update(#expr) {
-                    A::set_text(&self.#node_binding, v);
+                if let Some(v) = self.#variable_field.update(#expr) {
+                    A::set_text(&self.#node_field, v);
                 }
             },
             Self::Component {
-                binding,
+                parent,
+                field,
                 path,
                 props,
             } => {
@@ -393,9 +391,9 @@ impl ir::OpCode {
                 let props_path = path.props_path();
 
                 let field_path = if nesting == 0 {
-                    quote! { self.#binding }
+                    quote! { self.#field }
                 } else {
-                    quote! { #binding }
+                    quote! { #field }
                 };
 
                 quote! {
@@ -406,7 +404,8 @@ impl ir::OpCode {
                 }
             }
             Self::Match {
-                binding,
+                parent,
+                field,
                 enum_type,
                 expr,
                 arms,
@@ -424,13 +423,10 @@ impl ir::OpCode {
                          pattern,
                          block,
                      }| {
-                        let fields = block.struct_fields.iter().map(|field| {
-                            let ident = &field.ident;
-
-                            quote! {
-                                #ident,
-                            }
-                        });
+                        let fields = block
+                            .struct_fields
+                            .iter()
+                            .map(ir::StructField::struct_param_tokens);
 
                         let update_stmts = block
                             .program
@@ -467,10 +463,10 @@ impl ir::OpCode {
 
                         quote! {
                             (_, #pattern) => {
-                                self.#binding.unmount(__vm);
+                                self.#field.unmount(__vm);
                                 #(#mount_stmts)*
 
-                                self.#binding = #enum_ident::#enum_variant_ident {
+                                self.#field = #enum_ident::#enum_variant_ident {
                                     #(#struct_params)*
                                 }
                            },
@@ -478,13 +474,18 @@ impl ir::OpCode {
                     },
                 );
 
+                let push = PushElementContext(*parent);
+                let pop = PopElementContext(*parent);
+
                 quote! {
-                    match (&mut self.#binding, #expr) {
+                    #push
+                    match (&mut self.#field, #expr) {
                         #(#matching_arms)*
                         #(#nonmatching_arms)*
 
                         _ => {}
                     }
+                    #pop
                 }
             }
             _ => TokenStream::new(),
@@ -503,7 +504,7 @@ fn unmount_stmts(program: &[ir::OpCode]) -> TokenStream {
 
     for opcode in program {
         match opcode {
-            ir::OpCode::EnterElement { tag_name } => {
+            ir::OpCode::EnterElement { tag_name, .. } => {
                 if element_level == 0 {
                     node_removals.push(quote! {
                         __vm.remove_element(#tag_name).unwrap();
@@ -521,14 +522,14 @@ fn unmount_stmts(program: &[ir::OpCode]) -> TokenStream {
                     });
                 }
             }
-            ir::OpCode::Component { binding, .. } => {
+            ir::OpCode::Component { field, .. } => {
                 unmount_calls.push(quote! {
-                    self.#binding.unmount(__vm);
+                    self.#field.unmount(__vm);
                 });
             }
-            ir::OpCode::Match { binding, .. } => {
+            ir::OpCode::Match { field, .. } => {
                 unmount_calls.push(quote! {
-                    self.#binding.unmount(__vm);
+                    self.#field.unmount(__vm);
                 });
             }
         }
@@ -543,6 +544,7 @@ fn unmount_stmts(program: &[ir::OpCode]) -> TokenStream {
 impl ir::StructFieldType {
     fn to_tokens(&self, root_idents: &RootIdents) -> TokenStream {
         match self {
+            Self::DomElement => quote! { A::Element },
             Self::DomText => quote! { A::Text },
             Self::Component(path) => {
                 let type_path = &path.type_path;
@@ -556,6 +558,30 @@ impl ir::StructFieldType {
             Self::Variable(ty) => {
                 quote! { Var<#ty> }
             }
+        }
+    }
+}
+
+struct PushElementContext(Option<ir::FieldId>);
+
+impl quote::ToTokens for PushElementContext {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        if let Some(parent) = &self.0 {
+            tokens.extend(quote! {
+                __vm.push_element_context(self.#parent.clone());
+            });
+        }
+    }
+}
+
+struct PopElementContext(Option<ir::FieldId>);
+
+impl quote::ToTokens for PopElementContext {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        if let Some(parent) = &self.0 {
+            tokens.extend(quote! {
+                __vm.pop_element_context();
+            });
         }
     }
 }

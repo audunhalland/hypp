@@ -4,13 +4,24 @@ use crate::markup;
 
 /// A node reference that needs to be stored within the component
 pub struct StructField {
-    pub ident: syn::Ident,
+    pub field: FieldId,
     pub ty: StructFieldType,
+}
+
+#[derive(Clone, Copy)]
+pub struct FieldId(pub usize);
+
+impl quote::ToTokens for FieldId {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = quote::format_ident!("__f{}", self.0);
+        tokens.extend(quote::quote! { #ident });
+    }
 }
 
 /// Type of a struct field
 #[derive(Clone)]
 pub enum StructFieldType {
+    DomElement,
     DomText,
     Component(ComponentPath),
     Enum(usize),
@@ -52,15 +63,18 @@ pub struct Block {
 
 pub enum OpCode {
     /// __vm.enter_element(tag_name)?
-    EnterElement { tag_name: syn::LitStr },
+    EnterElement {
+        field: FieldId,
+        tag_name: syn::LitStr,
+    },
 
     /// __vm.text(text)?
     TextConst { text: syn::LitStr },
 
     /// let node_binding = __vm.text(expr)?;
     TextVar {
-        node_binding: syn::Ident,
-        variable_binding: syn::Ident,
+        node_field: FieldId,
+        variable_field: FieldId,
         expr: syn::Ident,
     },
 
@@ -69,14 +83,16 @@ pub enum OpCode {
 
     /// let binding = path::new(props, __vm)
     Component {
-        binding: syn::Ident,
+        parent: Option<FieldId>,
+        field: FieldId,
         path: ComponentPath,
         props: Vec<(syn::Ident, markup::AttrValue)>,
     },
 
     // let binding = match expr { arms };
     Match {
-        binding: syn::Ident,
+        parent: Option<FieldId>,
+        field: FieldId,
         enum_type: StructFieldType,
         expr: syn::Expr,
         arms: Vec<Arm>,

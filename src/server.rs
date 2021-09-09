@@ -84,15 +84,20 @@ impl ToString for ServerNode {
                 ServerNode::Element(element) => {
                     buf.push('<');
                     buf.push_str(element.tag_name);
-                    buf.push('>');
 
-                    for child in element.children.borrow().iter() {
-                        recurse(child, buf);
+                    if element.children.borrow().is_empty() {
+                        buf.push_str("/>");
+                    } else {
+                        buf.push('>');
+
+                        for child in element.children.borrow().iter() {
+                            recurse(child, buf);
+                        }
+
+                        buf.push_str("</");
+                        buf.push_str(element.tag_name);
+                        buf.push('>');
                     }
-
-                    buf.push_str("</");
-                    buf.push_str(element.tag_name);
-                    buf.push('>');
                 }
                 ServerNode::Fragment(nodes) => {
                     for child in nodes.borrow().iter() {
