@@ -53,14 +53,48 @@ impl Constness {
 struct BlockBuilder {
     pub struct_fields: Vec<ir::StructField>,
     pub program: Vec<ir::OpCode>,
+
+    pub statements: Vec<ir::Statement>,
+
+    current_dom_program: Vec<ir::DomOpCode>,
 }
 
 impl BlockBuilder {
-    fn to_block(self) -> ir::Block {
+    fn to_block(mut self) -> ir::Block {
+        self.flush_dom_program(None);
+
         ir::Block {
             struct_fields: self.struct_fields,
             program: self.program,
         }
+    }
+
+    fn flush_dom_program(&mut self, assign_to: Option<ir::FieldId>) {
+        if self.current_dom_program.is_empty() {
+            return;
+        }
+
+        let mut dom_program = vec![];
+        std::mem::swap(&mut self.current_dom_program, &mut dom_program);
+
+        match dom_program.last() {
+            None => {}
+            Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
+                self.statements.push(ir::Statement {
+                    assign_to,
+                    expression: ir::Expression::ConstDomElement(dom_program),
+                });
+            }
+            Some(ir::DomOpCode::TextConst(_)) => {
+                panic!("There is no point storing a constant text node");
+            }
+        }
+    }
+
+    fn push_statement(&mut self, statement: ir::Statement) {
+        self.flush_dom_program(None);
+
+        self.statements.push(statement);
     }
 
     fn lower_ast(
@@ -92,6 +126,9 @@ impl BlockBuilder {
         // We don't know if we should allocate this field yet
         let field = ctx.next_field_id();
 
+        self.current_dom_program
+            .push(ir::DomOpCode::EnterElement(tag_name.clone()));
+
         self.program
             .push(ir::OpCode::EnterElement { field, tag_name });
 
@@ -100,6 +137,8 @@ impl BlockBuilder {
         for child in element.children {
             constness = constness.and(self.lower_ast(child, Some(field), ctx));
         }
+
+        self.current_dom_program.push(ir::DomOpCode::ExitElement);
 
         self.program.push(ir::OpCode::ExitElement);
 
@@ -118,18 +157,23 @@ impl BlockBuilder {
     }
 
     fn lower_text(&mut self, text: ast::Text) -> Constness {
-        self.program.push(ir::OpCode::TextConst { text: text.0 });
+        self.program.push(ir::OpCode::TextConst {
+            text: text.0.clone(),
+        });
+        self.current_dom_program
+            .push(ir::DomOpCode::TextConst(text.0));
         Constness::Const
     }
 
     fn lower_variable(&mut self, variable: variable::Variable, ctx: &mut Context) -> Constness {
         let node_field = ctx.next_field_id();
+        let variable_field = ctx.next_field_id();
+
         self.struct_fields.push(ir::StructField {
             field: node_field,
             ty: ir::StructFieldType::DomText,
         });
 
-        let variable_field = ctx.next_field_id();
         self.struct_fields.push(ir::StructField {
             field: variable_field,
             ty: ir::StructFieldType::Variable(variable.ty),
@@ -139,6 +183,15 @@ impl BlockBuilder {
             node_field,
             variable_field,
             expr: variable.ident.clone(),
+        });
+
+        self.push_statement(ir::Statement {
+            assign_to: Some(node_field),
+            expression: ir::Expression::VariableDomText(variable.ident.clone()),
+        });
+        self.push_statement(ir::Statement {
+            assign_to: Some(variable_field),
+            expression: ir::Expression::LocalVar,
         });
 
         Constness::Variable
@@ -163,7 +216,16 @@ impl BlockBuilder {
 
         self.struct_fields.push(ir::StructField {
             field,
-            ty: ir::StructFieldType::Component(component_path),
+            ty: ir::StructFieldType::Component(component_path.clone()),
+        });
+
+        self.push_statement(ir::Statement {
+            assign_to: Some(field),
+            expression: ir::Expression::Component {
+                parent,
+                path: component_path,
+                props: component.attrs,
+            },
         });
 
         Constness::Variable

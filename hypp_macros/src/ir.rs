@@ -99,6 +99,48 @@ pub enum OpCode {
     },
 }
 
+/// Something we assign to a variable
+pub struct Statement {
+    /// Where to assign the expression, or nothing if the expression is
+    /// not to be assigned to anything
+    pub assign_to: Option<FieldId>,
+
+    /// The expression to evaluate
+    pub expression: Expression,
+}
+
+pub enum Expression {
+    /// An element which is the last produced value from the DOM program
+    ConstDomElement(Vec<DomOpCode>),
+
+    /// A text variable
+    VariableDomText(syn::Ident),
+
+    /// A local variable field (Var<T> field)
+    LocalVar,
+
+    /// A component instantiation
+    Component {
+        parent: Option<FieldId>,
+        path: ComponentPath,
+        props: Vec<(syn::Ident, ast::AttrValue)>,
+    },
+
+    /// A match expression (something conditional)
+    Match {
+        parent: Option<FieldId>,
+        enum_type: StructFieldType,
+        expr: syn::Expr,
+        arms: Vec<Arm>,
+    },
+}
+
+pub enum DomOpCode {
+    EnterElement(syn::LitStr),
+    TextConst(syn::LitStr),
+    ExitElement,
+}
+
 /// An arm of a conditional
 pub struct Arm {
     /// The ident of the enum variant to instantiate
