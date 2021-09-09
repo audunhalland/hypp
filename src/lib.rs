@@ -216,6 +216,8 @@ mod tests {
                 <span>"Hello"</span>
                 if world {
                     <a>"World"</a>
+                } else {
+                    <span>"Universe"</span>
                 }
             }
         </div>
@@ -272,7 +274,7 @@ mod tests {
 
         assert_eq!(
             &awe.render(),
-            "<body><div><span>Hello<a>World</a></span></div></body>"
+            "<body><div><span>Hello</span><a>World</a></div></body>"
         );
 
         comp.unmount(&mut builder);

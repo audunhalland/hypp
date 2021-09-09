@@ -1,3 +1,8 @@
+//!
+//! Abstract Syntax Tree data types,
+//! plus parsing of token stream into AST.
+//!
+
 use std::fmt::Display;
 
 use syn::parse::{Parse, ParseStream};

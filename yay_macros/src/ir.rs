@@ -1,6 +1,6 @@
 //! Intermediate Representation used during codegen
 
-use crate::markup;
+use crate::ast;
 
 /// A node reference that needs to be stored within the component
 pub struct StructField {
@@ -70,7 +70,8 @@ pub enum OpCode {
     /// __vm.text(text)?
     TextConst { text: syn::LitStr },
 
-    /// let node_binding = __vm.text(expr)?;
+    /// let node_field = __vm.text(expr)?;
+    /// let variable_field = Var::new();
     TextVar {
         node_field: FieldId,
         variable_field: FieldId,
@@ -80,15 +81,15 @@ pub enum OpCode {
     /// __vm.exit_element()?
     ExitElement,
 
-    /// let binding = path::new(props, __vm)
+    /// let field = path::new(props, __vm)
     Component {
         parent: Option<FieldId>,
         field: FieldId,
         path: ComponentPath,
-        props: Vec<(syn::Ident, markup::AttrValue)>,
+        props: Vec<(syn::Ident, ast::AttrValue)>,
     },
 
-    // let binding = match expr { arms };
+    // let field = match expr { arms };
     Match {
         parent: Option<FieldId>,
         field: FieldId,

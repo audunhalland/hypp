@@ -1,24 +1,18 @@
+use crate::ast;
 use crate::ir;
-use crate::markup;
 use crate::variable;
 
-pub struct Template {
-    pub root_block: ir::Block,
-}
+pub fn lower_root_node(root: ast::Node) -> ir::Block {
+    let mut root_block = ir::Block::default();
 
-impl Template {
-    pub fn analyze(root: markup::Node) -> Self {
-        let mut root_block = ir::Block::default();
+    let mut ctx = Context {
+        variable_count: 0,
+        enum_count: 0,
+    };
 
-        let mut ctx = Context {
-            variable_count: 0,
-            enum_count: 0,
-        };
+    root_block.analyze_node(root, None, &mut ctx);
 
-        root_block.analyze_node(root, None, &mut ctx);
-
-        Self { root_block }
-    }
+    root_block
 }
 
 /// Context used for the whole template
@@ -59,13 +53,13 @@ impl Constness {
 impl ir::Block {
     fn analyze_node(
         &mut self,
-        node: markup::Node,
+        node: ast::Node,
         parent: Option<ir::FieldId>,
         ctx: &mut Context,
     ) -> Constness {
         match node {
-            markup::Node::Element(element) => self.analyze_element(element, ctx),
-            markup::Node::Fragment(nodes) => {
+            ast::Node::Element(element) => self.analyze_element(element, ctx),
+            ast::Node::Fragment(nodes) => {
                 let mut constness = Constness::Const;
                 for node in nodes {
                     constness = constness.and(self.analyze_node(node, parent, ctx));
@@ -73,14 +67,14 @@ impl ir::Block {
 
                 constness
             }
-            markup::Node::Text(text) => self.analyze_text(text),
-            markup::Node::Variable(variable) => self.analyze_variable(variable, ctx),
-            markup::Node::Component(component) => self.analyze_component(component, parent, ctx),
-            markup::Node::If(the_if) => self.analyze_if(the_if, parent, ctx),
+            ast::Node::Text(text) => self.analyze_text(text),
+            ast::Node::Variable(variable) => self.analyze_variable(variable, ctx),
+            ast::Node::Component(component) => self.analyze_component(component, parent, ctx),
+            ast::Node::If(the_if) => self.analyze_if(the_if, parent, ctx),
         }
     }
 
-    fn analyze_element(&mut self, element: markup::Element, ctx: &mut Context) -> Constness {
+    fn analyze_element(&mut self, element: ast::Element, ctx: &mut Context) -> Constness {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         // We don't know if we should allocate this field yet
@@ -111,7 +105,7 @@ impl ir::Block {
         constness
     }
 
-    fn analyze_text(&mut self, text: markup::Text) -> Constness {
+    fn analyze_text(&mut self, text: ast::Text) -> Constness {
         self.program.push(ir::OpCode::TextConst { text: text.0 });
         Constness::Const
     }
@@ -140,7 +134,7 @@ impl ir::Block {
 
     fn analyze_component(
         &mut self,
-        component: markup::Component,
+        component: ast::Component,
         parent: Option<ir::FieldId>,
         ctx: &mut Context,
     ) -> Constness {
@@ -165,7 +159,7 @@ impl ir::Block {
 
     fn analyze_if(
         &mut self,
-        the_if: markup::If,
+        the_if: ast::If,
         parent: Option<ir::FieldId>,
         ctx: &mut Context,
     ) -> Constness {
@@ -179,10 +173,10 @@ impl ir::Block {
         let mut else_block = ir::Block::default();
 
         match the_if.else_branch {
-            Some(markup::Else::If(_, else_if)) => {
+            Some(ast::Else::If(_, else_if)) => {
                 else_block.analyze_if(*else_if, None, ctx);
             }
-            Some(markup::Else::Node(_, node)) => {
+            Some(ast::Else::Node(_, node)) => {
                 else_block.analyze_node(*node, None, ctx);
             }
             None => {}

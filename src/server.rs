@@ -190,7 +190,8 @@ impl<'doc> DomVM<'doc, ServerAwe> for ServerBuilder {
         }
     }
 
-    fn remove_element(&mut self, _tag_name: &'static str) -> Result<(), Error> {
+    fn remove_element(&mut self, tag_name: &'static str) -> Result<(), Error> {
+        println!("remove element: {}", tag_name);
         let parent = self.parent_element()?;
         let child = parent.children.borrow_mut().remove(0);
 

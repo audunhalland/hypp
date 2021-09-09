@@ -1,11 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::ast;
 use crate::ir;
-use crate::markup;
-use crate::template;
 
-pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -> TokenStream {
+pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> TokenStream {
     let RootBlock {
         root_idents,
         props_struct,
@@ -14,7 +13,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
         props_destructuring,
         fn_stmts,
         program,
-    } = apply_root_block(template.root_block, input_fn);
+    } = process_root_block(root_block, input_fn);
 
     let component_ident = &root_idents.component_ident;
     let props_ident = &root_idents.props_ident;
@@ -76,7 +75,7 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
     }
 }
 
-fn apply_root_block(
+fn process_root_block(
     ir::Block {
         struct_fields,
         program,
@@ -303,13 +302,13 @@ impl ir::OpCode {
                 props,
             } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
-                    markup::AttrValue::ImplicitTrue => quote! {
+                    ast::AttrValue::ImplicitTrue => quote! {
                         #name: true,
                     },
-                    markup::AttrValue::Literal(lit) => quote! {
+                    ast::AttrValue::Literal(lit) => quote! {
                         #name: #lit,
                     },
-                    markup::AttrValue::Eval(ident) => quote! {
+                    ast::AttrValue::Eval(ident) => quote! {
                         #name: #ident,
                     },
                 });
@@ -390,13 +389,13 @@ impl ir::OpCode {
                 props,
             } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
-                    markup::AttrValue::ImplicitTrue => quote! {
+                    ast::AttrValue::ImplicitTrue => quote! {
                         #name: true,
                     },
-                    markup::AttrValue::Literal(lit) => quote! {
+                    ast::AttrValue::Literal(lit) => quote! {
                         #name: #lit,
                     },
-                    markup::AttrValue::Eval(ident) => quote! {
+                    ast::AttrValue::Eval(ident) => quote! {
                         #name: #ident,
                     },
                 });
@@ -511,14 +510,13 @@ impl ir::OpCode {
 fn unmount_stmts(program: &[ir::OpCode], scope: Scope) -> TokenStream {
     let mut element_level = 0;
 
-    let mut unmount_calls = vec![];
-    let mut node_removals = vec![];
+    let mut stmts = vec![];
 
     for opcode in program {
         match opcode {
             ir::OpCode::EnterElement { tag_name, .. } => {
                 if element_level == 0 {
-                    node_removals.push(quote! {
+                    stmts.push(quote! {
                         __vm.remove_element(#tag_name).unwrap();
                     });
                 }
@@ -529,20 +527,20 @@ fn unmount_stmts(program: &[ir::OpCode], scope: Scope) -> TokenStream {
             }
             ir::OpCode::TextConst { .. } | ir::OpCode::TextVar { .. } => {
                 if element_level == 0 {
-                    node_removals.push(quote! {
+                    stmts.push(quote! {
                         __vm.remove_text().unwrap();
                     });
                 }
             }
             ir::OpCode::Component { field, .. } => {
                 let field_ref = FieldRef(*field, scope);
-                unmount_calls.push(quote! {
+                stmts.push(quote! {
                     #field_ref.unmount(__vm);
                 });
             }
             ir::OpCode::Match { field, .. } => {
                 let field_ref = FieldRef(*field, scope);
-                unmount_calls.push(quote! {
+                stmts.push(quote! {
                     #field_ref.unmount(__vm);
                 });
             }
@@ -550,8 +548,7 @@ fn unmount_stmts(program: &[ir::OpCode], scope: Scope) -> TokenStream {
     }
 
     quote! {
-        #(#unmount_calls)*
-        #(#node_removals)*
+        #(#stmts)*
     }
 }
 
