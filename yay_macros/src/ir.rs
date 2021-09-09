@@ -56,7 +56,6 @@ impl ComponentPath {
 /// A 'block' of code that should run atomically.
 #[derive(Default)]
 pub struct Block {
-    pub variable_count: usize,
     pub struct_fields: Vec<StructField>,
     pub program: Vec<OpCode>,
 }

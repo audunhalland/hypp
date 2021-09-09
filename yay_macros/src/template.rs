@@ -10,7 +10,10 @@ impl Template {
     pub fn analyze(root: markup::Node) -> Self {
         let mut root_block = ir::Block::default();
 
-        let mut ctx = Context { enum_count: 0 };
+        let mut ctx = Context {
+            variable_count: 0,
+            enum_count: 0,
+        };
 
         root_block.analyze_node(root, None, &mut ctx);
 
@@ -20,10 +23,17 @@ impl Template {
 
 /// Context used for the whole template
 pub struct Context {
+    variable_count: usize,
     enum_count: usize,
 }
 
 impl Context {
+    fn next_field_id(&mut self) -> ir::FieldId {
+        let index = self.variable_count;
+        self.variable_count += 1;
+        ir::FieldId(index)
+    }
+
     fn next_enum_index(&mut self) -> usize {
         let index = self.enum_count;
         self.enum_count += 1;
@@ -47,12 +57,6 @@ impl Constness {
 }
 
 impl ir::Block {
-    fn next_field_id(&mut self) -> ir::FieldId {
-        let index = self.variable_count;
-        self.variable_count += 1;
-        ir::FieldId(index)
-    }
-
     fn analyze_node(
         &mut self,
         node: markup::Node,
@@ -70,8 +74,8 @@ impl ir::Block {
                 constness
             }
             markup::Node::Text(text) => self.analyze_text(text),
-            markup::Node::Variable(variable) => self.analyze_variable(variable),
-            markup::Node::Component(component) => self.analyze_component(component, parent),
+            markup::Node::Variable(variable) => self.analyze_variable(variable, ctx),
+            markup::Node::Component(component) => self.analyze_component(component, parent, ctx),
             markup::Node::If(the_if) => self.analyze_if(the_if, parent, ctx),
         }
     }
@@ -80,7 +84,7 @@ impl ir::Block {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         // We don't know if we should allocate this field yet
-        let field = self.next_field_id();
+        let field = ctx.next_field_id();
 
         self.program
             .push(ir::OpCode::EnterElement { field, tag_name });
@@ -112,14 +116,14 @@ impl ir::Block {
         Constness::Const
     }
 
-    fn analyze_variable(&mut self, variable: variable::Variable) -> Constness {
-        let node_field = self.next_field_id();
+    fn analyze_variable(&mut self, variable: variable::Variable, ctx: &mut Context) -> Constness {
+        let node_field = ctx.next_field_id();
         self.struct_fields.push(ir::StructField {
             field: node_field,
             ty: ir::StructFieldType::DomText,
         });
 
-        let variable_field = self.next_field_id();
+        let variable_field = ctx.next_field_id();
         self.struct_fields.push(ir::StructField {
             field: variable_field,
             ty: ir::StructFieldType::Variable(variable.ty),
@@ -138,8 +142,9 @@ impl ir::Block {
         &mut self,
         component: markup::Component,
         parent: Option<ir::FieldId>,
+        ctx: &mut Context,
     ) -> Constness {
-        let field = self.next_field_id();
+        let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
 
@@ -165,7 +170,7 @@ impl ir::Block {
         ctx: &mut Context,
     ) -> Constness {
         let test = the_if.test;
-        let field = self.next_field_id();
+        let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
         let mut then_block = ir::Block::default();

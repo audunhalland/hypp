@@ -107,7 +107,9 @@ pub trait Component<'p, A: Awe> {
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
 pub type PhantomField<A> = PhantomData<A>;
 
-mod debugging {}
+mod debugging {
+    use super::*;
+}
 
 #[cfg(test)]
 mod tests {
@@ -210,12 +212,15 @@ mod tests {
 
     #[component_dbg(
         <div>
-            if draw_stuff {
-                <span>"Hello world"</span>
+            if hello {
+                <span>"Hello"</span>
+                if world {
+                    <a>"World"</a>
+                }
             }
         </div>
     )]
-    fn Conditional(draw_stuff: bool) {}
+    fn Conditional(hello: bool, world: bool) {}
 
     #[test]
     fn render_conditional_server() {
@@ -223,7 +228,8 @@ mod tests {
         let mut builder = awe.builder_at_body();
         let mut comp = Conditional::mount(
             ConditionalProps {
-                draw_stuff: false,
+                hello: false,
+                world: false,
                 __phantom: std::marker::PhantomData,
             },
             &mut builder,
@@ -234,7 +240,31 @@ mod tests {
 
         comp.update(
             ConditionalProps {
-                draw_stuff: true,
+                hello: false,
+                world: true,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut builder,
+        );
+
+        // No change:
+        assert_eq!(&awe.render(), "<body><div/></body>");
+
+        comp.update(
+            ConditionalProps {
+                hello: true,
+                world: false,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut builder,
+        );
+
+        assert_eq!(&awe.render(), "<body><div><span>Hello</span></div></body>");
+
+        comp.update(
+            ConditionalProps {
+                hello: true,
+                world: true,
                 __phantom: std::marker::PhantomData,
             },
             &mut builder,
@@ -242,17 +272,11 @@ mod tests {
 
         assert_eq!(
             &awe.render(),
-            "<body><div><span>Hello world</span></div></body>"
+            "<body><div><span>Hello<a>World</a></span></div></body>"
         );
 
-        comp.update(
-            ConditionalProps {
-                draw_stuff: false,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut builder,
-        );
+        comp.unmount(&mut builder);
 
-        assert_eq!(&awe.render(), "<body><div/></body>");
+        assert_eq!(&awe.render(), "<body/>");
     }
 }

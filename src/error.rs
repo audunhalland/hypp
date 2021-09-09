@@ -5,4 +5,7 @@ pub enum Error {
     RemoveNode,
     SetAttribute,
     Unmount,
+    ExitElement,
+    RemoveElement,
+    DomCorruption,
 }

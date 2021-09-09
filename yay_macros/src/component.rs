@@ -33,9 +33,9 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 
     let update_stmts = program
         .iter()
-        .map(|opcode| opcode.update_stmts(&root_idents, 0));
+        .map(|opcode| opcode.update_stmts(&root_idents, Scope::Component));
 
-    let unmount_stmts = unmount_stmts(&program);
+    let unmount_stmts = unmount_stmts(&program, Scope::Component);
 
     quote! {
         #props_struct
@@ -78,7 +78,6 @@ pub fn generate_component(template: template::Template, input_fn: syn::ItemFn) -
 
 fn apply_root_block(
     ir::Block {
-        variable_count: _,
         struct_fields,
         program,
     }: ir::Block,
@@ -166,14 +165,14 @@ fn collect_variant_enums(
 
                 let variant_defs = arms.iter().map(|arm| {
                     let ident = &arm.enum_variant_ident;
-                    let struct_params = arm
+                    let struct_field_defs = arm
                         .block
                         .struct_fields
                         .iter()
-                        .map(ir::StructField::struct_param_tokens);
+                        .map(|field| field.field_def_tokens(root_idents));
 
                     quote! {
-                        #ident { #(#struct_params)* },
+                        #ident { #(#struct_field_defs)* },
                     }
                 });
 
@@ -187,7 +186,7 @@ fn collect_variant_enums(
                             .struct_fields
                             .iter()
                             .map(ir::StructField::struct_param_tokens);
-                        let unmount_stmts = unmount_stmts(&block.program);
+                        let unmount_stmts = unmount_stmts(&block.program, Scope::Enum);
 
                         quote! {
                             Self::#enum_variant_ident { #(#fields)* } => {
@@ -235,9 +234,16 @@ struct RootIdents {
     props_ident: syn::Ident,
 }
 
+#[derive(Copy, Clone)]
 enum Lifecycle {
     Mount,
     Update,
+}
+
+#[derive(Copy, Clone)]
+enum Scope {
+    Component,
+    Enum,
 }
 
 impl ir::StructField {
@@ -252,6 +258,12 @@ impl ir::StructField {
         let field = &self.field;
 
         quote! { #field, }
+    }
+
+    fn mut_pattern_tokens(&self) -> TokenStream {
+        let field = &self.field;
+
+        quote! { ref mut #field, }
     }
 }
 
@@ -332,7 +344,7 @@ impl ir::OpCode {
                         let mount_stmts = block
                             .program
                             .iter()
-                            .map(|opcode| opcode.mount_stmts(&root_idents, Lifecycle::Mount));
+                            .map(|opcode| opcode.mount_stmts(&root_idents, lifecycle));
                         let struct_params = block
                             .struct_fields
                             .iter()
@@ -360,7 +372,7 @@ impl ir::OpCode {
     }
 
     /// Map an opcode into the rust tokens used when updating
-    fn update_stmts(&self, root_idents: &RootIdents, nesting: usize) -> TokenStream {
+    fn update_stmts(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
         match self {
             Self::TextVar {
                 node_field,
@@ -390,14 +402,10 @@ impl ir::OpCode {
                 });
                 let props_path = path.props_path();
 
-                let field_path = if nesting == 0 {
-                    quote! { self.#field }
-                } else {
-                    quote! { #field }
-                };
+                let field_ref = FieldRef(*field, scope);
 
                 quote! {
-                    #field_path.update(#props_path {
+                    #field_ref.update(#props_path {
                         #(#prop_list)*
                         __phantom: std::marker::PhantomData,
                     }, __vm);
@@ -426,12 +434,12 @@ impl ir::OpCode {
                         let fields = block
                             .struct_fields
                             .iter()
-                            .map(ir::StructField::struct_param_tokens);
+                            .map(ir::StructField::mut_pattern_tokens);
 
                         let update_stmts = block
                             .program
                             .iter()
-                            .map(|opcode| opcode.update_stmts(root_idents, nesting + 1));
+                            .map(|opcode| opcode.update_stmts(root_idents, Scope::Enum));
 
                         quote! {
                            (#enum_ident::#enum_variant_ident { #(#fields)* }, #pattern) => {
@@ -461,25 +469,29 @@ impl ir::OpCode {
                             .iter()
                             .map(ir::StructField::struct_param_tokens);
 
+                        let field_ref = FieldRef(*field, scope);
+                        let field_assign = FieldAssign(*field, scope);
+
                         quote! {
                             (_, #pattern) => {
-                                self.#field.unmount(__vm);
+                                #field_ref.unmount(__vm);
                                 #(#mount_stmts)*
 
-                                self.#field = #enum_ident::#enum_variant_ident {
+                                #field_assign = #enum_ident::#enum_variant_ident {
                                     #(#struct_params)*
-                                }
+                                };
                            },
                         }
                     },
                 );
 
-                let push = PushElementContext(*parent);
-                let pop = PopElementContext(*parent);
+                let mut_field_ref = MutFieldRef(*field, scope);
+                let push = PushElementContext(*parent, scope);
+                let pop = PopElementContext(*parent, scope);
 
                 quote! {
                     #push
-                    match (&mut self.#field, #expr) {
+                    match (#mut_field_ref, #expr) {
                         #(#matching_arms)*
                         #(#nonmatching_arms)*
 
@@ -496,7 +508,7 @@ impl ir::OpCode {
 ///
 /// Generate the rust program required to appropriately unmount
 ///
-fn unmount_stmts(program: &[ir::OpCode]) -> TokenStream {
+fn unmount_stmts(program: &[ir::OpCode], scope: Scope) -> TokenStream {
     let mut element_level = 0;
 
     let mut unmount_calls = vec![];
@@ -523,13 +535,15 @@ fn unmount_stmts(program: &[ir::OpCode]) -> TokenStream {
                 }
             }
             ir::OpCode::Component { field, .. } => {
+                let field_ref = FieldRef(*field, scope);
                 unmount_calls.push(quote! {
-                    self.#field.unmount(__vm);
+                    #field_ref.unmount(__vm);
                 });
             }
             ir::OpCode::Match { field, .. } => {
+                let field_ref = FieldRef(*field, scope);
                 unmount_calls.push(quote! {
-                    self.#field.unmount(__vm);
+                    #field_ref.unmount(__vm);
                 });
             }
         }
@@ -562,19 +576,20 @@ impl ir::StructFieldType {
     }
 }
 
-struct PushElementContext(Option<ir::FieldId>);
+struct PushElementContext(Option<ir::FieldId>, Scope);
 
 impl quote::ToTokens for PushElementContext {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         if let Some(parent) = &self.0 {
+            let parent = FieldRef(*parent, self.1);
             tokens.extend(quote! {
-                __vm.push_element_context(self.#parent.clone());
+                __vm.push_element_context(#parent.clone());
             });
         }
     }
 }
 
-struct PopElementContext(Option<ir::FieldId>);
+struct PopElementContext(Option<ir::FieldId>, Scope);
 
 impl quote::ToTokens for PopElementContext {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
@@ -583,5 +598,47 @@ impl quote::ToTokens for PopElementContext {
                 __vm.pop_element_context();
             });
         }
+    }
+}
+
+/// A field we want to reference (read)
+struct FieldRef(ir::FieldId, Scope);
+
+impl quote::ToTokens for FieldRef {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let field = &self.0;
+
+        tokens.extend(match self.1 {
+            Scope::Component => quote! { self.#field },
+            Scope::Enum => quote! { #field },
+        });
+    }
+}
+
+struct MutFieldRef(ir::FieldId, Scope);
+
+impl quote::ToTokens for MutFieldRef {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let field = &self.0;
+
+        tokens.extend(match self.1 {
+            Scope::Component => quote! { &mut self.#field },
+            // Field has already been marked as a `ref mut` in the pattern binding:
+            Scope::Enum => quote! { &#field },
+        });
+    }
+}
+
+/// A field we want to assign to (mut)
+struct FieldAssign(ir::FieldId, Scope);
+
+impl quote::ToTokens for FieldAssign {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let field = &self.0;
+
+        tokens.extend(match self.1 {
+            Scope::Component => quote! { self.#field },
+            Scope::Enum => quote! { *#field },
+        });
     }
 }

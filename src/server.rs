@@ -140,16 +140,21 @@ pub struct ServerBuilder {
 }
 
 impl ServerBuilder {
-    fn append_child(&mut self, child: &Node) -> Result<(), Error> {
-        let parent = self.stack.last_mut().unwrap();
+    fn parent_element(&self) -> Result<&Element, Error> {
+        let parent = self.stack.last().unwrap();
 
         match parent.as_ref() {
-            ServerNode::Element(element) => {
-                element.children.borrow_mut().push(child.clone());
-                Ok(())
-            }
-            _ => Err(Error::AddChild),
+            ServerNode::Element(element) => Ok(element),
+            _ => Err(Error::DomCorruption),
         }
+    }
+
+    fn append_child(&mut self, child: &Node) -> Result<(), Error> {
+        self.parent_element()?
+            .children
+            .borrow_mut()
+            .push(child.clone());
+        Ok(())
     }
 }
 
@@ -176,12 +181,23 @@ impl<'doc> DomVM<'doc, ServerAwe> for ServerBuilder {
     }
 
     fn exit_element(&mut self) -> Result<(), Error> {
-        self.stack.pop();
-        Ok(())
+        match self.stack.pop() {
+            Some(node) => match node.as_ref() {
+                &ServerNode::Element(_) => Ok(()),
+                _ => Err(Error::ExitElement),
+            },
+            None => Err(Error::ExitElement),
+        }
     }
 
     fn remove_element(&mut self, _tag_name: &'static str) -> Result<(), Error> {
-        unimplemented!()
+        let parent = self.parent_element()?;
+        let child = parent.children.borrow_mut().remove(0);
+
+        match child.as_ref() {
+            ServerNode::Element(_) => Ok(()),
+            _ => Err(Error::RemoveElement),
+        }
     }
 
     fn push_element_context(&mut self, element: Node) {
