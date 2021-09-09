@@ -6,28 +6,36 @@ pub fn lower_root_node(root: ast::Node) -> ir::Block {
     let mut root_builder = BlockBuilder::default();
 
     let mut ctx = Context {
-        variable_count: 0,
+        dom_program_count: 0,
+        field_count: 0,
         enum_count: 0,
     };
 
     root_builder.lower_ast(root, None, &mut ctx);
-    root_builder.to_block()
+    root_builder.to_block(&mut ctx)
 }
 
 /// Context used for the whole template
 pub struct Context {
-    variable_count: usize,
-    enum_count: usize,
+    dom_program_count: u16,
+    field_count: u16,
+    enum_count: u16,
 }
 
 impl Context {
+    fn next_dom_program_id(&mut self) -> u16 {
+        let index = self.dom_program_count;
+        self.dom_program_count += 1;
+        index
+    }
+
     fn next_field_id(&mut self) -> ir::FieldId {
-        let index = self.variable_count;
-        self.variable_count += 1;
+        let index = self.field_count;
+        self.field_count += 1;
         ir::FieldId(index)
     }
 
-    fn next_enum_index(&mut self) -> usize {
+    fn next_enum_index(&mut self) -> u16 {
         let index = self.enum_count;
         self.enum_count += 1;
         index
@@ -52,47 +60,62 @@ impl Constness {
 #[derive(Default)]
 struct BlockBuilder {
     pub struct_fields: Vec<ir::StructField>,
-    pub program: Vec<ir::OpCode>,
-
     pub statements: Vec<ir::Statement>,
 
-    current_dom_program: Vec<ir::DomOpCode>,
+    current_dom_opcodes: Vec<ir::DomOpCode>,
 }
 
 impl BlockBuilder {
-    fn to_block(mut self) -> ir::Block {
-        self.flush_dom_program(None);
+    fn to_block(mut self, ctx: &mut Context) -> ir::Block {
+        self.flush_dom_program(None, ctx);
 
         ir::Block {
             struct_fields: self.struct_fields,
-            program: self.program,
+            statements: self.statements,
         }
     }
 
-    fn flush_dom_program(&mut self, assign_to: Option<ir::FieldId>) {
-        if self.current_dom_program.is_empty() {
+    fn flush_dom_program(&mut self, field: Option<ir::FieldId>, ctx: &mut Context) {
+        if self.current_dom_opcodes.is_empty() {
             return;
         }
 
-        let mut dom_program = vec![];
-        std::mem::swap(&mut self.current_dom_program, &mut dom_program);
+        let mut opcodes = vec![];
+        std::mem::swap(&mut self.current_dom_opcodes, &mut opcodes);
 
-        match dom_program.last() {
+        let program_id = ctx.next_dom_program_id();
+
+        match opcodes.last() {
             None => {}
             Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
                 self.statements.push(ir::Statement {
-                    assign_to,
-                    expression: ir::Expression::ConstDomElement(dom_program),
+                    field,
+                    expression: ir::Expression::ConstDom(ir::ConstDomProgram {
+                        id: program_id,
+                        ty: ir::ConstDomProgramTy::Element,
+                        opcodes,
+                    }),
                 });
             }
-            Some(ir::DomOpCode::TextConst(_)) => {
-                panic!("There is no point storing a constant text node");
+            Some(ir::DomOpCode::Text(_)) => {
+                if field.is_some() {
+                    panic!("There is no point storing a constant text node (I think)");
+                }
+
+                self.statements.push(ir::Statement {
+                    field,
+                    expression: ir::Expression::ConstDom(ir::ConstDomProgram {
+                        id: program_id,
+                        ty: ir::ConstDomProgramTy::Text,
+                        opcodes,
+                    }),
+                });
             }
         }
     }
 
-    fn push_statement(&mut self, statement: ir::Statement) {
-        self.flush_dom_program(None);
+    fn push_statement(&mut self, statement: ir::Statement, ctx: &mut Context) {
+        self.flush_dom_program(None, ctx);
 
         self.statements.push(statement);
     }
@@ -126,11 +149,8 @@ impl BlockBuilder {
         // We don't know if we should allocate this field yet
         let field = ctx.next_field_id();
 
-        self.current_dom_program
+        self.current_dom_opcodes
             .push(ir::DomOpCode::EnterElement(tag_name.clone()));
-
-        self.program
-            .push(ir::OpCode::EnterElement { field, tag_name });
 
         let mut constness = Constness::Const;
 
@@ -138,13 +158,13 @@ impl BlockBuilder {
             constness = constness.and(self.lower_ast(child, Some(field), ctx));
         }
 
-        self.current_dom_program.push(ir::DomOpCode::ExitElement);
-
-        self.program.push(ir::OpCode::ExitElement);
+        self.current_dom_opcodes.push(ir::DomOpCode::ExitElement);
 
         match constness {
             Constness::Variable => {
                 // Need to store this field
+                self.flush_dom_program(Some(field), ctx);
+
                 self.struct_fields.push(ir::StructField {
                     field,
                     ty: ir::StructFieldType::DomElement,
@@ -153,15 +173,11 @@ impl BlockBuilder {
             _ => {}
         }
 
-        constness
+        Constness::Const
     }
 
     fn lower_text(&mut self, text: ast::Text) -> Constness {
-        self.program.push(ir::OpCode::TextConst {
-            text: text.0.clone(),
-        });
-        self.current_dom_program
-            .push(ir::DomOpCode::TextConst(text.0));
+        self.current_dom_opcodes.push(ir::DomOpCode::Text(text.0));
         Constness::Const
     }
 
@@ -179,20 +195,23 @@ impl BlockBuilder {
             ty: ir::StructFieldType::Variable(variable.ty),
         });
 
-        self.program.push(ir::OpCode::TextVar {
-            node_field,
-            variable_field,
-            expr: variable.ident.clone(),
-        });
-
-        self.push_statement(ir::Statement {
-            assign_to: Some(node_field),
-            expression: ir::Expression::VariableDomText(variable.ident.clone()),
-        });
-        self.push_statement(ir::Statement {
-            assign_to: Some(variable_field),
-            expression: ir::Expression::LocalVar,
-        });
+        self.push_statement(
+            ir::Statement {
+                field: Some(node_field),
+                expression: ir::Expression::VariableText {
+                    variable_field,
+                    expr: variable.ident.clone(),
+                },
+            },
+            ctx,
+        );
+        self.push_statement(
+            ir::Statement {
+                field: Some(variable_field),
+                expression: ir::Expression::LocalVar,
+            },
+            ctx,
+        );
 
         Constness::Variable
     }
@@ -207,26 +226,22 @@ impl BlockBuilder {
 
         let component_path = ir::ComponentPath::new(component.type_path);
 
-        self.program.push(ir::OpCode::Component {
-            parent,
-            field,
-            path: component_path.clone(),
-            props: component.attrs.clone(),
-        });
-
         self.struct_fields.push(ir::StructField {
             field,
             ty: ir::StructFieldType::Component(component_path.clone()),
         });
 
-        self.push_statement(ir::Statement {
-            assign_to: Some(field),
-            expression: ir::Expression::Component {
-                parent,
-                path: component_path,
-                props: component.attrs,
+        self.push_statement(
+            ir::Statement {
+                field: Some(field),
+                expression: ir::Expression::Component {
+                    parent,
+                    path: component_path,
+                    props: component.attrs,
+                },
             },
-        });
+            ctx,
+        );
 
         Constness::Variable
     }
@@ -256,26 +271,31 @@ impl BlockBuilder {
             None => {}
         }
 
-        self.program.push(ir::OpCode::Match {
-            parent,
-            field,
-            enum_type: enum_type.clone(),
-            expr: test,
-            arms: vec![
-                ir::Arm {
-                    enum_variant_ident: quote::format_ident!("True"),
-                    mount_fn_ident: quote::format_ident!("mount_true"),
-                    pattern: syn::parse_quote! { true },
-                    block: then_builder.to_block(),
+        self.push_statement(
+            ir::Statement {
+                field: Some(field),
+                expression: ir::Expression::Match {
+                    parent,
+                    enum_type: enum_type.clone(),
+                    expr: test,
+                    arms: vec![
+                        ir::Arm {
+                            enum_variant_ident: quote::format_ident!("True"),
+                            mount_fn_ident: quote::format_ident!("mount_true"),
+                            pattern: syn::parse_quote! { true },
+                            block: then_builder.to_block(ctx),
+                        },
+                        ir::Arm {
+                            enum_variant_ident: quote::format_ident!("False"),
+                            mount_fn_ident: quote::format_ident!("mount_false"),
+                            pattern: syn::parse_quote! { false },
+                            block: else_builder.to_block(ctx),
+                        },
+                    ],
                 },
-                ir::Arm {
-                    enum_variant_ident: quote::format_ident!("False"),
-                    mount_fn_ident: quote::format_ident!("mount_false"),
-                    pattern: syn::parse_quote! { false },
-                    block: else_builder.to_block(),
-                },
-            ],
-        });
+            },
+            ctx,
+        );
 
         self.struct_fields.push(ir::StructField {
             field,

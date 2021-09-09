@@ -224,7 +224,7 @@ mod tests {
         );
     }
 
-    #[component_dbg(
+    #[component(
         <div>
             if hello {
                 <span>"Hello"</span>

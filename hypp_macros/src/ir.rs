@@ -9,7 +9,7 @@ pub struct StructField {
 }
 
 #[derive(Clone, Copy)]
-pub struct FieldId(pub usize);
+pub struct FieldId(pub u16);
 
 impl quote::ToTokens for FieldId {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
@@ -24,7 +24,7 @@ pub enum StructFieldType {
     DomElement,
     DomText,
     Component(ComponentPath),
-    Enum(usize),
+    Enum(u16),
     Variable(syn::Type),
 }
 
@@ -57,64 +57,29 @@ impl ComponentPath {
 #[derive(Default)]
 pub struct Block {
     pub struct_fields: Vec<StructField>,
-    pub program: Vec<OpCode>,
-}
-
-pub enum OpCode {
-    /// __vm.enter_element(tag_name)?
-    EnterElement {
-        field: FieldId,
-        tag_name: syn::LitStr,
-    },
-
-    /// __vm.text(text)?
-    TextConst { text: syn::LitStr },
-
-    /// let node_field = __vm.text(expr)?;
-    /// let variable_field = Var::new();
-    TextVar {
-        node_field: FieldId,
-        variable_field: FieldId,
-        expr: syn::Ident,
-    },
-
-    /// __vm.exit_element()?
-    ExitElement,
-
-    /// let field = path::new(props, __vm)
-    Component {
-        parent: Option<FieldId>,
-        field: FieldId,
-        path: ComponentPath,
-        props: Vec<(syn::Ident, ast::AttrValue)>,
-    },
-
-    // let field = match expr { arms };
-    Match {
-        parent: Option<FieldId>,
-        field: FieldId,
-        enum_type: StructFieldType,
-        expr: syn::Expr,
-        arms: Vec<Arm>,
-    },
+    pub statements: Vec<Statement>,
 }
 
 /// Something we assign to a variable
 pub struct Statement {
     /// Where to assign the expression, or nothing if the expression is
     /// not to be assigned to anything
-    pub assign_to: Option<FieldId>,
+    pub field: Option<FieldId>,
 
     /// The expression to evaluate
     pub expression: Expression,
 }
 
+/// Something which can be evaluated to a value with a type
 pub enum Expression {
-    /// An element which is the last produced value from the DOM program
-    ConstDomElement(Vec<DomOpCode>),
+    /// A constant DOM program
+    ConstDom(ConstDomProgram),
 
-    /// A text variable
-    VariableDomText(syn::Ident),
+    /// A text variable (in the DOM)
+    VariableText {
+        variable_field: FieldId,
+        expr: syn::Ident,
+    },
 
     /// A local variable field (Var<T> field)
     LocalVar,
@@ -126,7 +91,7 @@ pub enum Expression {
         props: Vec<(syn::Ident, ast::AttrValue)>,
     },
 
-    /// A match expression (something conditional)
+    /// A match expression (something which is conditional)
     Match {
         parent: Option<FieldId>,
         enum_type: StructFieldType,
@@ -135,9 +100,26 @@ pub enum Expression {
     },
 }
 
+/// A DOM program which can be stored in static memory
+/// (i.e. no runtime evaluation is necessary)
+pub struct ConstDomProgram {
+    pub id: u16,
+    pub ty: ConstDomProgramTy,
+    pub opcodes: Vec<DomOpCode>,
+}
+
+///
+/// The Type of a DOM program, i.e. the type
+/// it produces when finished running
+///
+pub enum ConstDomProgramTy {
+    Element,
+    Text,
+}
+
 pub enum DomOpCode {
     EnterElement(syn::LitStr),
-    TextConst(syn::LitStr),
+    Text(syn::LitStr),
     ExitElement,
 }
 

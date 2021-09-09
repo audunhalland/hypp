@@ -6,13 +6,14 @@ use crate::ir;
 
 pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> TokenStream {
     let RootBlock {
+        dom_programs,
         root_idents,
         props_struct,
         variant_enums,
         struct_fields,
         props_destructuring,
         fn_stmts,
-        program,
+        statements,
     } = process_root_block(root_block, input_fn);
 
     let component_ident = &root_idents.component_ident;
@@ -26,18 +27,20 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
         .iter()
         .map(ir::StructField::struct_param_tokens);
 
-    let mount_stmts = program
+    let mount_stmts = statements
         .iter()
-        .map(|opcode| opcode.mount_stmts(&root_idents, Lifecycle::Mount));
+        .map(|statement| statement.gen_mount(&root_idents, Lifecycle::Mount));
 
-    let update_stmts = program
+    let update_stmts = statements
         .iter()
-        .map(|opcode| opcode.update_stmts(&root_idents, Scope::Component));
+        .map(|statement| statement.gen_update(&root_idents, Scope::Component));
 
-    let unmount_stmts = unmount_stmts(&program, Scope::Component);
+    let unmount_stmts = gen_unmount(&statements, Scope::Component);
 
     quote! {
         #props_struct
+
+        #(#dom_programs)*
 
         #(#variant_enums)*
 
@@ -78,32 +81,38 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
 fn process_root_block(
     ir::Block {
         struct_fields,
-        program,
+        statements,
     }: ir::Block,
     input_fn: syn::ItemFn,
 ) -> RootBlock {
     let ident = input_fn.sig.ident;
     let props_ident = quote::format_ident!("{}Props", ident);
+    let uppercase_prefix = ident.clone().to_string().to_uppercase();
 
     let root_idents = RootIdents {
         component_ident: ident,
         props_ident,
+        uppercase_prefix,
     };
 
     let props_struct = create_props_struct(&input_fn.sig.inputs, &root_idents);
     let props_destructuring = create_props_destructuring(&input_fn.sig.inputs, &root_idents);
 
+    let mut dom_programs = vec![];
+    collect_dom_programs(&statements, &root_idents, &mut dom_programs);
+
     let mut variant_enums = vec![];
-    collect_variant_enums(&program, &root_idents, &mut variant_enums);
+    collect_variant_enums(&statements, &root_idents, &mut variant_enums);
 
     RootBlock {
+        dom_programs,
         variant_enums,
         root_idents,
         props_struct,
         struct_fields,
         props_destructuring,
         fn_stmts: input_fn.block.stmts,
-        program,
+        statements,
     }
 }
 
@@ -150,19 +159,62 @@ fn create_props_destructuring(
     }
 }
 
-fn collect_variant_enums(
-    program: &[ir::OpCode],
+fn collect_dom_programs(
+    statements: &[ir::Statement],
     root_idents: &RootIdents,
     output: &mut Vec<TokenStream>,
 ) {
-    for opcode in program {
-        match opcode {
-            ir::OpCode::Match {
+    for statement in statements {
+        match &statement.expression {
+            ir::Expression::ConstDom(program) => {
+                output.push(generate_dom_program(program, root_idents));
+            }
+            ir::Expression::Match { arms, .. } => {
+                for arm in arms {
+                    collect_dom_programs(&arm.block.statements, root_idents, output);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn generate_dom_program(program: &ir::ConstDomProgram, root_idents: &RootIdents) -> TokenStream {
+    let opcodes = program.opcodes.iter().map(|opcode| match opcode {
+        ir::DomOpCode::EnterElement(lit_str) => quote! {
+            ConstOpCode::EnterElement(#lit_str),
+        },
+        ir::DomOpCode::Text(lit_str) => quote! {
+            ConstOpCode::Text(#lit_str),
+        },
+        ir::DomOpCode::ExitElement => quote! {
+            ConstOpCode::ExitElement,
+        },
+    });
+
+    let len = program.opcodes.len();
+    let ident = program.get_ident(root_idents);
+
+    quote! {
+        static #ident: [ConstOpCode; #len] = [
+            #(#opcodes)*
+        ];
+    }
+}
+
+fn collect_variant_enums(
+    statements: &[ir::Statement],
+    root_idents: &RootIdents,
+    output: &mut Vec<TokenStream>,
+) {
+    for statement in statements {
+        match &statement.expression {
+            ir::Expression::Match {
                 enum_type, arms, ..
             } => {
                 output.push(generate_variant_enum(enum_type, arms, root_idents));
                 for arm in arms {
-                    collect_variant_enums(&arm.block.program, root_idents, output);
+                    collect_variant_enums(&arm.block.statements, root_idents, output);
                 }
             }
             _ => {}
@@ -200,7 +252,7 @@ fn generate_variant_enum(
                 .struct_fields
                 .iter()
                 .map(ir::StructField::struct_param_tokens);
-            let unmount_stmts = unmount_stmts(&block.program, Scope::Enum);
+            let unmount_stmts = gen_unmount(&block.statements, Scope::Enum);
 
             quote! {
                 Self::#enum_variant_ident { #(#fields)* } => {
@@ -226,18 +278,20 @@ fn generate_variant_enum(
 }
 
 struct RootBlock {
+    dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
     props_struct: syn::ItemStruct,
     variant_enums: Vec<TokenStream>,
     struct_fields: Vec<ir::StructField>,
     props_destructuring: syn::FnArg,
     fn_stmts: Vec<syn::Stmt>,
-    program: Vec<ir::OpCode>,
+    statements: Vec<ir::Statement>,
 }
 
 struct RootIdents {
     component_ident: syn::Ident,
     props_ident: syn::Ident,
+    uppercase_prefix: String,
 }
 
 #[derive(Copy, Clone)]
@@ -273,38 +327,35 @@ impl ir::StructField {
     }
 }
 
-impl ir::OpCode {
-    /// Map an opcode into the rust statements used when mounting
-    fn mount_stmts(&self, root_idents: &RootIdents, lifecycle: Lifecycle) -> TokenStream {
+impl ir::Statement {
+    /// Rust statement used when mounting
+    fn gen_mount(&self, root_idents: &RootIdents, lifecycle: Lifecycle) -> TokenStream {
         // Mount is error-tolerant:
         let err_handler = match lifecycle {
             Lifecycle::Mount => quote! { ? },
             Lifecycle::Update => quote! { .unwrap() },
         };
 
-        match self {
-            Self::EnterElement { field, tag_name } => quote! {
-                let #field = __vm.enter_element(#tag_name)#err_handler;
-            },
-            Self::TextConst { text } => quote! {
-                __vm.text(#text)#err_handler;
-            },
-            Self::TextVar {
-                node_field,
-                variable_field,
-                expr,
-            } => {
-                quote! {
-                    let #node_field = __vm.text(#expr)#err_handler;
-                    let #variable_field = Var::new();
+        let expr = match &self.expression {
+            ir::Expression::ConstDom(program) => {
+                let program_ident = program.get_ident(root_idents);
+
+                match program.ty {
+                    ir::ConstDomProgramTy::Element => quote! {
+                        __vm.const_exec_element(&#program_ident) #err_handler
+                    },
+                    ir::ConstDomProgramTy::Text => quote! {
+                        __vm.const_exec_text(&#program_ident) #err_handler
+                    },
                 }
             }
-            Self::ExitElement => quote! {
-                __vm.exit_element()#err_handler;
+            ir::Expression::VariableText { expr, .. } => quote! {
+                __vm.text(#expr) #err_handler
             },
-            Self::Component {
-                field, path, props, ..
-            } => {
+            ir::Expression::LocalVar => quote! {
+                Var::new()
+            },
+            ir::Expression::Component { path, props, .. } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
                     ast::AttrValue::ImplicitTrue => quote! {
                         #name: true,
@@ -316,21 +367,21 @@ impl ir::OpCode {
                         #name: #ident,
                     },
                 });
+
                 let component_path = &path.type_path;
                 let props_path = path.props_path();
 
                 quote! {
-                    let #field = #component_path::mount(
+                    #component_path::mount(
                         #props_path {
                             #(#prop_list)*
                             __phantom: std::marker::PhantomData
                         },
                         __vm
-                    )#err_handler;
+                    ) #err_handler
                 }
             }
-            Self::Match {
-                field,
+            ir::Expression::Match {
                 enum_type,
                 expr,
                 arms,
@@ -346,9 +397,9 @@ impl ir::OpCode {
                          ..
                      }| {
                         let mount_stmts = block
-                            .program
+                            .statements
                             .iter()
-                            .map(|opcode| opcode.mount_stmts(&root_idents, lifecycle));
+                            .map(|statement| statement.gen_mount(&root_idents, lifecycle));
                         let struct_params = block
                             .struct_fields
                             .iter()
@@ -367,29 +418,34 @@ impl ir::OpCode {
                 );
 
                 quote! {
-                    let #field = match #expr {
-                        #(#arms)*
-                    };
+                    match #expr { #(#arms)* }
                 }
             }
+        };
+
+        if let Some(field) = &self.field {
+            quote! { let #field = #expr; }
+        } else {
+            quote! { #expr; }
         }
     }
 
-    /// Map an opcode into the rust tokens used when updating
-    fn update_stmts(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
-        match self {
-            Self::TextVar {
-                node_field,
-                variable_field,
+    fn gen_update(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
+        match &self.expression {
+            ir::Expression::VariableText {
                 expr,
-            } => quote! {
-                if let Some(v) = self.#variable_field.update(#expr) {
-                    H::set_text(&self.#node_field, v);
+                variable_field,
+            } => {
+                let field_ref = FieldRef(self.field.clone().unwrap(), scope);
+                let variable_field_ref = FieldRef(*variable_field, scope);
+                quote! {
+                    if let Some(v) = #variable_field_ref.update(#expr) {
+                        H::set_text(&#field_ref, v);
+                    }
                 }
-            },
-            Self::Component {
+            }
+            ir::Expression::Component {
                 parent,
-                field,
                 path,
                 props,
             } => {
@@ -406,7 +462,7 @@ impl ir::OpCode {
                 });
                 let props_path = path.props_path();
 
-                let field_ref = FieldRef(*field, scope);
+                let field_ref = FieldRef(self.field.clone().unwrap(), scope);
 
                 quote! {
                     #field_ref.update(#props_path {
@@ -415,9 +471,8 @@ impl ir::OpCode {
                     }, __vm);
                 }
             }
-            Self::Match {
+            ir::Expression::Match {
                 parent,
-                field,
                 enum_type,
                 expr,
                 arms,
@@ -428,6 +483,10 @@ impl ir::OpCode {
                 // The rest of the matches are for mismatches, one for each new value.
 
                 let enum_ident = enum_type.to_tokens(root_idents);
+                let field = self.field.clone().unwrap();
+                let field_ref = FieldRef(field, scope);
+                let field_assign = FieldAssign(field, scope);
+                let mut_field_ref = MutFieldRef(field, scope);
 
                 let matching_arms = arms.iter().map(
                     |ir::Arm {
@@ -442,9 +501,9 @@ impl ir::OpCode {
                             .map(ir::StructField::mut_pattern_tokens);
 
                         let update_stmts = block
-                            .program
+                            .statements
                             .iter()
-                            .map(|opcode| opcode.update_stmts(root_idents, Scope::Enum));
+                            .map(|statement| statement.gen_update(root_idents, Scope::Enum));
 
                         quote! {
                            (#enum_ident::#enum_variant_ident { #(#fields)* }, #pattern) => {
@@ -467,16 +526,13 @@ impl ir::OpCode {
                         // to pass into that function.. :(
                         // But it's better to have less runtime code.
                         let mount_stmts = block
-                            .program
+                            .statements
                             .iter()
-                            .map(|opcode| opcode.mount_stmts(&root_idents, Lifecycle::Update));
+                            .map(|statement| statement.gen_mount(&root_idents, Lifecycle::Update));
                         let struct_params = block
                             .struct_fields
                             .iter()
                             .map(ir::StructField::struct_param_tokens);
-
-                        let field_ref = FieldRef(*field, scope);
-                        let field_assign = FieldAssign(*field, scope);
 
                         quote! {
                             (_, #pattern) => {
@@ -491,7 +547,6 @@ impl ir::OpCode {
                     },
                 );
 
-                let mut_field_ref = MutFieldRef(*field, scope);
                 let push = PushElementContext(*parent, scope);
                 let pop = PopElementContext(*parent, scope);
 
@@ -511,46 +566,66 @@ impl ir::OpCode {
     }
 }
 
+impl ir::ConstDomProgram {
+    fn get_ident(&self, root_idents: &RootIdents) -> syn::Ident {
+        quote::format_ident!("{}_PRG{}", root_idents.uppercase_prefix, self.id)
+    }
+}
+
 ///
 /// Generate the rust program required to appropriately unmount
 ///
-fn unmount_stmts(program: &[ir::OpCode], scope: Scope) -> TokenStream {
+fn gen_unmount(statements: &[ir::Statement], scope: Scope) -> TokenStream {
     let mut element_level = 0;
 
     let mut stmts = vec![];
 
-    for opcode in program {
-        match opcode {
-            ir::OpCode::EnterElement { tag_name, .. } => {
-                if element_level == 0 {
-                    stmts.push(quote! {
-                        __vm.remove_element(#tag_name).unwrap();
-                    });
+    for statement in statements {
+        match &statement.expression {
+            ir::Expression::ConstDom(ir::ConstDomProgram { opcodes, .. }) => {
+                for opcode in opcodes {
+                    match opcode {
+                        ir::DomOpCode::EnterElement(tag_name) => {
+                            if element_level == 0 {
+                                stmts.push(quote! {
+                                    __vm.remove_element(#tag_name).unwrap();
+                                });
+                            }
+                            element_level += 1;
+                        }
+                        ir::DomOpCode::Text(_) => {
+                            if element_level == 0 {
+                                stmts.push(quote! {
+                                    __vm.remove_text().unwrap();
+                                });
+                            }
+                        }
+                        ir::DomOpCode::ExitElement => {
+                            element_level -= 1;
+                        }
+                    }
                 }
-                element_level += 1;
             }
-            ir::OpCode::ExitElement => {
-                element_level -= 1;
-            }
-            ir::OpCode::TextConst { .. } | ir::OpCode::TextVar { .. } => {
+            ir::Expression::VariableText { .. } => {
                 if element_level == 0 {
                     stmts.push(quote! {
                         __vm.remove_text().unwrap();
                     });
                 }
             }
-            ir::OpCode::Component { field, .. } => {
-                let field_ref = FieldRef(*field, scope);
+            ir::Expression::Component { .. } => {
+                let field_ref = FieldRef(statement.field.clone().unwrap(), scope);
                 stmts.push(quote! {
                     #field_ref.unmount(__vm);
                 });
             }
-            ir::OpCode::Match { field, .. } => {
-                let field_ref = FieldRef(*field, scope);
+            ir::Expression::Match { .. } => {
+                let field_ref = FieldRef(statement.field.clone().unwrap(), scope);
                 stmts.push(quote! {
                     #field_ref.unmount(__vm);
                 });
             }
+            ir::Expression::LocalVar { .. } => {}
         }
     }
 
