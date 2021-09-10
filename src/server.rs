@@ -188,6 +188,29 @@ impl ServerBuilder {
     fn cursor_mut(&mut self) -> &mut Cursor {
         self.stack.last_mut().unwrap()
     }
+
+    fn enter_element(&mut self, tag_name: &'static str) -> Result<Node, Error> {
+        let element = Rc::new(ServerNode::Element(Element {
+            tag_name,
+            children: RefCell::new(vec![]),
+        }));
+        self.cursor_mut().append_child(&element)?;
+        self.stack.push(Cursor {
+            parent: element.clone(),
+            position: 0,
+        });
+        Ok(element)
+    }
+
+    fn exit_element(&mut self) -> Result<Node, Error> {
+        match self.stack.pop() {
+            Some(cursor) => match cursor.parent.as_ref() {
+                &ServerNode::Element(_) => Ok(cursor.parent),
+                _ => Err(Error::ExitElement),
+            },
+            None => Err(Error::ExitElement),
+        }
+    }
 }
 
 impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
@@ -198,7 +221,7 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
             loop {
                 let node = match opcode {
                     ConstOpCode::EnterElement(tag_name) => self.enter_element(tag_name)?,
-                    ConstOpCode::TextAttribute(_name, _value) => {
+                    ConstOpCode::Attribute(_name, _value) => {
                         return Err(Error::SetAttribute);
                     }
                     ConstOpCode::Text(text) => self.text(text)?,
@@ -221,34 +244,11 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
         panic!()
     }
 
-    fn enter_element(&mut self, tag_name: &'static str) -> Result<Node, Error> {
-        let element = Rc::new(ServerNode::Element(Element {
-            tag_name,
-            children: RefCell::new(vec![]),
-        }));
-        self.cursor_mut().append_child(&element)?;
-        self.stack.push(Cursor {
-            parent: element.clone(),
-            position: 0,
-        });
-        Ok(element)
-    }
-
     fn text(&mut self, text: &str) -> Result<Node, Error> {
         let text_node = Rc::new(ServerNode::Text(RefCell::new(text.to_string())));
         self.cursor_mut().append_child(&text_node)?;
 
         Ok(text_node)
-    }
-
-    fn exit_element(&mut self) -> Result<Node, Error> {
-        match self.stack.pop() {
-            Some(cursor) => match cursor.parent.as_ref() {
-                &ServerNode::Element(_) => Ok(cursor.parent),
-                _ => Err(Error::ExitElement),
-            },
-            None => Err(Error::ExitElement),
-        }
     }
 
     fn remove_element(&mut self, _tag_name: &'static str) -> Result<Node, Error> {
@@ -259,6 +259,10 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
             ServerNode::Element(_) => Ok(child),
             _ => Err(Error::RemoveElement),
         }
+    }
+
+    fn skip_const_program(&mut self, _program: &[ConstOpCode]) -> Result<(), Error> {
+        panic!()
     }
 
     fn push_navigation(&mut self, path: &[u16], child_offset: u16) {

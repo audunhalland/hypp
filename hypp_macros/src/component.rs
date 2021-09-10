@@ -31,9 +31,9 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
         .iter()
         .map(|statement| statement.gen_mount(&root_idents, Lifecycle::Mount));
 
-    let update_stmts = statements
+    let patch_stmts = statements
         .iter()
-        .map(|statement| statement.gen_update(&root_idents, Scope::Component));
+        .map(|statement| statement.gen_patch(&root_idents, Scope::Component));
 
     let unmount_stmts = gen_unmount(&statements, Scope::Component);
 
@@ -66,9 +66,9 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
         impl<'p, H: Hypp> Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn update(&mut self, #props_destructuring, __vm: &mut dyn DomVM<H>) {
+            fn patch(&mut self, #props_destructuring, __vm: &mut dyn DomVM<H>) {
                 #(#fn_stmts)*
-                #(#update_stmts)*
+                #(#patch_stmts)*
             }
 
             fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
@@ -297,7 +297,7 @@ struct RootIdents {
 #[derive(Copy, Clone)]
 enum Lifecycle {
     Mount,
-    Update,
+    Patch,
 }
 
 #[derive(Copy, Clone)]
@@ -333,7 +333,7 @@ impl ir::Statement {
         // Mount is error-tolerant:
         let err_handler = match lifecycle {
             Lifecycle::Mount => quote! { ? },
-            Lifecycle::Update => quote! { .unwrap() },
+            Lifecycle::Patch => quote! { .unwrap() },
         };
 
         let expr = match &self.expression {
@@ -430,7 +430,7 @@ impl ir::Statement {
         }
     }
 
-    fn gen_update(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
+    fn gen_patch(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
         match &self.expression {
             ir::Expression::VariableText {
                 expr,
@@ -465,7 +465,7 @@ impl ir::Statement {
                 let field_ref = FieldRef(self.field.clone().unwrap(), scope);
 
                 quote! {
-                    #field_ref.update(#props_path {
+                    #field_ref.patch(#props_path {
                         #(#prop_list)*
                         __phantom: std::marker::PhantomData,
                     }, __vm);
@@ -500,14 +500,14 @@ impl ir::Statement {
                             .iter()
                             .map(ir::StructField::mut_pattern_tokens);
 
-                        let update_stmts = block
+                        let patch_stmts = block
                             .statements
                             .iter()
-                            .map(|statement| statement.gen_update(root_idents, Scope::Enum));
+                            .map(|statement| statement.gen_patch(root_idents, Scope::Enum));
 
                         quote! {
                            (#enum_ident::#enum_variant_ident { #(#fields)* }, #pattern) => {
-                               #(#update_stmts)*
+                               #(#patch_stmts)*
                            },
                         }
                     },
@@ -520,15 +520,10 @@ impl ir::Statement {
                          block,
                          ..
                      }| {
-                        // BUG: Code duplication with constructor.
-                        // These are constant and could be moved to separate function?
-                        // But the problem then will be to formalize another param struct
-                        // to pass into that function.. :(
-                        // But it's better to have less runtime code.
                         let mount_stmts = block
                             .statements
                             .iter()
-                            .map(|statement| statement.gen_mount(&root_idents, Lifecycle::Update));
+                            .map(|statement| statement.gen_mount(&root_idents, Lifecycle::Patch));
                         let struct_params = block
                             .struct_fields
                             .iter()

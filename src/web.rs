@@ -79,6 +79,20 @@ impl<'a> WebBuilder<'a> {
             .map(|_| ())
             .map_err(|_| Error::AddChild)
     }
+
+    fn enter_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
+        let element = self.hypp.document.create_element(tag_name).unwrap();
+        self.append_child(element.as_node())?;
+        self.element_stack.push(element.clone());
+        Ok(element)
+    }
+
+    fn exit_element(&mut self) -> Result<web_sys::Element, Error> {
+        match self.element_stack.pop() {
+            Some(element) => Ok(element),
+            None => Err(Error::ExitElement),
+        }
+    }
 }
 
 impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
@@ -90,28 +104,18 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
         panic!()
     }
 
-    fn enter_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
-        let element = self.hypp.document.create_element(tag_name).unwrap();
-        self.append_child(element.as_node())?;
-        self.element_stack.push(element.clone());
-        Ok(element)
-    }
-
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
         let text_node = self.hypp.document.create_text_node(text);
         self.append_child(text_node.as_node())?;
         Ok(text_node)
     }
 
-    fn exit_element(&mut self) -> Result<web_sys::Element, Error> {
-        match self.element_stack.pop() {
-            Some(element) => Ok(element),
-            None => Err(Error::ExitElement),
-        }
-    }
-
     fn remove_element(&mut self, _tag_name: &'static str) -> Result<web_sys::Element, Error> {
         unimplemented!()
+    }
+
+    fn skip_const_program(&mut self, _program: &[ConstOpCode]) -> Result<(), Error> {
+        panic!()
     }
 
     fn push_navigation(&mut self, _path: &[u16], _child: u16) {
