@@ -97,22 +97,28 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
         Ok(element)
     }
 
-    fn attribute(&mut self, _name: &'static str, _value: &'static str) -> Result<(), Error> {
-        Err(Error::SetAttribute)
-    }
-
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
         let text_node = self.hypp.document.create_text_node(text);
         self.append_child(text_node.as_node())?;
         Ok(text_node)
     }
 
-    fn exit_element(&mut self) -> Result<(), Error> {
-        self.element_stack.pop();
-        Ok(())
+    fn exit_element(&mut self) -> Result<web_sys::Element, Error> {
+        match self.element_stack.pop() {
+            Some(element) => Ok(element),
+            None => Err(Error::ExitElement),
+        }
     }
 
-    fn remove_element(&mut self, _tag_name: &'static str) -> Result<(), Error> {
+    fn remove_element(&mut self, _tag_name: &'static str) -> Result<web_sys::Element, Error> {
+        unimplemented!()
+    }
+
+    fn push_navigation(&mut self, _path: &[u16], _child: u16) {
+        unimplemented!()
+    }
+
+    fn pop_navigation(&mut self) {
         unimplemented!()
     }
 

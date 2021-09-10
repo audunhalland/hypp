@@ -37,31 +37,44 @@ pub enum ConstOpCode {
 ///
 pub trait DomVM<'doc, H: Hypp> {
     /// Execute a series of opcodes.
-    /// The last opcode should produce an element.
+    /// The last opcode must produce an element.
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
 
     /// Execute a series of opcodes.
-    /// The last opcode should produce a text node.
+    /// The last opcode must produce a text node.
     fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
 
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
     fn enter_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
 
-    /// Define an attribute on the current element (and return it perhaps?)
-    fn attribute(&mut self, name: &'static str, value: &'static str) -> Result<(), Error>;
-
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
 
     /// Exit the current element, advancing the cursor position to
     /// the element's next sibling.
-    fn exit_element(&mut self) -> Result<(), Error>;
+    fn exit_element(&mut self) -> Result<H::Element, Error>;
 
     /// Remove the element at the current cursor position.
     /// The element's name must match the tag name passed.
     /// The cursor moves to point at the next sibling.
-    fn remove_element(&mut self, tag_name: &'static str) -> Result<(), Error>;
+    fn remove_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
+
+    /// Navigate the cursor.
+    /// path represents descendants into child lists,
+    /// before pointing at the _final_ child index, which may
+    /// point beyond that parent element's child list.
+    ///
+    /// e.g.:
+    /// ([], 2) - advance two siblings forward from the current position
+    /// ([2], 0) - navigate to the current element's third child, then to that element's first child
+    ///
+    ///
+    /// The method will panic if no navigation can be performed.
+    fn push_navigation(&mut self, path: &[u16], child_offset: u16);
+
+    /// Pop off the last navigation, restoring the previous state
+    fn pop_navigation(&mut self);
 
     /// Push context.
     /// Does not mutate the DOM.
@@ -146,31 +159,31 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn render_foo_web() {
-        let awe = web::WebHypp::new();
+        let hypp = web::WebHypp::new();
         let _comp = Foo::mount(
             FooProps {
                 is_cool: true,
                 __phantom: std::marker::PhantomData,
             },
-            &mut awe.builder_at_body(),
+            &mut hypp.builder_at_body(),
         )
         .unwrap();
     }
 
     #[test]
     fn render_foo_server() {
-        let awe = server::ServerHypp::new();
+        let hypp = server::ServerHypp::new();
         let mut comp = Foo::mount(
             FooProps {
                 is_cool: true,
                 __phantom: std::marker::PhantomData,
             },
-            &mut awe.builder_at_body(),
+            &mut hypp.builder_at_body(),
         )
         .unwrap();
 
         assert_eq!(
-            &awe.render(),
+            hypp.render(),
             "<body><div><p><span>cool</span></p></div></body>"
         );
 
@@ -179,11 +192,11 @@ mod tests {
                 is_cool: false,
                 __phantom: std::marker::PhantomData,
             },
-            &mut awe.builder_at_body(),
+            &mut hypp.builder_at_body(),
         );
 
         assert_eq!(
-            &awe.render(),
+            &hypp.render(),
             "<body><div><p><span>dull</span></p></div></body>"
         );
     }
@@ -209,22 +222,22 @@ mod tests {
 
     #[test]
     fn render_baz_server() {
-        let awe = server::ServerHypp::new();
+        let hypp = server::ServerHypp::new();
         Baz::mount(
             BazProps {
                 __phantom: std::marker::PhantomData,
             },
-            &mut awe.builder_at_body(),
+            &mut hypp.builder_at_body(),
         )
         .unwrap();
 
         assert_eq!(
-            &awe.render(),
+            &hypp.render(),
             "<body><div><p>variable</p><p>static</p></div></body>"
         );
     }
 
-    #[component(
+    #[component_dbg(
         <div>
             if hello {
                 <span>"Hello"</span>
@@ -240,19 +253,18 @@ mod tests {
 
     #[test]
     fn render_conditional_server() {
-        let awe = server::ServerHypp::new();
-        let mut builder = awe.builder_at_body();
+        let hypp = server::ServerHypp::new();
         let mut comp = Conditional::mount(
             ConditionalProps {
                 hello: false,
                 world: false,
                 __phantom: std::marker::PhantomData,
             },
-            &mut builder,
+            &mut hypp.builder_at_body(),
         )
         .unwrap();
 
-        assert_eq!(&awe.render(), "<body><div/></body>");
+        assert_eq!(hypp.render(), "<body><div/></body>");
 
         comp.update(
             ConditionalProps {
@@ -260,11 +272,11 @@ mod tests {
                 world: true,
                 __phantom: std::marker::PhantomData,
             },
-            &mut builder,
+            &mut hypp.builder_at_body(),
         );
 
         // No change:
-        assert_eq!(&awe.render(), "<body><div/></body>");
+        assert_eq!(hypp.render(), "<body><div/></body>");
 
         comp.update(
             ConditionalProps {
@@ -272,10 +284,13 @@ mod tests {
                 world: false,
                 __phantom: std::marker::PhantomData,
             },
-            &mut builder,
+            &mut hypp.builder_at_body(),
         );
 
-        assert_eq!(&awe.render(), "<body><div><span>Hello</span></div></body>");
+        assert_eq!(
+            hypp.render(),
+            "<body><div><span>Hello</span><span>Universe</span></div></body>"
+        );
 
         comp.update(
             ConditionalProps {
@@ -283,17 +298,17 @@ mod tests {
                 world: true,
                 __phantom: std::marker::PhantomData,
             },
-            &mut builder,
+            &mut hypp.builder_at_body(),
         );
 
         assert_eq!(
-            &awe.render(),
+            hypp.render(),
             "<body><div><span>Hello</span><a>World</a></div></body>"
         );
 
-        comp.unmount(&mut builder);
+        comp.unmount(&mut hypp.builder_at_body());
 
-        assert_eq!(&awe.render(), "<body/>");
+        assert_eq!(hypp.render(), "<body/>");
     }
 
     mod test_code {}
