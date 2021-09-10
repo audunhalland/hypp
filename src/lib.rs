@@ -43,6 +43,18 @@ pub enum ConstOpCode {
 }
 
 ///
+/// An command to move the DOM cursor
+///
+pub enum CursorCmd {
+    // Enter the nth child
+    Child(u16),
+    // Advance to the nth sibling (from here)
+    Sibling(u16),
+    // Move up n parent levels
+    Parent(u16),
+}
+
+///
 /// DomVM
 ///
 /// An abstract cursor at some DOM position, allowing users of the trait
@@ -65,6 +77,11 @@ pub trait DomVM<'doc, H: Hypp> {
     /// The cursor moves to point at the next sibling.
     fn remove_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
 
+    /// Advance the cursor according to the passed commands.
+    /// I think this is the API to use.
+    /// in addition to the possibility to place the cursor at a specific node.
+    fn advance(&mut self, commands: &[CursorCmd]);
+
     /// Advance the cursor according to the const program passed.
     /// Don't mutate anything.
     fn skip_const_program(&mut self, program: &[ConstOpCode]) -> Result<(), Error>;
@@ -80,6 +97,11 @@ pub trait DomVM<'doc, H: Hypp> {
     ///
     ///
     /// The method will panic if no navigation can be performed.
+    ///
+    /// FIXME: Remove "stack" push/pop.
+    /// Just use cursor navigation!
+    ///
+    /// Example:
     fn push_navigation(&mut self, path: &[u16], child_offset: u16);
 
     /// Pop off the last navigation, restoring the previous state

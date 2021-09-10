@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::{AsNode, ConstOpCode, DomVM, Hypp};
+use super::{AsNode, ConstOpCode, CursorCmd, DomVM, Hypp};
 
 pub struct WebHypp {
     _window: web_sys::Window,
@@ -113,6 +113,8 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
     fn remove_element(&mut self, _tag_name: &'static str) -> Result<web_sys::Element, Error> {
         unimplemented!()
     }
+
+    fn advance(&mut self, commands: &[CursorCmd]) {}
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode]) -> Result<(), Error> {
         panic!()

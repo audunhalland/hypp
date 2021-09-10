@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::error::Error;
 
-use super::{AsNode, ConstOpCode, DomVM, Hypp};
+use crate::{AsNode, ConstOpCode, CursorCmd, DomVM, Hypp};
 
 type Node = Rc<ServerNode>;
 
@@ -260,6 +260,8 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
             _ => Err(Error::RemoveElement),
         }
     }
+
+    fn advance(&mut self, commands: &[CursorCmd]) {}
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode]) -> Result<(), Error> {
         panic!()
