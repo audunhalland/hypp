@@ -1,7 +1,7 @@
 use crate::error::Error;
 
 use super::server_dom::{Node, NodeKind, RcNode};
-use crate::{AsNode, ConstOpCode, CursorCmd, DomVM, Hypp};
+use crate::{AsNode, ConstOpCode, DomVM, Hypp};
 
 impl AsNode<ServerHypp> for RcNode {
     #[inline]
@@ -162,8 +162,6 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
 
         Ok(child)
     }
-
-    fn advance(&mut self, _commands: &[CursorCmd]) {}
 
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {
         for opcode in program {

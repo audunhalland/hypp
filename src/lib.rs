@@ -1,6 +1,13 @@
+#![forbid(unsafe_code)]
+
+//!
+//! The hypp crate allows expressing a reactive DOM.
+//!
+//! The philosophy is to precompile as much as we can.
+//!
+
 use std::marker::PhantomData;
 
-// pub mod dom_index;
 pub mod error;
 pub mod server;
 pub mod web;
@@ -55,18 +62,6 @@ pub enum ConstOpCode {
 }
 
 ///
-/// A command to move the DOM cursor
-///
-pub enum CursorCmd {
-    // Enter the nth child
-    Child(u16),
-    // Advance to the nth sibling (from here)
-    Sibling(u16),
-    // Move up n parent levels
-    Parent(u16),
-}
-
-///
 /// DomVM
 ///
 /// An abstract cursor at some DOM position, allowing users of the trait
@@ -91,13 +86,9 @@ pub trait DomVM<'doc, H: Hypp> {
 
     fn remove_text(&mut self) -> Result<H::Element, Error>;
 
-    /// Advance the cursor according to the passed commands.
-    /// I think this is the API to use.
-    /// in addition to the possibility to place the cursor at a specific node.
-    fn advance(&mut self, commands: &[CursorCmd]);
-
-    /// Advance the cursor according to the const program passed.
+    /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.
+    /// The DOM described by the program must match the actual DOM.
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
