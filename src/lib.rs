@@ -77,6 +77,8 @@ pub trait DomVM<'doc, H: Hypp> {
     /// The cursor moves to point at the next sibling.
     fn remove_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
 
+    fn remove_text(&mut self) -> Result<H::Element, Error>;
+
     /// Advance the cursor according to the passed commands.
     /// I think this is the API to use.
     /// in addition to the possibility to place the cursor at a specific node.
@@ -133,6 +135,7 @@ pub trait Component<'p, H: Hypp> {
 
     /// Unmount the component, removing all its nodes
     /// from under its mount point in the tree, using the DomVM.
+    /// The only purpose of this call is to clean up nodes in the DOM.
     fn unmount(&mut self, __vm: &mut dyn DomVM<H>);
 }
 
@@ -240,7 +243,7 @@ mod tests {
         );
     }
 
-    #[component_dbg(
+    #[component(
         <div>
             if hello {
                 <span>"Hello"</span>

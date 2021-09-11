@@ -157,6 +157,16 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
         Ok(child)
     }
 
+    fn remove_text(&mut self) -> Result<RcNode, Error> {
+        let child = self.next_child.take().expect("Expected a node to remove");
+
+        self.next_child = child.next_sibling();
+
+        self.element.remove_child(child.clone());
+
+        Ok(child)
+    }
+
     fn advance(&mut self, _commands: &[CursorCmd]) {}
 
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {

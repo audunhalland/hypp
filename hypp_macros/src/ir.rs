@@ -66,6 +66,9 @@ pub struct Statement {
     /// not to be assigned to anything
     pub field: Option<FieldId>,
 
+    /// Whether this statement operates at the root of the component
+    pub depth: u16,
+
     /// The expression to evaluate
     pub expression: Expression,
 }

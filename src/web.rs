@@ -116,6 +116,10 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
         unimplemented!()
     }
 
+    fn remove_text(&mut self) -> Result<web_sys::Element, Error> {
+        unimplemented!()
+    }
+
     fn advance(&mut self, _commands: &[CursorCmd]) {}
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode]) {

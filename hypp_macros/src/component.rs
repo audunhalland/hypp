@@ -568,54 +568,58 @@ impl ir::ConstDomProgram {
 /// Generate the rust program required to appropriately unmount
 ///
 fn gen_unmount(statements: &[ir::Statement], scope: Scope) -> TokenStream {
-    let mut element_level = 0;
-
-    let mut stmts = vec![];
+    let mut stmts: Vec<TokenStream> = vec![];
 
     for statement in statements {
+        let mut depth = statement.depth;
+
         match &statement.expression {
             ir::Expression::ConstDom(ir::ConstDomProgram { opcodes, .. }) => {
                 for opcode in opcodes {
                     match opcode {
                         ir::DomOpCode::EnterElement(tag_name) => {
-                            if element_level == 0 {
+                            if depth == 0 {
                                 stmts.push(quote! {
                                     __vm.remove_element(#tag_name).unwrap();
                                 });
                             }
-                            element_level += 1;
+                            depth += 1;
                         }
                         ir::DomOpCode::Text(_) => {
-                            if element_level == 0 {
+                            if depth == 0 {
                                 stmts.push(quote! {
                                     __vm.remove_text().unwrap();
                                 });
                             }
                         }
                         ir::DomOpCode::ExitElement => {
-                            element_level -= 1;
+                            depth -= 1;
                         }
                     }
                 }
             }
             ir::Expression::VariableText { .. } => {
-                if element_level == 0 {
+                if depth == 0 {
                     stmts.push(quote! {
                         __vm.remove_text().unwrap();
                     });
                 }
             }
             ir::Expression::Component { .. } => {
-                let field_ref = FieldRef(statement.field.clone().unwrap(), scope);
-                stmts.push(quote! {
-                    #field_ref.unmount(__vm);
-                });
+                if depth == 0 {
+                    let field_ref = FieldRef(statement.field.clone().unwrap(), scope);
+                    stmts.push(quote! {
+                        #field_ref.unmount(__vm);
+                    });
+                }
             }
             ir::Expression::Match { .. } => {
-                let field_ref = FieldRef(statement.field.clone().unwrap(), scope);
-                stmts.push(quote! {
-                    #field_ref.unmount(__vm);
-                });
+                if depth == 0 {
+                    let field_ref = FieldRef(statement.field.clone().unwrap(), scope);
+                    stmts.push(quote! {
+                        #field_ref.unmount(__vm);
+                    });
+                }
             }
             ir::Expression::LocalVar { .. } => {}
         }
