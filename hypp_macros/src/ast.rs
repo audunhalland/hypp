@@ -25,7 +25,7 @@ type Attr = (syn::Ident, AttrValue);
 pub enum AttrValue {
     ImplicitTrue,
     Literal(syn::Lit),
-    Eval(syn::Ident),
+    Expr(syn::Expr),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -205,9 +205,9 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
                 let content;
                 let _brace_token = syn::braced!(content in input);
 
-                let ident: syn::Ident = content.parse()?;
+                let expr: syn::Expr = content.parse()?;
 
-                AttrValue::Eval(ident)
+                AttrValue::Expr(expr)
             }
         } else {
             AttrValue::ImplicitTrue
@@ -452,7 +452,7 @@ mod tests {
                     attr("a", AttrValue::ImplicitTrue),
                     attr("b", AttrValue::Literal(syn::parse_quote! { "b" })),
                     attr("c", AttrValue::Literal(syn::parse_quote! { 42 })),
-                    attr("d", AttrValue::Eval(syn::parse_quote! { foo })),
+                    attr("d", AttrValue::Expr(syn::parse_quote! { foo })),
                 ],
                 vec![]
             )

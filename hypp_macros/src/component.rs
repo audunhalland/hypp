@@ -367,8 +367,8 @@ impl ir::Statement {
                     ast::AttrValue::Literal(lit) => quote! {
                         #name: #lit,
                     },
-                    ast::AttrValue::Eval(ident) => quote! {
-                        #name: #ident,
+                    ast::AttrValue::Expr(expr) => quote! {
+                        #name: #expr,
                     },
                 });
 
@@ -464,8 +464,8 @@ impl ir::Statement {
                     ast::AttrValue::Literal(lit) => quote! {
                         #name: #lit,
                     },
-                    ast::AttrValue::Eval(ident) => quote! {
-                        #name: #ident,
+                    ast::AttrValue::Expr(expr) => quote! {
+                        #name: #expr,
                     },
                 });
                 let props_path = path.props_path();

@@ -325,4 +325,65 @@ mod tests {
         </div>
     )]
     fn ConditionalWithVariableText(hello: bool, yo: &'p str) {}
+
+    #[component_dbg(
+        <div>
+            if hello {
+                <Baz />
+            }
+        </div>
+    )]
+    fn ConditionalWithComponent(hello: bool) {}
+
+    #[component(
+        <>
+            <div>"first"</div>
+            if perhaps {
+                <span>"second"</span>
+            }
+            <p>"third"</p>
+        </>
+    )]
+    fn Fragment1(perhaps: bool) {}
+
+    #[test]
+    fn render_fragment1() {
+        let hypp = server::ServerHypp::new();
+        let mut c = Fragment1::mount(
+            Fragment1Props {
+                perhaps: true,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            hypp.render(),
+            "<body><div>first</div><span>second</span><p>third</p></body>"
+        );
+
+        c.patch(
+            Fragment1Props {
+                perhaps: false,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        );
+
+        assert_eq!(hypp.render(), "<body><div>first</div><p>third</p></body>");
+
+        c.unmount(&mut hypp.builder_at_body());
+
+        assert_eq!(hypp.render(), "<body/>");
+    }
+
+    #[component(
+        <span>
+            if level > 0 {
+                <Recursive level={level - 1} />
+            }
+        </span>
+    )]
+    fn Recursive(level: usize) {}
 }
