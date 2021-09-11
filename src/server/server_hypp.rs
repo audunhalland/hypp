@@ -23,7 +23,7 @@ impl ServerHypp {
 
     pub fn builder_at_body(&self) -> ServerBuilder {
         ServerBuilder {
-            parent: self.body.clone(),
+            element: self.body.clone(),
             next_child: self.body.first_child(),
         }
     }
@@ -42,38 +42,23 @@ impl Hypp for ServerHypp {
         panic!();
     }
 
-    fn set_text(_node: &Self::Text, _text: &str) {
-        panic!();
+    fn set_text(node: &Self::Text, text: &str) {
+        node.set_text(text);
     }
 }
 
-///
-/// Cursor implmentation
-/// A cursor points *between* nodes or *at* nodes?
-///
-/// <body> <-- start
-///   <div>  <-- enter element (attributes apply to the previously entered element)
-///     *
-///     "foo"    <-- text (where does the cursor go now?)
-///     *
-///     <span>   <-- enter element
-///     </span>  <-- exit element
-///   </div> <-- exit element
-/// </body>
-///
-
 pub struct ServerBuilder {
-    parent: RcNode,
+    element: RcNode,
     next_child: Option<RcNode>,
 }
 
 impl ServerBuilder {
     fn enter_element(&mut self, tag_name: &'static str) -> RcNode {
         let element = Node::create_element(tag_name);
-        self.parent
+        self.element
             .insert_before(element.clone(), self.next_child.clone());
 
-        self.parent = element.clone();
+        self.element = element.clone();
         self.next_child = None;
 
         element
@@ -81,19 +66,21 @@ impl ServerBuilder {
 
     fn text(&mut self, text: &str) -> RcNode {
         let node = Node::create_text(text.to_string());
-        self.parent
+        self.element
             .insert_before(node.clone(), self.next_child.clone());
 
         node
     }
 
     fn exit_element(&mut self) -> RcNode {
-        let parent = self.parent.clone();
-        self.next_child = parent.next_sibling();
+        let parent_element = self
+            .element
+            .parent()
+            .expect("Failed to exit: no parent element");
 
-        self.parent = parent.parent().expect("Failed to exit: no parent node");
+        self.next_child = self.element.next_sibling();
 
-        parent
+        std::mem::replace(&mut self.element, parent_element)
     }
 
     fn remove_element(&mut self, tag_name: &'static str) -> Result<RcNode, Error> {
@@ -108,7 +95,7 @@ impl ServerBuilder {
                         Err(Error::RemoveElement)
                     } else {
                         let next_sibling = next_child.next_sibling();
-                        self.parent.remove_child(next_child.clone());
+                        self.element.remove_child(next_child.clone());
                         self.next_child = next_sibling;
 
                         Ok(next_child)
@@ -156,14 +143,48 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
         Ok(self.text(text))
     }
 
-    fn remove_element(&mut self, _tag_name: &'static str) -> Result<RcNode, Error> {
-        panic!()
+    fn remove_element(&mut self, tag_name: &'static str) -> Result<RcNode, Error> {
+        let child = self
+            .next_child
+            .take()
+            .expect("Expected an element to remove");
+        child.assert_is_element_with_tag_name(tag_name);
+
+        self.next_child = child.next_sibling();
+
+        self.element.remove_child(child.clone());
+
+        Ok(child)
     }
 
     fn advance(&mut self, _commands: &[CursorCmd]) {}
 
-    fn skip_const_program(&mut self, _program: &[ConstOpCode]) -> Result<(), Error> {
-        panic!()
+    fn skip_const_program(&mut self, program: &[ConstOpCode]) {
+        for opcode in program {
+            match opcode {
+                ConstOpCode::EnterElement(tag_name) => {
+                    self.element = self.next_child.take().expect("Expected an element");
+                    self.element.assert_is_element_with_tag_name(tag_name);
+
+                    self.next_child = self.element.first_child();
+                }
+                ConstOpCode::Attribute(_name, _value) => {}
+                ConstOpCode::Text(text) => {
+                    let node = self.next_child.take().expect("Expected a text");
+                    node.assert_is_text(text);
+                    self.next_child = node.next_sibling();
+                }
+                ConstOpCode::ExitElement => {
+                    self.exit_element();
+                }
+                ConstOpCode::RemoveElement(tag_name) => {
+                    panic!(
+                        "Cannot remove an element \"{}\" in a skip setting?",
+                        tag_name
+                    );
+                }
+            };
+        }
     }
 
     fn push_navigation(&mut self, _path: &[u16], _child_offset: u16) {

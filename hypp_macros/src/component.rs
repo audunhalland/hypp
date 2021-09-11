@@ -432,6 +432,13 @@ impl ir::Statement {
 
     fn gen_patch(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
         match &self.expression {
+            ir::Expression::ConstDom(program) => {
+                let program_ident = program.get_ident(root_idents);
+
+                quote! {
+                    __vm.skip_const_program(&#program_ident);
+                }
+            }
             ir::Expression::VariableText {
                 expr,
                 variable_field,
@@ -542,18 +549,13 @@ impl ir::Statement {
                     },
                 );
 
-                let push = PushElementContext(*parent, scope);
-                let pop = PopElementContext(*parent, scope);
-
                 quote! {
-                    #push
                     match (#mut_field_ref, #expr) {
                         #(#matching_arms)*
                         #(#nonmatching_arms)*
 
                         _ => {}
                     }
-                    #pop
                 }
             }
             _ => TokenStream::new(),

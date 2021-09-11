@@ -116,7 +116,7 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
 
     fn advance(&mut self, commands: &[CursorCmd]) {}
 
-    fn skip_const_program(&mut self, _program: &[ConstOpCode]) -> Result<(), Error> {
+    fn skip_const_program(&mut self, _program: &[ConstOpCode]) {
         panic!()
     }
 

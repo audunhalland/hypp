@@ -84,7 +84,7 @@ pub trait DomVM<'doc, H: Hypp> {
 
     /// Advance the cursor according to the const program passed.
     /// Don't mutate anything.
-    fn skip_const_program(&mut self, program: &[ConstOpCode]) -> Result<(), Error>;
+    fn skip_const_program(&mut self, program: &[ConstOpCode]);
 
     /// Navigate the cursor.
     /// path represents descendants into child lists,

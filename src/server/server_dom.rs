@@ -30,6 +30,36 @@ impl Node {
         self as *const _ == other as *const _
     }
 
+    pub fn assert_is_element_with_tag_name(&self, tag_name: &'static str) {
+        match &self.kind {
+            NodeKind::Element {
+                tag_name: self_tag_name,
+            } => {
+                assert_eq!(*self_tag_name, tag_name);
+            }
+            NodeKind::Fragment => {
+                panic!("Expected an element, but was fragment {}", self.to_string());
+            }
+            NodeKind::Text(_) => {
+                panic!("Expected an element, but was text {}", self.to_string());
+            }
+        }
+    }
+
+    pub fn assert_is_text(&self, text: &str) {
+        match &self.kind {
+            NodeKind::Element { .. } => {
+                panic!("Expected text \"{}\", but was {}", text, self.to_string());
+            }
+            NodeKind::Fragment => {
+                panic!("Expected an element, but was fragment {}", self.to_string());
+            }
+            NodeKind::Text(self_text) => {
+                assert_eq!(self_text.borrow().as_str(), text);
+            }
+        }
+    }
+
     pub fn create_element(tag_name: &'static str) -> RcNode {
         Rc::new(Node {
             kind: NodeKind::Element { tag_name },
@@ -42,6 +72,17 @@ impl Node {
             kind: NodeKind::Text(RefCell::new(text)),
             links: RefCell::new(Links::default()),
         })
+    }
+
+    pub fn set_text(&self, text: &str) {
+        match &self.kind {
+            NodeKind::Text(self_text) => {
+                *self_text.borrow_mut() = text.to_string();
+            }
+            _ => {
+                panic!("tried to set text no something which is not a text node");
+            }
+        }
     }
 
     pub fn parent(&self) -> Option<RcNode> {
