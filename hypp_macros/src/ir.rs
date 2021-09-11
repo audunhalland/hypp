@@ -86,14 +86,12 @@ pub enum Expression {
 
     /// A component instantiation
     Component {
-        parent: Option<FieldId>,
         path: ComponentPath,
         props: Vec<(syn::Ident, ast::AttrValue)>,
     },
 
     /// A match expression (something which is conditional)
     Match {
-        parent: Option<FieldId>,
         enum_type: StructFieldType,
         expr: syn::Expr,
         arms: Vec<Arm>,

@@ -451,11 +451,7 @@ impl ir::Statement {
                     }
                 }
             }
-            ir::Expression::Component {
-                parent,
-                path,
-                props,
-            } => {
+            ir::Expression::Component { path, props } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
                     ast::AttrValue::ImplicitTrue => quote! {
                         #name: true,
@@ -479,7 +475,6 @@ impl ir::Statement {
                 }
             }
             ir::Expression::Match {
-                parent,
                 enum_type,
                 expr,
                 arms,

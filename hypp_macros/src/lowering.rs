@@ -11,7 +11,7 @@ pub fn lower_root_node(root: ast::Node) -> ir::Block {
         enum_count: 0,
     };
 
-    root_builder.lower_ast(root, None, &mut ctx);
+    root_builder.lower_ast(root, &mut ctx);
     root_builder.to_block(&mut ctx)
 }
 
@@ -39,21 +39,6 @@ impl Context {
         let index = self.enum_count;
         self.enum_count += 1;
         index
-    }
-}
-
-#[derive(Copy, Clone)]
-enum Constness {
-    Const,
-    Variable,
-}
-
-impl Constness {
-    fn and(self, other: Self) -> Self {
-        match self {
-            Self::Const => other,
-            Self::Variable => self,
-        }
     }
 }
 
@@ -120,68 +105,39 @@ impl BlockBuilder {
         self.statements.push(statement);
     }
 
-    fn lower_ast(
-        &mut self,
-        node: ast::Node,
-        parent: Option<ir::FieldId>,
-        ctx: &mut Context,
-    ) -> Constness {
+    fn lower_ast(&mut self, node: ast::Node, ctx: &mut Context) {
         match node {
             ast::Node::Element(element) => self.lower_element(element, ctx),
             ast::Node::Fragment(nodes) => {
-                let mut constness = Constness::Const;
                 for node in nodes {
-                    constness = constness.and(self.lower_ast(node, parent, ctx));
+                    self.lower_ast(node, ctx);
                 }
-
-                constness
             }
             ast::Node::Text(text) => self.lower_text(text),
             ast::Node::Variable(variable) => self.lower_variable(variable, ctx),
-            ast::Node::Component(component) => self.lower_component(component, parent, ctx),
-            ast::Node::If(the_if) => self.lower_if(the_if, parent, ctx),
+            ast::Node::Component(component) => self.lower_component(component, ctx),
+            ast::Node::If(the_if) => self.lower_if(the_if, ctx),
         }
     }
 
-    fn lower_element(&mut self, element: ast::Element, ctx: &mut Context) -> Constness {
+    fn lower_element(&mut self, element: ast::Element, ctx: &mut Context) {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
-
-        // We don't know if we should allocate this field yet
-        let field = ctx.next_field_id();
 
         self.current_dom_opcodes
             .push(ir::DomOpCode::EnterElement(tag_name.clone()));
 
-        let mut constness = Constness::Const;
-
         for child in element.children {
-            constness = constness.and(self.lower_ast(child, Some(field), ctx));
+            self.lower_ast(child, ctx);
         }
 
         self.current_dom_opcodes.push(ir::DomOpCode::ExitElement);
-
-        match constness {
-            Constness::Variable => {
-                // Need to store this field
-                self.flush_dom_program(Some(field), ctx);
-
-                self.struct_fields.push(ir::StructField {
-                    field,
-                    ty: ir::StructFieldType::DomElement,
-                });
-            }
-            _ => {}
-        }
-
-        Constness::Const
     }
 
-    fn lower_text(&mut self, text: ast::Text) -> Constness {
+    fn lower_text(&mut self, text: ast::Text) {
         self.current_dom_opcodes.push(ir::DomOpCode::Text(text.0));
-        Constness::Const
     }
 
-    fn lower_variable(&mut self, variable: variable::Variable, ctx: &mut Context) -> Constness {
+    fn lower_variable(&mut self, variable: variable::Variable, ctx: &mut Context) {
         let node_field = ctx.next_field_id();
         let variable_field = ctx.next_field_id();
 
@@ -212,16 +168,9 @@ impl BlockBuilder {
             },
             ctx,
         );
-
-        Constness::Variable
     }
 
-    fn lower_component(
-        &mut self,
-        component: ast::Component,
-        parent: Option<ir::FieldId>,
-        ctx: &mut Context,
-    ) -> Constness {
+    fn lower_component(&mut self, component: ast::Component, ctx: &mut Context) {
         let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
@@ -235,38 +184,30 @@ impl BlockBuilder {
             ir::Statement {
                 field: Some(field),
                 expression: ir::Expression::Component {
-                    parent,
                     path: component_path,
                     props: component.attrs,
                 },
             },
             ctx,
         );
-
-        Constness::Variable
     }
 
-    fn lower_if(
-        &mut self,
-        the_if: ast::If,
-        parent: Option<ir::FieldId>,
-        ctx: &mut Context,
-    ) -> Constness {
+    fn lower_if(&mut self, the_if: ast::If, ctx: &mut Context) {
         let test = the_if.test;
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
         let mut then_builder = BlockBuilder::default();
-        then_builder.lower_ast(*the_if.then_branch, None, ctx);
+        then_builder.lower_ast(*the_if.then_branch, ctx);
 
         let mut else_builder = BlockBuilder::default();
 
         match the_if.else_branch {
             Some(ast::Else::If(_, else_if)) => {
-                else_builder.lower_if(*else_if, None, ctx);
+                else_builder.lower_if(*else_if, ctx);
             }
             Some(ast::Else::Node(_, node)) => {
-                else_builder.lower_ast(*node, None, ctx);
+                else_builder.lower_ast(*node, ctx);
             }
             None => {}
         }
@@ -275,7 +216,6 @@ impl BlockBuilder {
             ir::Statement {
                 field: Some(field),
                 expression: ir::Expression::Match {
-                    parent,
                     enum_type: enum_type.clone(),
                     expr: test,
                     arms: vec![
@@ -301,7 +241,5 @@ impl BlockBuilder {
             field,
             ty: enum_type,
         });
-
-        Constness::Variable
     }
 }
