@@ -51,13 +51,6 @@ impl Hypp for WebHypp {
     type Element = web_sys::Element;
     type Text = web_sys::Text;
 
-    fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error> {
-        match parent.remove_child(child) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(Error::AddChild), // FIXME
-        }
-    }
-
     fn set_text(node: &Self::Text, text: &str) {
         node.set_data(text);
     }

@@ -7,20 +7,32 @@ pub mod web;
 
 use error::Error;
 
+///
+/// "upcast" a DOM node of a specific type to its generic type
+///
 pub trait AsNode<H: Hypp> {
     fn as_node(&self) -> &H::Node;
 }
 
+///
+/// Main abstraction for hypp (as of writing)
+///
+/// We abstract over the type of DOM we are targeting.
+///
 pub trait Hypp: Sized {
     type Node: Clone;
     type Element: Clone + AsNode<Self>;
     type Text: Clone + AsNode<Self>;
 
-    fn remove_child(parent: &Self::Element, child: &Self::Node) -> Result<(), Error>;
-
     fn set_text(node: &Self::Text, text: &str);
 }
 
+///
+/// Small program instructions for manipulating DOM.
+///
+/// The const opcodes are not lifetime constrained, and thus
+/// may be allocated in static memory.
+///
 pub enum ConstOpCode {
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
@@ -380,19 +392,19 @@ mod tests {
 
     #[component(
         <span>
-            if level > 0 {
-                <Recursive level={level - 1} />
+            if depth > 1 {
+                <Recursive depth={depth - 1} />
             }
         </span>
     )]
-    fn Recursive(level: usize) {}
+    fn Recursive(depth: usize) {}
 
     #[test]
     fn render_recursive_server() {
         let hypp = server::ServerHypp::new();
         let mut c = Recursive::mount(
             RecursiveProps {
-                level: 3,
+                depth: 3,
                 __phantom: std::marker::PhantomData,
             },
             &mut hypp.builder_at_body(),
@@ -401,7 +413,7 @@ mod tests {
 
         assert_eq!(
             hypp.render(),
-            "<body><span><span><span><span/></span></span></span></body>"
+            "<body><span><span><span/></span></span></body>"
         );
 
         c.unmount(&mut hypp.builder_at_body());

@@ -38,10 +38,6 @@ impl Hypp for ServerHypp {
     type Element = RcNode;
     type Text = RcNode;
 
-    fn remove_child(_parent: &Self::Element, _child: &Self::Node) -> Result<(), Error> {
-        panic!();
-    }
-
     fn set_text(node: &Self::Text, text: &str) {
         node.set_text(text);
     }
