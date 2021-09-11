@@ -417,4 +417,13 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body/>");
     }
+
+    #[component(
+        <ul>
+            for item in items {
+                <li>{item}</li>
+            }
+        </ul>
+    )]
+    fn List(items: Vec<String>) {}
 }

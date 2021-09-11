@@ -17,6 +17,7 @@ pub enum Node {
     Variable(Variable),
     Component(Component),
     If(If),
+    For(For),
 }
 
 type Attr = (syn::Ident, AttrValue);
@@ -65,6 +66,15 @@ pub enum Else {
     Node(syn::Token![else], Box<Node>),
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct For {
+    pub for_token: syn::Token![for],
+    pub binding: syn::Ident,
+    pub in_token: syn::Token![in],
+    pub expression: syn::Expr,
+    pub repeating_node: Box<Node>,
+}
+
 impl Parse for Node {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(syn::Token!(<)) {
@@ -77,6 +87,10 @@ impl Parse for Node {
 
         if input.peek(syn::Token!(if)) {
             return Ok(Node::If(parse_if(input)?));
+        }
+
+        if input.peek(syn::Token!(for)) {
+            return Ok(Node::For(parse_for(input)?));
         }
 
         // Fallback: evaluate expression in {}
@@ -271,7 +285,7 @@ fn parse_if(input: ParseStream) -> syn::Result<If> {
 }
 
 fn parse_else(input: ParseStream) -> syn::Result<Else> {
-    let else_token = input.parse::<syn::Token!(else)>()?;
+    let else_token = input.parse()?;
 
     let lookahead = input.lookahead1();
 
@@ -285,6 +299,22 @@ fn parse_else(input: ParseStream) -> syn::Result<Else> {
     } else {
         Err(lookahead.error())
     }
+}
+
+fn parse_for(input: ParseStream) -> syn::Result<For> {
+    let for_token = input.parse()?;
+    let binding = input.parse()?;
+    let in_token = input.parse()?;
+    let expression = syn::Expr::parse_without_eager_brace(input)?;
+    let repeating_node = Box::new(parse_braced_fragment(input)?);
+
+    Ok(For {
+        for_token,
+        binding,
+        in_token,
+        expression,
+        repeating_node,
+    })
 }
 
 #[cfg(test)]
@@ -508,6 +538,32 @@ mod tests {
                     test: syn::parse_quote! { let Some(for_sure) = maybe },
                     then_branch: Box::new(element("p", vec![], vec![var("for_sure")])),
                     else_branch: None
+                })]
+            )
+        );
+    }
+
+    #[test]
+    fn parse_for() {
+        let node: Node = syn::parse2(quote! {
+            <ul>
+                for item in items {
+                    <li>{item}</li>
+                }
+            </ul>
+        })
+        .unwrap();
+        assert_eq!(
+            node,
+            element(
+                "ul",
+                vec![],
+                vec![Node::For(For {
+                    for_token: syn::parse_quote! { for },
+                    binding: syn::parse_quote! { item },
+                    in_token: syn::parse_quote! { in },
+                    expression: syn::parse_quote! { items },
+                    repeating_node: Box::new(element("li", vec![], vec![var("item")])),
                 })]
             )
         );
