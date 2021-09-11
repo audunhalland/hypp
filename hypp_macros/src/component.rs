@@ -358,7 +358,18 @@ impl ir::StructField {
     fn mut_pattern_tokens(&self) -> TokenStream {
         let field = &self.field;
 
-        quote! { ref mut #field, }
+        match &self.ty {
+            // mutable types
+            ir::StructFieldType::Component(_)
+            | ir::StructFieldType::Enum(_)
+            | ir::StructFieldType::Variable(_) => quote! {
+                ref mut #field,
+            },
+            // immutable types
+            ir::StructFieldType::DomElement | ir::StructFieldType::DomText => quote! {
+                ref #field,
+            },
+        }
     }
 }
 
@@ -375,11 +386,11 @@ impl ir::Statement {
             ir::Expression::ConstDom(program) => {
                 let program_ident = program.get_ident(root_idents);
 
-                match program.ty {
-                    ir::ConstDomProgramTy::Element => quote! {
+                match program.opcodes.last().unwrap() {
+                    ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement => quote! {
                         __vm.const_exec_element(&#program_ident) #err_handler
                     },
-                    ir::ConstDomProgramTy::Text => quote! {
+                    ir::DomOpCode::Text(_) => quote! {
                         __vm.const_exec_text(&#program_ident) #err_handler
                     },
                 }
@@ -479,10 +490,25 @@ impl ir::Statement {
     fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
         match &self.expression {
             ir::Expression::ConstDom(program) => {
-                let program_ident = program.get_ident(root_idents);
+                if let Some(field) = self.field {
+                    // OPTIMIZATION: Can advance the cursor directly!
 
-                quote! {
-                    __vm.skip_const_program(&#program_ident);
+                    let field_ref = FieldRef(field, ctx);
+
+                    match program.opcodes.last().unwrap() {
+                        ir::DomOpCode::EnterElement(_) => quote! {
+                            __vm.advance_to_first_child_of(&#field_ref);
+                        },
+                        ir::DomOpCode::Text(_) | ir::DomOpCode::ExitElement => quote! {
+                            __vm.advance_to_next_sibling_of(#field_ref.as_node());
+                        },
+                    }
+                } else {
+                    let program_ident = program.get_ident(root_idents);
+
+                    quote! {
+                        __vm.skip_const_program(&#program_ident);
+                    }
                 }
             }
             ir::Expression::VariableText {

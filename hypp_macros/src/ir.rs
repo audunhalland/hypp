@@ -105,17 +105,7 @@ pub enum Expression {
 /// (i.e. no runtime evaluation is necessary)
 pub struct ConstDomProgram {
     pub id: u16,
-    pub ty: ConstDomProgramTy,
     pub opcodes: Vec<DomOpCode>,
-}
-
-///
-/// The Type of a DOM program, i.e. the type
-/// it produces when finished running
-///
-pub enum ConstDomProgramTy {
-    Element,
-    Text,
 }
 
 pub enum DomOpCode {

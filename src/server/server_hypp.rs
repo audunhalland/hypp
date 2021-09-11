@@ -163,6 +163,16 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
         Ok(child)
     }
 
+    fn advance_to_first_child_of(&mut self, element: &RcNode) {
+        self.element = element.clone();
+        self.next_child = element.first_child();
+    }
+
+    fn advance_to_next_sibling_of(&mut self, node: &RcNode) {
+        self.element = node.parent().unwrap();
+        self.next_child = node.next_sibling();
+    }
+
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {
         for opcode in program {
             match opcode {

@@ -79,6 +79,12 @@ pub trait DomVM<'doc, H: Hypp> {
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
 
+    /// Advance cursor directly to a location
+    fn advance_to_first_child_of(&mut self, element: &H::Element);
+
+    /// Advance cursor directly to a location
+    fn advance_to_next_sibling_of(&mut self, node: &H::Node);
+
     /// Remove the element at the current cursor position.
     /// The element's name must match the tag name passed.
     /// The cursor moves to point at the next sibling.

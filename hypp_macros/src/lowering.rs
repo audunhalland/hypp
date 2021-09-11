@@ -2,6 +2,12 @@ use crate::ast;
 use crate::ir;
 use crate::variable;
 
+// Minimum size of programs to directly skip when
+// generating patch code.
+// For longer programs, it may be worth it to store a reference
+// to a DOM node within the component, in order to directly skip to it.
+const SKIP_PROGRAM_THRESHOLD: usize = 3;
+
 pub fn lower_root_node(root: ast::Node) -> ir::Block {
     let mut root_builder = BlockBuilder::default();
 
@@ -12,7 +18,7 @@ pub fn lower_root_node(root: ast::Node) -> ir::Block {
         current_dom_depth: 0,
     };
 
-    root_builder.lower_ast(root, &mut ctx);
+    root_builder.lower_ast(root, ChildIndex(0), &mut ctx);
     root_builder.to_block(&mut ctx)
 }
 
@@ -45,6 +51,9 @@ impl Context {
     }
 }
 
+#[derive(Clone, Copy)]
+struct ChildIndex(pub u16);
+
 #[derive(Default)]
 struct BlockBuilder {
     pub struct_fields: Vec<ir::StructField>,
@@ -56,7 +65,7 @@ struct BlockBuilder {
 
 impl BlockBuilder {
     fn to_block(mut self, ctx: &mut Context) -> ir::Block {
-        self.flush_dom_program(None, ctx);
+        self.flush_dom_program(ChildIndex(0), ctx);
 
         ir::Block {
             struct_fields: self.struct_fields,
@@ -64,7 +73,7 @@ impl BlockBuilder {
         }
     }
 
-    fn flush_dom_program(&mut self, field: Option<ir::FieldId>, ctx: &mut Context) {
+    fn flush_dom_program(&mut self, child_index: ChildIndex, ctx: &mut Context) {
         if self.current_dom_opcodes.is_empty() {
             return;
         }
@@ -73,57 +82,71 @@ impl BlockBuilder {
 
         let program_id = ctx.next_dom_program_id();
 
-        match opcodes.last() {
-            None => {}
-            Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
-                self.statements.push(ir::Statement {
-                    field,
-                    dom_depth: self.current_dom_program_depth,
-                    expression: ir::Expression::ConstDom(ir::ConstDomProgram {
-                        id: program_id,
-                        ty: ir::ConstDomProgramTy::Element,
-                        opcodes,
-                    }),
-                });
-            }
-            Some(ir::DomOpCode::Text(_)) => {
-                if field.is_some() {
-                    panic!("There is no point storing a constant text node (I think)");
-                }
-
-                self.statements.push(ir::Statement {
-                    field,
-                    dom_depth: self.current_dom_program_depth,
-                    expression: ir::Expression::ConstDom(ir::ConstDomProgram {
-                        id: program_id,
-                        ty: ir::ConstDomProgramTy::Text,
-                        opcodes,
-                    }),
-                });
-            }
+        enum NodeType {
+            Element,
+            Text,
         }
+
+        // Determine the resulting type of running the program (the last opcode)
+        let program_ty = match opcodes.last().unwrap() {
+            ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement => {
+                ir::StructFieldType::DomElement
+            }
+            ir::DomOpCode::Text(_) => ir::StructFieldType::DomText,
+        };
+
+        // TODO: this is a tradeoff.
+        // Storing an extra reference to a dom node within the component
+        // is not worth it when the program it skips is very short.
+        // so we should have some kind of threshold for when to store the element.
+        let opt_field = if opcodes.len() >= SKIP_PROGRAM_THRESHOLD {
+            let field = ctx.next_field_id();
+            self.struct_fields.push(ir::StructField {
+                field,
+                ty: program_ty,
+            });
+            Some(field)
+        } else {
+            None
+        };
+
+        self.statements.push(ir::Statement {
+            field: opt_field,
+            dom_depth: self.current_dom_program_depth,
+            expression: ir::Expression::ConstDom(ir::ConstDomProgram {
+                id: program_id,
+                opcodes,
+            }),
+        });
 
         self.current_dom_program_depth = ctx.current_dom_depth;
     }
 
-    fn push_statement(&mut self, statement: ir::Statement, ctx: &mut Context) {
-        self.flush_dom_program(None, ctx);
+    fn push_statement(
+        &mut self,
+        statement: ir::Statement,
+        child_index: ChildIndex,
+        ctx: &mut Context,
+    ) {
+        self.flush_dom_program(child_index, ctx);
 
         self.statements.push(statement);
     }
 
-    fn lower_ast(&mut self, node: ast::Node, ctx: &mut Context) {
+    fn lower_ast(&mut self, node: ast::Node, child_index: ChildIndex, ctx: &mut Context) {
         match node {
             ast::Node::Element(element) => self.lower_element(element, ctx),
             ast::Node::Fragment(nodes) => {
+                let mut child_index = 0;
                 for node in nodes {
-                    self.lower_ast(node, ctx);
+                    self.lower_ast(node, ChildIndex(child_index), ctx);
+                    child_index += 1;
                 }
             }
             ast::Node::Text(text) => self.lower_text(text),
-            ast::Node::Variable(variable) => self.lower_variable(variable, ctx),
-            ast::Node::Component(component) => self.lower_component(component, ctx),
-            ast::Node::If(the_if) => self.lower_if(the_if, ctx),
+            ast::Node::Variable(variable) => self.lower_variable(variable, child_index, ctx),
+            ast::Node::Component(component) => self.lower_component(component, child_index, ctx),
+            ast::Node::If(the_if) => self.lower_if(the_if, child_index, ctx),
         }
     }
 
@@ -135,8 +158,11 @@ impl BlockBuilder {
 
         ctx.current_dom_depth += 1;
 
+        let mut child_index = 0;
+
         for child in element.children {
-            self.lower_ast(child, ctx);
+            self.lower_ast(child, ChildIndex(child_index), ctx);
+            child_index += 1;
         }
 
         ctx.current_dom_depth -= 1;
@@ -148,7 +174,12 @@ impl BlockBuilder {
         self.current_dom_opcodes.push(ir::DomOpCode::Text(text.0));
     }
 
-    fn lower_variable(&mut self, variable: variable::Variable, ctx: &mut Context) {
+    fn lower_variable(
+        &mut self,
+        variable: variable::Variable,
+        child_index: ChildIndex,
+        ctx: &mut Context,
+    ) {
         let node_field = ctx.next_field_id();
         let variable_field = ctx.next_field_id();
 
@@ -171,6 +202,7 @@ impl BlockBuilder {
                     expr: variable.ident.clone(),
                 },
             },
+            child_index,
             ctx,
         );
         self.push_statement(
@@ -179,11 +211,17 @@ impl BlockBuilder {
                 dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::LocalVar,
             },
+            child_index,
             ctx,
         );
     }
 
-    fn lower_component(&mut self, component: ast::Component, ctx: &mut Context) {
+    fn lower_component(
+        &mut self,
+        component: ast::Component,
+        child_index: ChildIndex,
+        ctx: &mut Context,
+    ) {
         let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
@@ -202,26 +240,27 @@ impl BlockBuilder {
                     props: component.attrs,
                 },
             },
+            child_index,
             ctx,
         );
     }
 
-    fn lower_if(&mut self, the_if: ast::If, ctx: &mut Context) {
+    fn lower_if(&mut self, the_if: ast::If, child_index: ChildIndex, ctx: &mut Context) {
         let test = the_if.test;
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
         let mut then_builder = BlockBuilder::default();
-        then_builder.lower_ast(*the_if.then_branch, ctx);
+        then_builder.lower_ast(*the_if.then_branch, child_index, ctx);
 
         let mut else_builder = BlockBuilder::default();
 
         match the_if.else_branch {
             Some(ast::Else::If(_, else_if)) => {
-                else_builder.lower_if(*else_if, ctx);
+                else_builder.lower_if(*else_if, child_index, ctx);
             }
             Some(ast::Else::Node(_, node)) => {
-                else_builder.lower_ast(*node, ctx);
+                else_builder.lower_ast(*node, child_index, ctx);
             }
             None => {}
         }
@@ -249,6 +288,7 @@ impl BlockBuilder {
                     ],
                 },
             },
+            child_index,
             ctx,
         );
 

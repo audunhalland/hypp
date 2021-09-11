@@ -113,6 +113,14 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
         unimplemented!()
     }
 
+    fn advance_to_first_child_of(&mut self, _element: &web_sys::Element) {
+        unimplemented!()
+    }
+
+    fn advance_to_next_sibling_of(&mut self, _node: &web_sys::Node) {
+        unimplemented!()
+    }
+
     fn skip_const_program(&mut self, _program: &[ConstOpCode]) {
         panic!()
     }
