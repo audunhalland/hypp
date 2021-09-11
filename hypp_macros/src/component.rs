@@ -227,7 +227,7 @@ fn generate_variant_enum(
     arms: &[ir::Arm],
     root_idents: &RootIdents,
 ) -> TokenStream {
-    let enum_ident = enum_type.to_tokens(root_idents);
+    let enum_ident = enum_type.to_tokens(root_idents, WithGenerics(false));
 
     let variant_defs = arms.iter().map(|arm| {
         let ident = &arm.enum_variant_ident;
@@ -238,7 +238,11 @@ fn generate_variant_enum(
             .map(|field| field.field_def_tokens(root_idents));
 
         quote! {
-            #ident { #(#struct_field_defs)* },
+            #ident {
+                #(#struct_field_defs)*
+
+                __phantom: PhantomField<H>
+            },
         }
     });
 
@@ -255,7 +259,7 @@ fn generate_variant_enum(
             let unmount_stmts = gen_unmount(&block.statements, Scope::Enum);
 
             quote! {
-                Self::#enum_variant_ident { #(#fields)* } => {
+                Self::#enum_variant_ident { #(#fields)* .. } => {
                     #unmount_stmts
                 },
             }
@@ -263,12 +267,12 @@ fn generate_variant_enum(
     );
 
     quote! {
-        enum #enum_ident {
+        enum #enum_ident<H: Hypp> {
             #(#variant_defs)*
         }
 
-        impl #enum_ident {
-            pub fn unmount<H: Hypp>(&mut self, __vm: &mut dyn DomVM<H>) {
+        impl<H: Hypp> #enum_ident<H> {
+            pub fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
                 match self {
                     #(#unmount_arms)*
                 }
@@ -309,7 +313,7 @@ enum Scope {
 impl ir::StructField {
     fn field_def_tokens(&self, root_idents: &RootIdents) -> TokenStream {
         let field = &self.field;
-        let ty = self.ty.to_tokens(root_idents);
+        let ty = self.ty.to_tokens(root_idents, WithGenerics(true));
 
         quote! { #field: #ty, }
     }
@@ -387,7 +391,7 @@ impl ir::Statement {
                 arms,
                 ..
             } => {
-                let enum_ident = enum_type.to_tokens(root_idents);
+                let enum_ident = enum_type.to_tokens(root_idents, WithGenerics(false));
 
                 let arms = arms.iter().map(
                     |ir::Arm {
@@ -411,6 +415,7 @@ impl ir::Statement {
 
                                 #enum_ident::#enum_variant_ident {
                                     #(#struct_params)*
+                                    __phantom: std::marker::PhantomData
                                 }
                             },
                         }
@@ -484,7 +489,7 @@ impl ir::Statement {
                 // The first match arms are for when the existing value matches the old value.
                 // The rest of the matches are for mismatches, one for each new value.
 
-                let enum_ident = enum_type.to_tokens(root_idents);
+                let enum_ident = enum_type.to_tokens(root_idents, WithGenerics(false));
                 let field = self.field.clone().unwrap();
                 let field_ref = FieldRef(field, scope);
                 let field_assign = FieldAssign(field, scope);
@@ -508,7 +513,7 @@ impl ir::Statement {
                             .map(|statement| statement.gen_patch(root_idents, Scope::Enum));
 
                         quote! {
-                           (#enum_ident::#enum_variant_ident { #(#fields)* }, #pattern) => {
+                           (#enum_ident::#enum_variant_ident { #(#fields)* .. }, #pattern) => {
                                #(#patch_stmts)*
                            },
                         }
@@ -538,6 +543,7 @@ impl ir::Statement {
 
                                 #field_assign = #enum_ident::#enum_variant_ident {
                                     #(#struct_params)*
+                                    __phantom: std::marker::PhantomData
                                 };
                            },
                         }
@@ -630,19 +636,26 @@ fn gen_unmount(statements: &[ir::Statement], scope: Scope) -> TokenStream {
     }
 }
 
+struct WithGenerics(bool);
+
 impl ir::StructFieldType {
-    fn to_tokens(&self, root_idents: &RootIdents) -> TokenStream {
+    fn to_tokens(&self, root_idents: &RootIdents, with_generics: WithGenerics) -> TokenStream {
+        let generics = match with_generics.0 {
+            true => quote! { <H> },
+            false => quote! {},
+        };
+
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
             Self::Component(path) => {
                 let type_path = &path.type_path;
-                quote! { #type_path<H> }
+                quote! { #type_path #generics }
             }
             Self::Enum(enum_index) => {
                 let ident =
                     quote::format_ident!("{}Enum{}", root_idents.component_ident, enum_index);
-                quote! { #ident }
+                quote! { #ident #generics }
             }
             Self::Variable(ty) => {
                 quote! { Var<#ty> }

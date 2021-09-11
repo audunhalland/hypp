@@ -317,5 +317,12 @@ mod tests {
         assert_eq!(hypp.render(), "<body/>");
     }
 
-    mod test_code {}
+    #[component(
+        <div>
+            if hello {
+                {yo}
+            }
+        </div>
+    )]
+    fn ConditionalWithVariableText(hello: bool, yo: &'p str) {}
 }
