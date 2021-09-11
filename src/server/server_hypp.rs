@@ -186,22 +186,6 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
             };
         }
     }
-
-    fn push_navigation(&mut self, _path: &[u16], _child_offset: u16) {
-        panic!();
-    }
-
-    fn pop_navigation(&mut self) {
-        panic!();
-    }
-
-    fn push_element_context(&mut self, _element: RcNode) {
-        panic!();
-    }
-
-    fn pop_element_context(&mut self) {
-        panic!();
-    }
 }
 
 #[cfg(test)]

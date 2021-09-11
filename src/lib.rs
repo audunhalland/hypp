@@ -43,7 +43,7 @@ pub enum ConstOpCode {
 }
 
 ///
-/// An command to move the DOM cursor
+/// A command to move the DOM cursor
 ///
 pub enum CursorCmd {
     // Enter the nth child
@@ -85,37 +85,6 @@ pub trait DomVM<'doc, H: Hypp> {
     /// Advance the cursor according to the const program passed.
     /// Don't mutate anything.
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
-
-    /// Navigate the cursor.
-    /// path represents descendants into child lists,
-    /// before pointing at the _final_ child index, which may
-    /// point beyond that parent element's child list.
-    ///
-    /// e.g.:
-    /// ([], 2) - advance two siblings forward from the current position
-    /// ([2], 0) - navigate to the current element's third child, then to that element's first child
-    ///
-    ///
-    /// The method will panic if no navigation can be performed.
-    ///
-    /// FIXME: Remove "stack" push/pop.
-    /// Just use cursor navigation!
-    ///
-    /// Example:
-    fn push_navigation(&mut self, path: &[u16], child_offset: u16);
-
-    /// Pop off the last navigation, restoring the previous state
-    fn pop_navigation(&mut self);
-
-    /// Push context.
-    /// Does not mutate the DOM.
-    /// This means we can skip parts of the DOM tree, moving the cursor directly
-    /// into this element's first child.
-    fn push_element_context(&mut self, element: H::Element);
-
-    /// Pop element context,
-    /// Restoring the state to what it was before `push_element_context`.
-    fn pop_element_context(&mut self);
 }
 
 pub struct State<T: Default> {

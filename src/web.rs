@@ -80,6 +80,7 @@ impl<'a> WebBuilder<'a> {
             .map_err(|_| Error::AddChild)
     }
 
+    /*
     fn enter_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
         let element = self.hypp.document.create_element(tag_name).unwrap();
         self.append_child(element.as_node())?;
@@ -93,6 +94,7 @@ impl<'a> WebBuilder<'a> {
             None => Err(Error::ExitElement),
         }
     }
+    */
 }
 
 impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
@@ -114,25 +116,9 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder<'doc> {
         unimplemented!()
     }
 
-    fn advance(&mut self, commands: &[CursorCmd]) {}
+    fn advance(&mut self, _commands: &[CursorCmd]) {}
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode]) {
         panic!()
-    }
-
-    fn push_navigation(&mut self, _path: &[u16], _child: u16) {
-        unimplemented!()
-    }
-
-    fn pop_navigation(&mut self) {
-        unimplemented!()
-    }
-
-    fn push_element_context(&mut self, element: web_sys::Element) {
-        self.element_stack.push(element);
-    }
-
-    fn pop_element_context(&mut self) {
-        self.element_stack.pop();
     }
 }
