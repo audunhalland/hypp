@@ -326,7 +326,7 @@ mod tests {
     )]
     fn ConditionalWithVariableText(hello: bool, yo: &'p str) {}
 
-    #[component_dbg(
+    #[component(
         <div>
             if hello {
                 <Baz />
@@ -386,4 +386,26 @@ mod tests {
         </span>
     )]
     fn Recursive(level: usize) {}
+
+    #[test]
+    fn render_recursive_server() {
+        let hypp = server::ServerHypp::new();
+        let mut c = Recursive::mount(
+            RecursiveProps {
+                level: 3,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            hypp.render(),
+            "<body><span><span><span><span/></span></span></span></body>"
+        );
+
+        c.unmount(&mut hypp.builder_at_body());
+
+        assert_eq!(hypp.render(), "<body/>");
+    }
 }

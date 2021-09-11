@@ -9,7 +9,7 @@ pub fn lower_root_node(root: ast::Node) -> ir::Block {
         dom_program_count: 0,
         field_count: 0,
         enum_count: 0,
-        current_depth: 0,
+        current_dom_depth: 0,
     };
 
     root_builder.lower_ast(root, &mut ctx);
@@ -22,7 +22,7 @@ pub struct Context {
     field_count: u16,
     enum_count: u16,
 
-    current_depth: u16,
+    current_dom_depth: u16,
 }
 
 impl Context {
@@ -78,7 +78,7 @@ impl BlockBuilder {
             Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
                 self.statements.push(ir::Statement {
                     field,
-                    depth: self.current_dom_program_depth,
+                    dom_depth: self.current_dom_program_depth,
                     expression: ir::Expression::ConstDom(ir::ConstDomProgram {
                         id: program_id,
                         ty: ir::ConstDomProgramTy::Element,
@@ -93,7 +93,7 @@ impl BlockBuilder {
 
                 self.statements.push(ir::Statement {
                     field,
-                    depth: self.current_dom_program_depth,
+                    dom_depth: self.current_dom_program_depth,
                     expression: ir::Expression::ConstDom(ir::ConstDomProgram {
                         id: program_id,
                         ty: ir::ConstDomProgramTy::Text,
@@ -103,7 +103,7 @@ impl BlockBuilder {
             }
         }
 
-        self.current_dom_program_depth = ctx.current_depth;
+        self.current_dom_program_depth = ctx.current_dom_depth;
     }
 
     fn push_statement(&mut self, statement: ir::Statement, ctx: &mut Context) {
@@ -133,13 +133,13 @@ impl BlockBuilder {
         self.current_dom_opcodes
             .push(ir::DomOpCode::EnterElement(tag_name.clone()));
 
-        ctx.current_depth += 1;
+        ctx.current_dom_depth += 1;
 
         for child in element.children {
             self.lower_ast(child, ctx);
         }
 
-        ctx.current_depth -= 1;
+        ctx.current_dom_depth -= 1;
 
         self.current_dom_opcodes.push(ir::DomOpCode::ExitElement);
     }
@@ -165,7 +165,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(node_field),
-                depth: ctx.current_depth,
+                dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::VariableText {
                     variable_field,
                     expr: variable.ident.clone(),
@@ -176,7 +176,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(variable_field),
-                depth: ctx.current_depth,
+                dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::LocalVar,
             },
             ctx,
@@ -196,7 +196,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(field),
-                depth: ctx.current_depth,
+                dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::Component {
                     path: component_path,
                     props: component.attrs,
@@ -229,7 +229,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(field),
-                depth: ctx.current_depth,
+                dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::Match {
                     enum_type: enum_type.clone(),
                     expr: test,

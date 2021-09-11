@@ -67,7 +67,7 @@ pub struct Statement {
     pub field: Option<FieldId>,
 
     /// Whether this statement operates at the root of the component
-    pub depth: u16,
+    pub dom_depth: u16,
 
     /// The expression to evaluate
     pub expression: Expression,
