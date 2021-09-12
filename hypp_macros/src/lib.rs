@@ -3,6 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 mod ast;
+mod codegen;
 mod component;
 mod ir;
 mod lowering;

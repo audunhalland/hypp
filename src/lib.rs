@@ -467,7 +467,6 @@ mod tests {
             state: bool,
         }
 
-        /*
         fn update(&mut self) {
             if props.prop1 {
                 self.state = false;
@@ -475,9 +474,7 @@ mod tests {
         }
 
         fn handle_click(&mut self, event) {
-
         }
-        */
 
         <div>
             if self.state {
