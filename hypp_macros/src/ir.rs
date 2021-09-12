@@ -1,6 +1,6 @@
 //! Intermediate Representation used during codegen
 
-use crate::ast;
+use crate::template_ast;
 
 /// A node reference that needs to be stored within the component
 pub struct StructField {
@@ -90,7 +90,7 @@ pub enum Expression {
     /// A component instantiation
     Component {
         path: ComponentPath,
-        props: Vec<(syn::Ident, ast::AttrValue)>,
+        props: Vec<(syn::Ident, template_ast::AttrValue)>,
     },
 
     /// A match expression (something which is conditional)

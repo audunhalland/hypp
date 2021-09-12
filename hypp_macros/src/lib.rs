@@ -2,17 +2,18 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 
-mod ast;
 mod codegen;
+mod component;
 mod component_old;
 mod ir;
 mod lowering;
+mod template_ast;
 mod variable;
 
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
     let output = compile_component(
-        syn::parse_macro_input!(attr as ast::Node),
+        syn::parse_macro_input!(attr as template_ast::Node),
         syn::parse_macro_input!(input as syn::ItemFn),
     );
 
@@ -22,7 +23,7 @@ pub fn component(attr: TokenStream, input: TokenStream) -> proc_macro::TokenStre
 #[proc_macro_attribute]
 pub fn component_dbg(attr: TokenStream, input: TokenStream) -> TokenStream {
     let output = compile_component(
-        syn::parse_macro_input!(attr as ast::Node),
+        syn::parse_macro_input!(attr as template_ast::Node),
         syn::parse_macro_input!(input as syn::ItemFn),
     );
 
@@ -31,7 +32,10 @@ pub fn component_dbg(attr: TokenStream, input: TokenStream) -> TokenStream {
     TokenStream::from(output)
 }
 
-fn compile_component(root_node: ast::Node, update_fn: syn::ItemFn) -> proc_macro2::TokenStream {
+fn compile_component(
+    root_node: template_ast::Node,
+    update_fn: syn::ItemFn,
+) -> proc_macro2::TokenStream {
     let block = lowering::lower_root_node(root_node);
     component_old::generate_component(block, update_fn)
 }

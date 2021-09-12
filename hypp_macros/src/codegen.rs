@@ -1,8 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::ast;
 use crate::ir;
+use crate::template_ast;
 
 #[derive(Copy, Clone)]
 pub enum Lifecycle {
@@ -330,13 +330,13 @@ impl ir::Statement {
             },
             ir::Expression::Component { path, props, .. } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
-                    ast::AttrValue::ImplicitTrue => quote! {
+                    template_ast::AttrValue::ImplicitTrue => quote! {
                         #name: true,
                     },
-                    ast::AttrValue::Literal(lit) => quote! {
+                    template_ast::AttrValue::Literal(lit) => quote! {
                         #name: #lit,
                     },
-                    ast::AttrValue::Expr(expr) => quote! {
+                    template_ast::AttrValue::Expr(expr) => quote! {
                         #name: #expr,
                     },
                 });
@@ -452,13 +452,13 @@ impl ir::Statement {
             }
             ir::Expression::Component { path, props } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
-                    ast::AttrValue::ImplicitTrue => quote! {
+                    template_ast::AttrValue::ImplicitTrue => quote! {
                         #name: true,
                     },
-                    ast::AttrValue::Literal(lit) => quote! {
+                    template_ast::AttrValue::Literal(lit) => quote! {
                         #name: #lit,
                     },
-                    ast::AttrValue::Expr(expr) => quote! {
+                    template_ast::AttrValue::Expr(expr) => quote! {
                         #name: #expr,
                     },
                 });

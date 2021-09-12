@@ -1,5 +1,5 @@
-use crate::ast;
 use crate::ir;
+use crate::template_ast;
 use crate::variable;
 
 // Minimum size of programs to directly skip when
@@ -8,7 +8,7 @@ use crate::variable;
 // to a DOM node within the component, in order to directly skip to it.
 const SKIP_PROGRAM_THRESHOLD: usize = 3;
 
-pub fn lower_root_node(root: ast::Node) -> ir::Block {
+pub fn lower_root_node(root: template_ast::Node) -> ir::Block {
     let mut root_builder = BlockBuilder::default();
 
     let mut ctx = Context {
@@ -125,23 +125,23 @@ impl BlockBuilder {
         self.statements.push(statement);
     }
 
-    fn lower_ast(&mut self, node: ast::Node, ctx: &mut Context) {
+    fn lower_ast(&mut self, node: template_ast::Node, ctx: &mut Context) {
         match node {
-            ast::Node::Element(element) => self.lower_element(element, ctx),
-            ast::Node::Fragment(nodes) => {
+            template_ast::Node::Element(element) => self.lower_element(element, ctx),
+            template_ast::Node::Fragment(nodes) => {
                 for node in nodes {
                     self.lower_ast(node, ctx);
                 }
             }
-            ast::Node::Text(text) => self.lower_text(text),
-            ast::Node::Variable(variable) => self.lower_variable(variable, ctx),
-            ast::Node::Component(component) => self.lower_component(component, ctx),
-            ast::Node::If(the_if) => self.lower_if(the_if, ctx),
-            ast::Node::For(the_for) => {}
+            template_ast::Node::Text(text) => self.lower_text(text),
+            template_ast::Node::Variable(variable) => self.lower_variable(variable, ctx),
+            template_ast::Node::Component(component) => self.lower_component(component, ctx),
+            template_ast::Node::If(the_if) => self.lower_if(the_if, ctx),
+            template_ast::Node::For(the_for) => {}
         }
     }
 
-    fn lower_element(&mut self, element: ast::Element, ctx: &mut Context) {
+    fn lower_element(&mut self, element: template_ast::Element, ctx: &mut Context) {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         self.current_dom_opcodes
@@ -158,7 +158,7 @@ impl BlockBuilder {
         self.current_dom_opcodes.push(ir::DomOpCode::ExitElement);
     }
 
-    fn lower_text(&mut self, text: ast::Text) {
+    fn lower_text(&mut self, text: template_ast::Text) {
         self.current_dom_opcodes.push(ir::DomOpCode::Text(text.0));
     }
 
@@ -197,7 +197,7 @@ impl BlockBuilder {
         );
     }
 
-    fn lower_component(&mut self, component: ast::Component, ctx: &mut Context) {
+    fn lower_component(&mut self, component: template_ast::Component, ctx: &mut Context) {
         let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
@@ -220,7 +220,7 @@ impl BlockBuilder {
         );
     }
 
-    fn lower_if(&mut self, the_if: ast::If, ctx: &mut Context) {
+    fn lower_if(&mut self, the_if: template_ast::If, ctx: &mut Context) {
         let test = the_if.test;
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
@@ -231,10 +231,10 @@ impl BlockBuilder {
         let mut else_builder = BlockBuilder::default();
 
         match the_if.else_branch {
-            Some(ast::Else::If(_, else_if)) => {
+            Some(template_ast::Else::If(_, else_if)) => {
                 else_builder.lower_if(*else_if, ctx);
             }
-            Some(ast::Else::Node(_, node)) => {
+            Some(template_ast::Else::Node(_, node)) => {
                 else_builder.lower_ast(*node, ctx);
             }
             None => {}

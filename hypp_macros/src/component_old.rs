@@ -1,8 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::ast;
 use crate::ir;
+use crate::template_ast;
 
 use crate::codegen::*;
 

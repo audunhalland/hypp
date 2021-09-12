@@ -1,6 +1,6 @@
 //!
 //! Abstract Syntax Tree data types,
-//! plus parsing of token stream into AST.
+//! plus parsing of the template into AST.
 //!
 
 use std::fmt::Display;
