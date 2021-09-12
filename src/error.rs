@@ -9,4 +9,7 @@ pub enum Error {
     ExitElement,
     RemoveElement,
     DomCorruption,
+    NotAnElement,
+    NotAText,
+    JsError,
 }

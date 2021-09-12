@@ -90,7 +90,7 @@ pub trait DomVM<'doc, H: Hypp> {
     /// The cursor moves to point at the next sibling.
     fn remove_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
 
-    fn remove_text(&mut self) -> Result<H::Element, Error>;
+    fn remove_text(&mut self) -> Result<H::Text, Error>;
 
     /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.

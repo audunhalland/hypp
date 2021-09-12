@@ -10,6 +10,7 @@ license = "MIT"
 [dependencies]
 hypp_macros = { path = "hypp_macros", version = "0.1.0" }
 web-sys = { version = "0.3", features = [ "Document", "Element", "HtmlElement", "Node", "Window", "Text"] }
+wasm-bindgen = "0.2"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
