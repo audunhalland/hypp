@@ -12,7 +12,8 @@ pub mod error;
 pub mod server;
 pub mod web;
 
-use error::Error;
+pub use error::Error;
+pub use hypp_macros::component;
 
 ///
 /// "upcast" a DOM node of a specific type to its generic type
@@ -449,16 +450,25 @@ mod tests {
     )]
     fn TopLevelConditional(lol: bool, text: &'p str) {}
 
+    component2! {
+        Simple(arg: &str) {}
+
+        fn update(&mut self) {
+        }
+
+        <div>
+            "Some text"
+        </div>
+    }
+
     // Experimentation with new surface syntax
     component2! {
-        Stuff (
-            prop1: bool,
-            prop2: String
-        ) {
+        Stuff(prop1: bool, prop2: String) {
             state: bool,
         }
 
-        fn update(&mut self, props) {
+        /*
+        fn update(&mut self) {
             if props.prop1 {
                 self.state = false;
             }
@@ -467,6 +477,7 @@ mod tests {
         fn handle_click(&mut self, event) {
 
         }
+        */
 
         <div>
             if self.state {

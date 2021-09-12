@@ -1,0 +1,13 @@
+[package]
+name = "hypp-test"
+version = "0.1.0"
+authors = ["Audun Halland <audun.halldand@pm.me>"]
+edition = "2018"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hypp = { path = "../../" }
+wasm-bindgen = "0.2"

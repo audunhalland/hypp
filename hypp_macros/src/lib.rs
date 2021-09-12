@@ -37,10 +37,7 @@ fn compile_component(root_node: ast::Node, update_fn: syn::ItemFn) -> proc_macro
 
 #[proc_macro]
 pub fn component2(input: TokenStream) -> proc_macro::TokenStream {
-    let output = quote::quote! {
-        fn it_works() {
-        }
-    };
+    let output = quote::quote! {};
 
     TokenStream::from(output)
 }
