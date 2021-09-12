@@ -344,6 +344,18 @@ mod tests {
     )]
     fn ConditionalWithComponent(hello: bool) {}
 
+    /*
+    not supported yet
+    #[component(
+        <article>
+            if let Some(stuff) = something {
+                <p></p>
+            }
+        </article>
+    )]
+    fn IfLet(something: Option<String>) {}
+    */
+
     #[component(
         <>
             <div>"first"</div>
@@ -418,6 +430,7 @@ mod tests {
         assert_eq!(hypp.render(), "<body/>");
     }
 
+    // doesn't work yet
     #[component(
         <ul>
             for item in items {
@@ -425,5 +438,48 @@ mod tests {
             }
         </ul>
     )]
-    fn List(items: Vec<String>) {}
+    fn List(_items: Vec<String>) {}
+
+    #[component(
+        if lol {
+            {text}
+        } else {
+            <p>"goo"</p>
+        }
+    )]
+    fn TopLevelConditional(lol: bool, text: &'p str) {}
+
+    // Experimentation with new surface syntax
+    component2! {
+        Stuff (
+            prop1: bool,
+            prop2: String
+        ) {
+            state: bool,
+        }
+
+        fn update(&mut self, props) {
+            if props.prop1 {
+                self.state = false;
+            }
+        }
+
+        fn handle_click(&mut self, event) {
+
+        }
+
+        <div>
+            if self.state {
+                <p>"yep"</p>
+            }
+        </div>
+        <div>
+            <button on_click={Self::handle_click}>
+                "A button"
+            </button>
+        </div>
+    }
+
+    #[test]
+    fn lol() {}
 }

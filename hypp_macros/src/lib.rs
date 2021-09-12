@@ -34,3 +34,13 @@ fn compile_component(root_node: ast::Node, update_fn: syn::ItemFn) -> proc_macro
     let block = lowering::lower_root_node(root_node);
     component::generate_component(block, update_fn)
 }
+
+#[proc_macro]
+pub fn component2(input: TokenStream) -> proc_macro::TokenStream {
+    let output = quote::quote! {
+        fn it_works() {
+        }
+    };
+
+    TokenStream::from(output)
+}

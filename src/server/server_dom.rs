@@ -5,7 +5,8 @@ pub type RcNode = Rc<Node>;
 
 pub struct Node {
     pub kind: NodeKind,
-    pub links: RefCell<Links>,
+
+    links: RefCell<Links>,
 }
 
 pub enum NodeKind {
@@ -15,7 +16,7 @@ pub enum NodeKind {
 }
 
 #[derive(Default)]
-pub struct Links {
+struct Links {
     pub parent: Option<Weak<Node>>,
 
     pub next_sibling: Option<RcNode>,
