@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 
 mod ast;
 mod codegen;
-mod component;
+mod component_old;
 mod ir;
 mod lowering;
 mod variable;
@@ -33,7 +33,7 @@ pub fn component_dbg(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 fn compile_component(root_node: ast::Node, update_fn: syn::ItemFn) -> proc_macro2::TokenStream {
     let block = lowering::lower_root_node(root_node);
-    component::generate_component(block, update_fn)
+    component_old::generate_component(block, update_fn)
 }
 
 #[proc_macro]
