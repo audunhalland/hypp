@@ -160,6 +160,8 @@ mod tests {
 
     use wasm_bindgen_test::*;
 
+    use hypp_macros::component_dbg;
+
     component! {
         Foo(is_cool: bool) {}
 
@@ -227,7 +229,7 @@ mod tests {
     mod inside {
         use super::*;
 
-        component! {
+        component_dbg! {
             P1(text: &'p str) {}
 
             <p>{text}</p>

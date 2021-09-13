@@ -7,6 +7,7 @@ mod component;
 mod component_ast;
 mod ir;
 mod lowering;
+mod param;
 mod template_ast;
 mod variable;
 

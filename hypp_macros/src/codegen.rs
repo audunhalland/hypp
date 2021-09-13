@@ -300,7 +300,8 @@ impl ir::StructField {
 
         match &self.ty {
             // mutable types
-            ir::StructFieldType::Component(_)
+            ir::StructFieldType::Param(_)
+            | ir::StructFieldType::Component(_)
             | ir::StructFieldType::Enum(_)
             | ir::StructFieldType::Variable(_) => quote! {
                 ref mut #field,
@@ -604,6 +605,10 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
+            Self::Param(param) => {
+                let ty = &param.ty;
+                quote! { #ty }
+            }
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {

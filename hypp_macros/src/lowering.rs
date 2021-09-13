@@ -6,7 +6,7 @@ use crate::variable;
 // generating patch code.
 // For longer programs, it may be worth it to store a reference
 // to a DOM node within the component, in order to directly skip to it.
-const SKIP_PROGRAM_THRESHOLD: usize = 3;
+const SKIP_PROGRAM_THRESHOLD: usize = 0;
 
 pub fn lower_root_node(root: template_ast::Node) -> ir::Block {
     let mut root_builder = BlockBuilder::default();

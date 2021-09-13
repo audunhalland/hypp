@@ -4,6 +4,7 @@ use quote::quote;
 use crate::component_ast;
 use crate::ir;
 use crate::lowering;
+use crate::param;
 
 use crate::codegen::*;
 
@@ -113,16 +114,15 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 fn analyze_ast(
     component_ast::Component {
         ident,
-        props,
-        state,
+        params,
         fns,
         template,
     }: component_ast::Component,
 ) -> Component {
     let root_idents = RootIdents::from_component_ident(ident);
 
-    let props_struct = create_props_struct(&props, &root_idents);
-    let props_destructuring = create_props_destructuring(&props, &root_idents);
+    let props_struct = create_props_struct(&params, &root_idents);
+    let props_destructuring = create_props_destructuring(&params, &root_idents);
 
     let ir::Block {
         struct_fields,
@@ -147,15 +147,12 @@ fn analyze_ast(
     }
 }
 
-fn create_props_struct(
-    props: &syn::punctuated::Punctuated<component_ast::NamedField, syn::Token![,]>,
-    root_idents: &RootIdents,
-) -> TokenStream {
+fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
     let props_ident = &root_idents.props_ident;
 
-    let fields = props.iter().map(|field| {
-        let ident = &field.ident;
-        let ty = &field.ty;
+    let fields = params.iter().map(|param| {
+        let ident = &param.ident;
+        let ty = &param.ty;
 
         quote! {
             pub #ident: #ty,
@@ -171,14 +168,11 @@ fn create_props_struct(
     }
 }
 
-fn create_props_destructuring(
-    props: &syn::punctuated::Punctuated<component_ast::NamedField, syn::Token![,]>,
-    root_idents: &RootIdents,
-) -> syn::FnArg {
+fn create_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
     let props_ident = &root_idents.props_ident;
 
-    let fields = props.iter().map(|field| {
-        let ident = &field.ident;
+    let fields = params.iter().map(|param| {
+        let ident = &param.ident;
 
         quote! {
             #ident,

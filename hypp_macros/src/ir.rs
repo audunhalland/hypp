@@ -1,5 +1,6 @@
 //! Intermediate Representation used during codegen
 
+use crate::param;
 use crate::template_ast;
 
 /// A node reference that needs to be stored within the component
@@ -23,6 +24,7 @@ impl quote::ToTokens for FieldId {
 pub enum StructFieldType {
     DomElement,
     DomText,
+    Param(param::Param),
     Component(ComponentPath),
     Enum(u16),
     Variable(syn::Type),

@@ -1,19 +1,13 @@
 use syn::parse::{Parse, ParseStream};
 
+use crate::param;
 use crate::template_ast;
 
 pub struct Component {
     pub ident: syn::Ident,
-    pub props: syn::punctuated::Punctuated<NamedField, syn::Token![,]>,
-    pub state: syn::punctuated::Punctuated<NamedField, syn::Token![,]>,
+    pub params: Vec<param::Param>,
     pub fns: Vec<syn::ItemFn>,
     pub template: template_ast::Node,
-}
-
-pub struct NamedField {
-    pub ident: syn::Ident,
-    pub colon_token: syn::Token![:],
-    pub ty: syn::Type,
 }
 
 impl Parse for Component {
@@ -22,11 +16,17 @@ impl Parse for Component {
 
         let props_content;
         syn::parenthesized!(props_content in input);
-        let props = props_content.parse_terminated(parse_named_field)?;
+        let props: syn::punctuated::Punctuated<param::Param, syn::Token![,]> =
+            props_content.parse_terminated(parse_prop)?;
 
         let state_content;
         syn::braced!(state_content in input);
-        let state = state_content.parse_terminated(parse_named_field)?;
+        let state: syn::punctuated::Punctuated<param::Param, syn::Token![,]> =
+            state_content.parse_terminated(parse_state)?;
+
+        let mut params = vec![];
+        params.extend(props.into_iter());
+        params.extend(state.into_iter());
 
         let mut fns = vec![];
 
@@ -39,22 +39,25 @@ impl Parse for Component {
 
         Ok(Self {
             ident,
-            props,
-            state,
+            params,
             fns,
             template,
         })
     }
 }
 
-fn parse_named_field(input: ParseStream) -> syn::Result<NamedField> {
+fn parse_prop(input: ParseStream) -> syn::Result<param::Param> {
+    parse_param(param::ParamKind::Prop, input)
+}
+
+fn parse_state(input: ParseStream) -> syn::Result<param::Param> {
+    parse_param(param::ParamKind::State, input)
+}
+
+fn parse_param(kind: param::ParamKind, input: ParseStream) -> syn::Result<param::Param> {
     let ident = input.parse()?;
-    let colon_token = input.parse()?;
+    let colon_token: syn::Token![:] = input.parse()?;
     let ty = input.parse()?;
 
-    Ok(NamedField {
-        ident,
-        colon_token,
-        ty,
-    })
+    Ok(param::Param { kind, ident, ty })
 }
