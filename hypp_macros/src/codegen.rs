@@ -29,6 +29,19 @@ pub struct RootIdents {
     pub uppercase_prefix: String,
 }
 
+impl RootIdents {
+    pub fn from_component_ident(component_ident: syn::Ident) -> Self {
+        let props_ident = quote::format_ident!("{}Props", component_ident);
+        let uppercase_prefix = component_ident.clone().to_string().to_uppercase();
+
+        Self {
+            component_ident,
+            props_ident,
+            uppercase_prefix,
+        }
+    }
+}
+
 /// A field we want to reference (read)
 pub struct FieldRef(ir::FieldId, CodegenCtx);
 

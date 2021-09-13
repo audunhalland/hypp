@@ -451,7 +451,7 @@ mod tests {
     fn TopLevelConditional(lol: bool, text: &'p str) {}
 
     component2! {
-        Simple(arg: &str) {}
+        Simple(arg: String) {}
 
         fn update(&mut self) {
         }
@@ -477,7 +477,7 @@ mod tests {
         }
 
         <div>
-            if self.state {
+            if prop1 {
                 <p>"yep"</p>
             }
         </div>

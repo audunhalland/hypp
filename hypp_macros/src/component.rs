@@ -1,15 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::component_ast;
 use crate::ir;
-use crate::template_ast;
+use crate::lowering;
 
 use crate::codegen::*;
 
 struct Component {
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
-    props_struct: syn::ItemStruct,
+    props_struct: TokenStream,
     variant_enums: Vec<TokenStream>,
     struct_fields: Vec<ir::StructField>,
     props_destructuring: syn::FnArg,
@@ -17,7 +18,7 @@ struct Component {
     statements: Vec<ir::Statement>,
 }
 
-pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> TokenStream {
+pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
         dom_programs,
         root_idents,
@@ -27,7 +28,7 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
         props_destructuring,
         fn_stmts,
         statements,
-    } = analyze_component(root_block, input_fn);
+    } = analyze_ast(ast);
 
     let component_ident = &root_idents.component_ident;
     let props_ident = &root_idents.props_ident;
@@ -109,17 +110,24 @@ pub fn generate_component(root_block: ir::Block, input_fn: syn::ItemFn) -> Token
     }
 }
 
-fn analyze_component(
-    ir::Block {
+fn analyze_ast(
+    component_ast::Component {
+        ident,
+        props,
+        state,
+        fns,
+        template,
+    }: component_ast::Component,
+) -> Component {
+    let root_idents = RootIdents::from_component_ident(ident);
+
+    let props_struct = create_props_struct(&props, &root_idents);
+    let props_destructuring = create_props_destructuring(&props, &root_idents);
+
+    let ir::Block {
         struct_fields,
         statements,
-    }: ir::Block,
-    input_fn: syn::ItemFn,
-) -> Component {
-    let root_idents = RootIdents::from_component_ident(input_fn.sig.ident);
-
-    let props_struct = create_props_struct(&input_fn.sig.inputs, &root_idents);
-    let props_destructuring = create_props_destructuring(&input_fn.sig.inputs, &root_idents);
+    } = lowering::lower_root_node(template);
 
     let mut dom_programs = vec![];
     collect_dom_programs(&statements, &root_idents, &mut dom_programs);
@@ -134,25 +142,27 @@ fn analyze_component(
         props_struct,
         struct_fields,
         props_destructuring,
-        fn_stmts: input_fn.block.stmts,
+        fn_stmts: vec![],
         statements,
     }
 }
 
 fn create_props_struct(
-    inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::Token![,]>,
+    props: &syn::punctuated::Punctuated<component_ast::NamedField, syn::Token![,]>,
     root_idents: &RootIdents,
-) -> syn::ItemStruct {
+) -> TokenStream {
     let props_ident = &root_idents.props_ident;
 
-    let fields = inputs.iter().filter_map(|input| match input {
-        syn::FnArg::Typed(syn::PatType { pat, ty, .. }) => Some(quote! {
-            pub #pat: #ty,
-        }),
-        _ => None,
+    let fields = props.iter().map(|field| {
+        let ident = &field.ident;
+        let ty = &field.ty;
+
+        quote! {
+            #ident: #ty,
+        }
     });
 
-    syn::parse_quote! {
+    quote! {
         pub struct #props_ident<'p> {
             #(#fields)*
 
@@ -162,16 +172,17 @@ fn create_props_struct(
 }
 
 fn create_props_destructuring(
-    inputs: &syn::punctuated::Punctuated<syn::FnArg, syn::Token![,]>,
+    props: &syn::punctuated::Punctuated<component_ast::NamedField, syn::Token![,]>,
     root_idents: &RootIdents,
 ) -> syn::FnArg {
     let props_ident = &root_idents.props_ident;
 
-    let fields = inputs.iter().filter_map(|input| match input {
-        syn::FnArg::Typed(syn::PatType { pat, .. }) => Some(quote! {
-            #pat,
-        }),
-        _ => None,
+    let fields = props.iter().map(|field| {
+        let ident = &field.ident;
+
+        quote! {
+            #ident,
+        }
     });
 
     syn::parse_quote! {

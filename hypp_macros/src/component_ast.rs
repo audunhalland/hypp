@@ -3,17 +3,17 @@ use syn::parse::{Parse, ParseStream};
 use crate::template_ast;
 
 pub struct Component {
-    ident: syn::Ident,
-    props: syn::punctuated::Punctuated<NamedField, syn::Token![,]>,
-    state: syn::punctuated::Punctuated<NamedField, syn::Token![,]>,
-    fns: Vec<syn::ItemFn>,
-    template: template_ast::Node,
+    pub ident: syn::Ident,
+    pub props: syn::punctuated::Punctuated<NamedField, syn::Token![,]>,
+    pub state: syn::punctuated::Punctuated<NamedField, syn::Token![,]>,
+    pub fns: Vec<syn::ItemFn>,
+    pub template: template_ast::Node,
 }
 
-struct NamedField {
-    ident: syn::Ident,
-    colon_token: syn::Token![:],
-    ty: syn::Type,
+pub struct NamedField {
+    pub ident: syn::Ident,
+    pub colon_token: syn::Token![:],
+    pub ty: syn::Type,
 }
 
 impl Parse for Component {
