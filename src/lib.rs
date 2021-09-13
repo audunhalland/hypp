@@ -160,30 +160,22 @@ mod tests {
 
     use wasm_bindgen_test::*;
 
-    use hypp_macros::*;
-
-    // TODO: rewrite to new syntax,
-    // when it supports introducing variables to the template
-    #[component_old(
-        <div>
-            <p>
-                <span>{label}</span>
-            </p>
-        </div>
-    )]
-    fn Foo(is_cool: bool) {
-        let label = if is_cool { "cool" } else { "dull" };
-    }
-
     component! {
-        Foo2(is_cool: bool) {}
+        Foo(is_cool: bool) {}
 
-        // suggestion:
-        // let label = if is_cool { "cool" else "dull" };
+        // let label = if is_cool { "cool" } else { "dull" };
 
         <div>
             <p>
-                <span>"TODO evaluate label"</span>
+                <span>
+                    // FIXME: Need some way to define this as a temporary variable?
+                    // maybe let bindings before the template?
+                    if is_cool {
+                        "cool"
+                    } else {
+                        "dull"
+                    }
+                </span>
             </p>
         </div>
     }

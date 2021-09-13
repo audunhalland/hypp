@@ -131,8 +131,8 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
         result
     }
 
-    fn const_exec_text(&mut self, _program: &[ConstOpCode]) -> Result<RcNode, Error> {
-        panic!()
+    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<RcNode, Error> {
+        self.const_exec_element(program)
     }
 
     fn text(&mut self, text: &str) -> Result<RcNode, Error> {
