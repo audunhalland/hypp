@@ -3,7 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 mod codegen;
-mod component;
+mod component_ast;
 mod component_old;
 mod ir;
 mod lowering;
@@ -42,6 +42,8 @@ fn compile_component(
 
 #[proc_macro]
 pub fn component2(input: TokenStream) -> proc_macro::TokenStream {
+    let component = syn::parse_macro_input!(input as component_ast::Component);
+
     let output = quote::quote! {};
 
     TokenStream::from(output)

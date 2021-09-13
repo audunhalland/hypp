@@ -75,6 +75,20 @@ pub struct For {
     pub repeating_node: Box<Node>,
 }
 
+pub fn parse_at_least_one(input: ParseStream) -> syn::Result<Node> {
+    let mut nodes = vec![input.parse()?];
+
+    while !input.is_empty() {
+        nodes.push(input.parse()?);
+    }
+
+    if nodes.len() == 1 {
+        Ok(nodes.into_iter().next().unwrap())
+    } else {
+        Ok(Node::Fragment(nodes))
+    }
+}
+
 impl Parse for Node {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.peek(syn::Token!(<)) {

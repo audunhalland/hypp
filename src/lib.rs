@@ -473,7 +473,7 @@ mod tests {
             }
         }
 
-        fn handle_click(&mut self, event) {
+        fn handle_click(&mut self, event: SomeType) {
         }
 
         <div>
