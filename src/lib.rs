@@ -162,7 +162,9 @@ mod tests {
 
     use hypp_macros::*;
 
-    #[component(
+    // TODO: rewrite to new syntax,
+    // when it supports introducing variables to the template
+    #[component_old(
         <div>
             <p>
                 <span>{label}</span>
@@ -171,6 +173,19 @@ mod tests {
     )]
     fn Foo(is_cool: bool) {
         let label = if is_cool { "cool" } else { "dull" };
+    }
+
+    component! {
+        Foo2(is_cool: bool) {}
+
+        // suggestion:
+        // let label = if is_cool { "cool" else "dull" };
+
+        <div>
+            <p>
+                <span>"TODO evaluate label"</span>
+            </p>
+        </div>
     }
 
     #[wasm_bindgen_test]
@@ -220,21 +235,28 @@ mod tests {
     mod inside {
         use super::*;
 
-        #[component(<p>{text}</p>)]
-        fn P1(text: &'p str) {}
+        component! {
+            P1(text: &'p str) {}
 
-        #[component(<p>"static"</p>)]
-        fn P2() {}
+            <p>{text}</p>
+        }
+
+        component! {
+            P2() {}
+
+            <p>"static"</p>
+        }
     }
 
-    #[component(
+    component! {
+        Baz() {}
+
         <div>
             // En kommentar
             <inside::P1 text="variable"/>
             <inside::P2/>
         </div>
-    )]
-    fn Baz() {}
+    }
 
     #[test]
     fn render_baz_server() {
@@ -253,7 +275,9 @@ mod tests {
         );
     }
 
-    #[component(
+    component! {
+        Conditional(hello: bool, world: bool) {}
+
         <div>
             if hello {
                 <span>"Hello"</span>
@@ -264,8 +288,7 @@ mod tests {
                 }
             }
         </div>
-    )]
-    fn Conditional(hello: bool, world: bool) {}
+    }
 
     #[test]
     fn render_conditional_server() {
@@ -327,46 +350,48 @@ mod tests {
         assert_eq!(hypp.render(), "<body/>");
     }
 
-    #[component(
-        <div>
-            if hello {
-                {yo}
-            }
-        </div>
-    )]
-    fn ConditionalWithVariableText(hello: bool, yo: &'p str) {}
+    component! {
+        ConditionalWithVariableText(hello: bool, yo: &'p str) {}
 
-    #[component(
         <div>
-            if hello {
-                <Baz />
-            }
+        if hello {
+            {yo}
+        }
         </div>
-    )]
-    fn ConditionalWithComponent(hello: bool) {}
+    }
+
+    component! {
+        ConditionalWithComponent(hello: bool) {}
+
+        <div>
+        if hello {
+            <Baz />
+        }
+        </div>
+    }
 
     /*
     not supported yet
-    #[component(
+    component! {
+        IfLet(something: Option<String>) {}
+
         <article>
             if let Some(stuff) = something {
                 <p></p>
             }
         </article>
-    )]
-    fn IfLet(something: Option<String>) {}
+    }
     */
 
-    #[component(
-        <>
-            <div>"first"</div>
-            if perhaps {
-                <span>"second"</span>
-            }
-            <p>"third"</p>
-        </>
-    )]
-    fn Fragment1(perhaps: bool) {}
+    component! {
+        Fragment1(perhaps: bool) {}
+
+        <div>"first"</div>
+        if perhaps {
+            <span>"second"</span>
+        }
+        <p>"third"</p>
+    }
 
     #[test]
     fn render_fragment1() {
@@ -400,14 +425,15 @@ mod tests {
         assert_eq!(hypp.render(), "<body/>");
     }
 
-    #[component(
+    component! {
+        Recursive(depth: usize) {}
+
         <span>
-            if depth > 1 {
-                <Recursive depth={depth - 1} />
-            }
+        if depth > 1 {
+            <Recursive depth={depth - 1} />
+        }
         </span>
-    )]
-    fn Recursive(depth: usize) {}
+    }
 
     #[test]
     fn render_recursive_server() {
@@ -432,37 +458,28 @@ mod tests {
     }
 
     // doesn't work yet
-    #[component(
-        <ul>
-            for item in items {
-                <li>{item}</li>
-            }
-        </ul>
-    )]
-    fn List(_items: Vec<String>) {}
+    component! {
+        List(_items: Vec<String>) {}
 
-    #[component(
+        <ul>
+        for item in items {
+            <li>{item}</li>
+        }
+        </ul>
+    }
+
+    component! {
+        TopLevelConditional(lol: bool, text: &'p str) {}
+
         if lol {
             {text}
         } else {
             <p>"goo"</p>
         }
-    )]
-    fn TopLevelConditional(lol: bool, text: &'p str) {}
-
-    component2! {
-        Simple(arg: String) {}
-
-        fn update(&mut self) {
-        }
-
-        <div>
-            "Some text"
-        </div>
     }
 
     // Experimentation with new surface syntax
-    component2! {
+    component! {
         Stuff(prop1: bool, prop2: String) {
             state: bool,
         }
@@ -487,7 +504,4 @@ mod tests {
             </button>
         </div>
     }
-
-    #[test]
-    fn lol() {}
 }

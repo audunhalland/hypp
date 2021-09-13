@@ -12,15 +12,25 @@ mod template_ast;
 mod variable;
 
 #[proc_macro]
-pub fn component2(input: TokenStream) -> proc_macro::TokenStream {
+pub fn component(input: TokenStream) -> proc_macro::TokenStream {
     let output =
         component::generate_component(syn::parse_macro_input!(input as component_ast::Component));
 
     TokenStream::from(output)
 }
 
+#[proc_macro]
+pub fn component_dbg(input: TokenStream) -> proc_macro::TokenStream {
+    let output =
+        component::generate_component(syn::parse_macro_input!(input as component_ast::Component));
+
+    println!("// macro output: \n{}", output);
+
+    TokenStream::from(output)
+}
+
 #[proc_macro_attribute]
-pub fn component(attr: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+pub fn component_old(attr: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
     let output = compile_component_old(
         syn::parse_macro_input!(attr as template_ast::Node),
         syn::parse_macro_input!(input as syn::ItemFn),
@@ -30,7 +40,7 @@ pub fn component(attr: TokenStream, input: TokenStream) -> proc_macro::TokenStre
 }
 
 #[proc_macro_attribute]
-pub fn component_dbg(attr: TokenStream, input: TokenStream) -> TokenStream {
+pub fn component_old_dbg(attr: TokenStream, input: TokenStream) -> TokenStream {
     let output = compile_component_old(
         syn::parse_macro_input!(attr as template_ast::Node),
         syn::parse_macro_input!(input as syn::ItemFn),

@@ -2,12 +2,13 @@ use hypp::*;
 
 use wasm_bindgen::prelude::*;
 
-#[hypp::component(
+hypp::component! {
+    App() {}
+
     <div>
         "Some text to test!"
     </div>
-)]
-fn App() {}
+}
 
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]

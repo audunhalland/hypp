@@ -158,7 +158,7 @@ fn create_props_struct(
         let ty = &field.ty;
 
         quote! {
-            #ident: #ty,
+            pub #ident: #ty,
         }
     });
 
