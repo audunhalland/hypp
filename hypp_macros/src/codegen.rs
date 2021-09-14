@@ -221,7 +221,7 @@ fn generate_variant_enum(
         }
 
         impl<H: Hypp> #enum_ident<H> {
-            pub fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
+            pub fn unmount(&self, __vm: &mut dyn DomVM<H>) {
                 match self {
                     #(#unmount_arms)*
                 }

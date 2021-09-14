@@ -146,7 +146,7 @@ pub trait Component<'p, H: Hypp> {
     /// Unmount the component, removing all its nodes
     /// from under its mount point in the tree, using the DomVM.
     /// The only purpose of this call is to clean up nodes in the DOM.
-    fn unmount(&mut self, __vm: &mut dyn DomVM<H>);
+    fn unmount(&self, __vm: &mut dyn DomVM<H>);
 }
 
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
