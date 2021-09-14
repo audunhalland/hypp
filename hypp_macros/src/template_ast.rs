@@ -54,7 +54,7 @@ pub struct Component {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct If {
-    pub if_token: syn::Token![if],
+    pub if_token: syn::token::If,
     pub test: syn::Expr,
     pub then_branch: Box<Node>,
     pub else_branch: Option<Else>,
@@ -62,15 +62,15 @@ pub struct If {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Else {
-    If(syn::Token![else], Box<If>),
-    Node(syn::Token![else], Box<Node>),
+    If(syn::token::Else, Box<If>),
+    Node(syn::token::Else, Box<Node>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct For {
-    pub for_token: syn::Token![for],
+    pub for_token: syn::token::For,
     pub binding: syn::Ident,
-    pub in_token: syn::Token![in],
+    pub in_token: syn::token::In,
     pub expression: syn::Expr,
     pub repeating_node: Box<Node>,
 }
@@ -91,7 +91,7 @@ pub fn parse_at_least_one(input: ParseStream) -> syn::Result<Node> {
 
 impl Parse for Node {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(syn::Token!(<)) {
+        if input.peek(syn::token::Lt) {
             return Ok(parse_element_or_fragment(input)?);
         }
 
@@ -99,11 +99,11 @@ impl Parse for Node {
             return Ok(Self::Text(text));
         }
 
-        if input.peek(syn::Token!(if)) {
+        if input.peek(syn::token::If) {
             return Ok(Node::If(parse_if(input)?));
         }
 
-        if input.peek(syn::Token!(for)) {
+        if input.peek(syn::token::For) {
             return Ok(Node::For(parse_for(input)?));
         }
 
@@ -119,14 +119,14 @@ impl Parse for Node {
 
 fn parse_element_or_fragment(input: ParseStream) -> syn::Result<Node> {
     // Opening:
-    input.parse::<syn::Token!(<)>()?;
+    input.parse::<syn::token::Lt>()?;
 
-    if input.peek(syn::Token!(>)) {
-        input.parse::<syn::Token!(>)>()?;
+    if input.peek(syn::token::Gt) {
+        input.parse::<syn::token::Gt>()?;
         let nodes = parse_children(input)?;
-        input.parse::<syn::Token!(<)>()?;
-        input.parse::<syn::Token!(/)>()?;
-        input.parse::<syn::Token!(>)>()?;
+        input.parse::<syn::token::Lt>()?;
+        input.parse::<syn::token::Div>()?;
+        input.parse::<syn::token::Gt>()?;
 
         return Ok(Node::Fragment(nodes));
     }
@@ -135,20 +135,20 @@ fn parse_element_or_fragment(input: ParseStream) -> syn::Result<Node> {
 
     let attrs = parse_attrs(input)?;
 
-    if input.peek(syn::Token!(/)) {
-        input.parse::<syn::Token!(/)>()?;
-        input.parse::<syn::Token!(>)>()?;
+    if input.peek(syn::token::Div) {
+        input.parse::<syn::token::Div>()?;
+        input.parse::<syn::token::Gt>()?;
 
         return Ok(element_or_component(name, attrs, vec![]));
     }
 
-    input.parse::<syn::Token!(>)>()?;
+    input.parse::<syn::token::Gt>()?;
 
     let children = parse_children(input)?;
 
     // Closing:
-    input.parse::<syn::Token!(<)>()?;
-    input.parse::<syn::Token!(/)>()?;
+    input.parse::<syn::token::Lt>()?;
+    input.parse::<syn::token::Div>()?;
 
     let end_name = parse_name(input)?;
     if end_name != name {
@@ -160,7 +160,7 @@ fn parse_element_or_fragment(input: ParseStream) -> syn::Result<Node> {
             ),
         ));
     }
-    input.parse::<syn::Token!(>)>()?;
+    input.parse::<syn::token::Gt>()?;
 
     Ok(element_or_component(name, attrs, children))
 }
@@ -218,14 +218,14 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
     let mut attrs = vec![];
 
     loop {
-        if input.peek(syn::Token!(/)) || input.peek(syn::Token!(>)) {
+        if input.peek(syn::token::Div) || input.peek(syn::token::Gt) {
             break;
         }
 
         let name: syn::Ident = input.parse()?;
 
-        let value = if input.peek(syn::Token!(=)) {
-            let _eq: syn::Token!(=) = input.parse()?;
+        let value = if input.peek(syn::token::Eq) {
+            input.parse::<syn::token::Eq>()?;
 
             if input.peek(syn::Lit) {
                 AttrValue::Literal(input.parse()?)
@@ -251,7 +251,7 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
 fn parse_children(input: ParseStream) -> syn::Result<Vec<Node>> {
     let mut children = vec![];
     while !input.is_empty() {
-        if input.peek(syn::Token!(<)) && input.peek2(syn::Token!(/)) {
+        if input.peek(syn::token::Lt) && input.peek2(syn::token::Div) {
             break;
         }
 
@@ -279,12 +279,12 @@ fn parse_braced_fragment(input: ParseStream) -> syn::Result<Node> {
 }
 
 fn parse_if(input: ParseStream) -> syn::Result<If> {
-    let if_token = input.parse::<syn::Token!(if)>()?;
+    let if_token = input.parse::<syn::token::If>()?;
     let test = syn::Expr::parse_without_eager_brace(input)?;
 
     let then_branch = Box::new(parse_braced_fragment(input)?);
 
-    let else_branch = if input.peek(syn::Token!(else)) {
+    let else_branch = if input.peek(syn::token::Else) {
         Some(parse_else(input)?)
     } else {
         None
@@ -303,7 +303,7 @@ fn parse_else(input: ParseStream) -> syn::Result<Else> {
 
     let lookahead = input.lookahead1();
 
-    if input.peek(syn::Token!(if)) {
+    if input.peek(syn::token::If) {
         Ok(Else::If(else_token, Box::new(parse_if(input)?)))
     } else if input.peek(syn::token::Brace) {
         Ok(Else::Node(

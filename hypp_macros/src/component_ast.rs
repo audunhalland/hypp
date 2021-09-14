@@ -16,21 +16,26 @@ impl Parse for Component {
 
         let props_content;
         syn::parenthesized!(props_content in input);
-        let props: syn::punctuated::Punctuated<param::Param, syn::Token![,]> =
+        let props: syn::punctuated::Punctuated<param::Param, syn::token::Comma> =
             props_content.parse_terminated(parse_prop)?;
 
         let state_content;
         syn::braced!(state_content in input);
-        let state: syn::punctuated::Punctuated<param::Param, syn::Token![,]> =
+        let state: syn::punctuated::Punctuated<param::Param, syn::token::Comma> =
             state_content.parse_terminated(parse_state)?;
 
         let mut params = vec![];
         params.extend(props.into_iter());
         params.extend(state.into_iter());
 
+        // assign IDs
+        for (id, param) in params.iter_mut().enumerate() {
+            param.id = id as u16;
+        }
+
         let mut fns = vec![];
 
-        while input.peek(syn::Token!(fn)) {
+        while input.peek(syn::token::Fn) {
             // TODO: ignore for now
             fns.push(input.parse::<syn::ItemFn>()?);
         }
@@ -56,8 +61,13 @@ fn parse_state(input: ParseStream) -> syn::Result<param::Param> {
 
 fn parse_param(kind: param::ParamKind, input: ParseStream) -> syn::Result<param::Param> {
     let ident = input.parse()?;
-    let colon_token: syn::Token![:] = input.parse()?;
+    let _: syn::token::Colon = input.parse()?;
     let ty = input.parse()?;
 
-    Ok(param::Param { kind, ident, ty })
+    Ok(param::Param {
+        id: 0,
+        kind,
+        ident,
+        ty,
+    })
 }

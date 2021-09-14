@@ -115,7 +115,7 @@ fn analyze_ast(
     component_ast::Component {
         ident,
         params,
-        fns,
+        fns: _fns,
         template,
     }: component_ast::Component,
 ) -> Component {
@@ -127,7 +127,7 @@ fn analyze_ast(
     let ir::Block {
         struct_fields,
         statements,
-    } = lowering::lower_root_node(template);
+    } = lowering::lower_root_node(template, &params);
 
     let mut dom_programs = vec![];
     collect_dom_programs(&statements, &root_idents, &mut dom_programs);

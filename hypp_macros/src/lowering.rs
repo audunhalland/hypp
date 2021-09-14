@@ -1,4 +1,5 @@
 use crate::ir;
+use crate::param;
 use crate::template_ast;
 use crate::variable;
 
@@ -8,7 +9,7 @@ use crate::variable;
 // to a DOM node within the component, in order to directly skip to it.
 const SKIP_PROGRAM_THRESHOLD: usize = 0;
 
-pub fn lower_root_node(root: template_ast::Node) -> ir::Block {
+pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir::Block {
     let mut root_builder = BlockBuilder::default();
 
     let mut ctx = Context {

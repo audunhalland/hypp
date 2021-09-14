@@ -337,7 +337,7 @@ impl ir::Statement {
                 }
             }
             ir::Expression::VariableText { expr, .. } => quote! {
-                __vm.text(#expr) #err_handler
+                __vm.text(#expr.as_ref()) #err_handler
             },
             ir::Expression::LocalVar => quote! {
                 Var::new()
