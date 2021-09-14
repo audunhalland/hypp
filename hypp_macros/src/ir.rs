@@ -15,20 +15,6 @@ pub enum FieldIdent {
     Param(syn::Ident),
 }
 
-impl quote::ToTokens for FieldIdent {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        match self {
-            Self::Id(id) => {
-                let ident = quote::format_ident!("__f{}", id);
-                tokens.extend(quote::quote! { #ident });
-            }
-            Self::Param(ident) => {
-                tokens.extend(quote::quote! { #ident });
-            }
-        }
-    }
-}
-
 /// Type of a struct field
 #[derive(Clone)]
 pub enum StructFieldType {

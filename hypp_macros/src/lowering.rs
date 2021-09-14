@@ -17,25 +17,30 @@ pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir:
         field_count: 0,
         enum_count: 0,
         current_dom_depth: 0,
-        params,
     };
 
     root_builder.lower_ast(root, &mut ctx);
+
+    for param in params {
+        root_builder.struct_fields.push(ir::StructField {
+            field: ir::FieldIdent::Param(param.ident.clone()),
+            ty: ir::StructFieldType::Param(param.clone()),
+        });
+    }
+
     root_builder.to_block(&mut ctx)
 }
 
 /// Context used for the whole template
-pub struct Context<'p> {
+pub struct Context {
     dom_program_count: u16,
     field_count: u16,
     enum_count: u16,
 
     current_dom_depth: u16,
-
-    params: &'p [param::Param],
 }
 
-impl<'p> Context<'p> {
+impl Context {
     fn next_dom_program_id(&mut self) -> u16 {
         let index = self.dom_program_count;
         self.dom_program_count += 1;
@@ -82,11 +87,6 @@ impl BlockBuilder {
         let opcodes = std::mem::replace(&mut self.current_dom_opcodes, vec![]);
 
         let program_id = ctx.next_dom_program_id();
-
-        enum NodeType {
-            Element,
-            Text,
-        }
 
         // Determine the resulting type of running the program (the last opcode)
         let program_ty = match opcodes.last().unwrap() {
@@ -141,7 +141,7 @@ impl BlockBuilder {
             template_ast::Node::Variable(variable) => self.lower_variable(variable, ctx),
             template_ast::Node::Component(component) => self.lower_component(component, ctx),
             template_ast::Node::If(the_if) => self.lower_if(the_if, ctx),
-            template_ast::Node::For(the_for) => {}
+            template_ast::Node::For(_the_for) => {}
         }
     }
 

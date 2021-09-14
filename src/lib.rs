@@ -152,7 +152,10 @@ pub trait Component<'p, H: Hypp> {
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
 pub type PhantomField<A> = PhantomData<A>;
 
-mod debugging {}
+#[allow(unused_imports)]
+mod debugging {
+    use super::*;
+}
 
 #[cfg(test)]
 mod tests {
@@ -160,6 +163,7 @@ mod tests {
 
     use wasm_bindgen_test::*;
 
+    #[allow(unused_imports)]
     use hypp_macros::component_dbg;
 
     component! {
@@ -229,7 +233,7 @@ mod tests {
     mod inside {
         use super::*;
 
-        component_dbg! {
+        component! {
             P1(text: &'p str) {}
 
             <p>{text}</p>
@@ -456,9 +460,9 @@ mod tests {
         List(_items: Vec<String>) {}
 
         <ul>
-        for item in items {
-            <li>{item}</li>
-        }
+            for item in items {
+                <li>{item}</li>
+            }
         </ul>
     }
 
@@ -472,14 +476,34 @@ mod tests {
         }
     }
 
+    component! {
+        StringProp1(arg: &'p str) {}
+        <p>{arg}</p>
+    }
+
+    component! {
+        StringProp2(arg: &'p str) {}
+        <div>{arg}</div>
+    }
+
+    component! {
+        ConditionalStringProp(arg: &'p str, draw_one: bool) {}
+
+        if draw_one {
+            <StringProp1 arg={arg} />
+        } else {
+            <StringProp2 arg={arg} />
+        }
+    }
+
     // Experimentation with new surface syntax
     component! {
-        Stuff(prop1: bool, prop2: String) {
+        Stuff(prop1: bool, prop2: &'p str) {
             state: bool,
         }
 
         fn update(&mut self) {
-            if props.prop1 {
+            if self.prop1 {
                 self.state = false;
             }
         }

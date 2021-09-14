@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::ir;
+use crate::param;
 use crate::template_ast;
 
 #[derive(Copy, Clone)]
@@ -38,6 +39,20 @@ impl RootIdents {
             component_ident,
             props_ident,
             uppercase_prefix,
+        }
+    }
+}
+
+impl quote::ToTokens for ir::FieldIdent {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            Self::Id(id) => {
+                let ident = quote::format_ident!("__f{}", id);
+                tokens.extend(quote::quote! { #ident });
+            }
+            Self::Param(ident) => {
+                tokens.extend(quote::quote! { #ident });
+            }
         }
     }
 }
@@ -292,7 +307,15 @@ impl ir::StructField {
     pub fn struct_param_tokens(&self) -> TokenStream {
         let field = &self.field;
 
-        quote! { #field, }
+        match &self.ty {
+            ir::StructFieldType::Param(param::Param { ty, .. }) => match ty {
+                syn::Type::Reference(_) => quote! {
+                    #field: #field.to_owned(),
+                },
+                _ => quote! { #field, },
+            },
+            _ => quote! {#field, },
+        }
     }
 
     pub fn mut_pattern_tokens(&self) -> TokenStream {
@@ -607,7 +630,12 @@ impl ir::StructFieldType {
             Self::DomText => quote! { H::Text },
             Self::Param(param) => {
                 let ty = &param.ty;
-                quote! { #ty }
+                match ty {
+                    syn::Type::Reference(syn::TypeReference { elem, .. }) => quote! {
+                        <#elem as ToOwned>::Owned
+                    },
+                    _ => quote! { #ty },
+                }
             }
             Self::Component(path) => {
                 let type_path = &path.type_path;
