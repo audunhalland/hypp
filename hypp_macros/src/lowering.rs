@@ -17,6 +17,7 @@ pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir:
         field_count: 0,
         enum_count: 0,
         current_dom_depth: 0,
+        params,
     };
 
     root_builder.lower_ast(root, &mut ctx);
@@ -24,25 +25,27 @@ pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir:
 }
 
 /// Context used for the whole template
-pub struct Context {
+pub struct Context<'p> {
     dom_program_count: u16,
     field_count: u16,
     enum_count: u16,
 
     current_dom_depth: u16,
+
+    params: &'p [param::Param],
 }
 
-impl Context {
+impl<'p> Context<'p> {
     fn next_dom_program_id(&mut self) -> u16 {
         let index = self.dom_program_count;
         self.dom_program_count += 1;
         index
     }
 
-    fn next_field_id(&mut self) -> ir::FieldId {
+    fn next_field_id(&mut self) -> ir::FieldIdent {
         let index = self.field_count;
         self.field_count += 1;
-        ir::FieldId(index)
+        ir::FieldIdent::Id(index)
     }
 
     fn next_enum_index(&mut self) -> u16 {
@@ -100,7 +103,7 @@ impl BlockBuilder {
         let opt_field = if opcodes.len() >= SKIP_PROGRAM_THRESHOLD {
             let field = ctx.next_field_id();
             self.struct_fields.push(ir::StructField {
-                field,
+                field: field.clone(),
                 ty: program_ty,
             });
             Some(field)
@@ -168,12 +171,12 @@ impl BlockBuilder {
         let variable_field = ctx.next_field_id();
 
         self.struct_fields.push(ir::StructField {
-            field: node_field,
+            field: node_field.clone(),
             ty: ir::StructFieldType::DomText,
         });
 
         self.struct_fields.push(ir::StructField {
-            field: variable_field,
+            field: variable_field.clone(),
             ty: ir::StructFieldType::Variable(variable.ty),
         });
 
@@ -182,7 +185,7 @@ impl BlockBuilder {
                 field: Some(node_field),
                 dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::VariableText {
-                    variable_field,
+                    variable_field: variable_field.clone(),
                     expr: variable.ident.clone(),
                 },
             },
@@ -204,7 +207,7 @@ impl BlockBuilder {
         let component_path = ir::ComponentPath::new(component.type_path);
 
         self.struct_fields.push(ir::StructField {
-            field,
+            field: field.clone(),
             ty: ir::StructFieldType::Component(component_path.clone()),
         });
 
@@ -243,7 +246,7 @@ impl BlockBuilder {
 
         self.push_statement(
             ir::Statement {
-                field: Some(field),
+                field: Some(field.clone()),
                 dom_depth: ctx.current_dom_depth,
                 expression: ir::Expression::Match {
                     enum_type: enum_type.clone(),

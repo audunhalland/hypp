@@ -43,9 +43,9 @@ impl RootIdents {
 }
 
 /// A field we want to reference (read)
-pub struct FieldRef(ir::FieldId, CodegenCtx);
+pub struct FieldRef<'f>(&'f ir::FieldIdent, CodegenCtx);
 
-impl quote::ToTokens for FieldRef {
+impl<'f> quote::ToTokens for FieldRef<'f> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let field = &self.0;
 
@@ -56,9 +56,9 @@ impl quote::ToTokens for FieldRef {
     }
 }
 
-pub struct MutFieldRef(ir::FieldId, CodegenCtx);
+pub struct MutFieldRef<'f>(&'f ir::FieldIdent, CodegenCtx);
 
-impl quote::ToTokens for MutFieldRef {
+impl<'f> quote::ToTokens for MutFieldRef<'f> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let field = &self.0;
 
@@ -71,9 +71,9 @@ impl quote::ToTokens for MutFieldRef {
 }
 
 /// A field we want to assign to (mut)
-pub struct FieldAssign(ir::FieldId, CodegenCtx);
+pub struct FieldAssign<'f>(&'f ir::FieldIdent, CodegenCtx);
 
-impl quote::ToTokens for FieldAssign {
+impl<'f> quote::ToTokens for FieldAssign<'f> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let field = &self.0;
 
@@ -258,7 +258,7 @@ pub fn gen_unmount(statements: &[ir::Statement], ctx: CodegenCtx) -> TokenStream
             }
             ir::Expression::Component { .. } => {
                 if dom_depth == 0 {
-                    let field_ref = FieldRef(statement.field.clone().unwrap(), ctx);
+                    let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
                         #field_ref.unmount(__vm);
                     });
@@ -266,7 +266,7 @@ pub fn gen_unmount(statements: &[ir::Statement], ctx: CodegenCtx) -> TokenStream
             }
             ir::Expression::Match { .. } => {
                 if dom_depth == 0 {
-                    let field_ref = FieldRef(statement.field.clone().unwrap(), ctx);
+                    let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
                         #field_ref.unmount(__vm);
                     });
@@ -431,7 +431,7 @@ impl ir::Statement {
     pub fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
         match &self.expression {
             ir::Expression::ConstDom(program) => {
-                if let Some(field) = self.field {
+                if let Some(field) = &self.field {
                     // OPTIMIZATION: Can advance the cursor directly!
 
                     let field_ref = FieldRef(field, ctx);
@@ -456,8 +456,8 @@ impl ir::Statement {
                 expr,
                 variable_field,
             } => {
-                let field_ref = FieldRef(self.field.clone().unwrap(), ctx);
-                let variable_field_ref = FieldRef(*variable_field, ctx);
+                let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
+                let variable_field_ref = FieldRef(variable_field, ctx);
                 quote! {
                     if let Some(v) = #variable_field_ref.update(#expr) {
                         H::set_text(&#field_ref, v);
@@ -478,7 +478,7 @@ impl ir::Statement {
                 });
                 let props_path = path.props_path();
 
-                let field_ref = FieldRef(self.field.clone().unwrap(), ctx);
+                let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
 
                 quote! {
                     #field_ref.patch(#props_path {
@@ -498,7 +498,7 @@ impl ir::Statement {
                 // The rest of the matches are for mismatches, one for each new value.
 
                 let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
-                let field = self.field.clone().unwrap();
+                let field = self.field.as_ref().unwrap();
                 let field_ref = FieldRef(field, ctx);
                 let field_assign = FieldAssign(field, ctx);
                 let mut_field_ref = MutFieldRef(field, ctx);

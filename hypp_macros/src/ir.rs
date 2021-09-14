@@ -5,17 +5,27 @@ use crate::template_ast;
 
 /// A node reference that needs to be stored within the component
 pub struct StructField {
-    pub field: FieldId,
+    pub field: FieldIdent,
     pub ty: StructFieldType,
 }
 
-#[derive(Clone, Copy)]
-pub struct FieldId(pub u16);
+#[derive(Clone)]
+pub enum FieldIdent {
+    Id(u16),
+    Param(syn::Ident),
+}
 
-impl quote::ToTokens for FieldId {
+impl quote::ToTokens for FieldIdent {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let ident = quote::format_ident!("__f{}", self.0);
-        tokens.extend(quote::quote! { #ident });
+        match self {
+            Self::Id(id) => {
+                let ident = quote::format_ident!("__f{}", id);
+                tokens.extend(quote::quote! { #ident });
+            }
+            Self::Param(ident) => {
+                tokens.extend(quote::quote! { #ident });
+            }
+        }
     }
 }
 
@@ -66,7 +76,7 @@ pub struct Block {
 pub struct Statement {
     /// Where to assign the expression, or nothing if the expression is
     /// not to be assigned to anything
-    pub field: Option<FieldId>,
+    pub field: Option<FieldIdent>,
 
     /// Whether this statement operates at the root of the component
     pub dom_depth: u16,
@@ -82,7 +92,7 @@ pub enum Expression {
 
     /// A text variable (in the DOM)
     VariableText {
-        variable_field: FieldId,
+        variable_field: FieldIdent,
         expr: syn::Ident,
     },
 
