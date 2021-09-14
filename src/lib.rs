@@ -136,6 +136,14 @@ impl<T: Eq> Var<T> {
 pub trait Component<'p, H: Hypp> {
     type Props: 'p;
 
+    ///
+    /// Set new props on the component instance, causing an immediate, synchronous
+    /// DOM update if the component determines that anything changes.
+    ///
+    /// The __vm cursor __must__ point to the component start.
+    ///
+    fn set_props(&mut self, props: Self::Props, __vm: &mut dyn DomVM<H>);
+
     /// Patch the component, given new properties.
     /// The __vm cursor __must__ point at where the component
     /// starts at the time of the call.
@@ -436,7 +444,7 @@ mod tests {
     #[test]
     fn render_recursive_server() {
         let hypp = server::ServerHypp::new();
-        let mut c = Recursive::mount(
+        let c = Recursive::mount(
             RecursiveProps {
                 depth: 3,
                 __phantom: std::marker::PhantomData,
@@ -456,8 +464,8 @@ mod tests {
     }
 
     // doesn't work yet
-    component! {
-        List(_items: Vec<String>) {}
+    component_dbg! {
+        List(_items: &'p [String]) {}
 
         <ul>
             for item in items {

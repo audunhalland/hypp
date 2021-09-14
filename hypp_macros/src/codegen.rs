@@ -2,7 +2,6 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::ir;
-use crate::param;
 use crate::template_ast;
 
 #[derive(Copy, Clone)]
@@ -308,12 +307,13 @@ impl ir::StructField {
         let field = &self.field;
 
         match &self.ty {
-            ir::StructFieldType::Param(param::Param { ty, .. }) => match ty {
-                syn::Type::Reference(_) => quote! {
-                    #field: #field.to_owned(),
-                },
-                _ => quote! { #field, },
-            },
+            ir::StructFieldType::Param(param) => {
+                if param.is_reference() {
+                    quote! { #field: #field.to_owned(), }
+                } else {
+                    quote! { #field, }
+                }
+            }
             _ => quote! {#field, },
         }
     }

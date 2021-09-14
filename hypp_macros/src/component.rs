@@ -14,7 +14,8 @@ struct Component {
     props_struct: TokenStream,
     variant_enums: Vec<TokenStream>,
     struct_fields: Vec<ir::StructField>,
-    props_destructuring: syn::FnArg,
+    fn_props_destructuring: syn::FnArg,
+    self_props_bindings: TokenStream,
     fn_stmts: Vec<syn::Stmt>,
     statements: Vec<ir::Statement>,
 }
@@ -26,7 +27,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         props_struct,
         variant_enums,
         struct_fields,
-        props_destructuring,
+        fn_props_destructuring,
+        self_props_bindings,
         fn_stmts,
         statements,
     } = analyze_ast(ast);
@@ -77,6 +79,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         #(#variant_enums)*
 
+        #[allow(dead_code)]
         pub struct #component_ident<H: Hypp> {
             #(#struct_field_defs)*
 
@@ -84,7 +87,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         }
 
         impl<H: Hypp> #component_ident<H> {
-            pub fn mount(#props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<Self, Error> {
+            pub fn mount(#fn_props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<Self, Error> {
                 #(#fn_stmts)*
                 #(#mount_stmts)*
 
@@ -94,12 +97,24 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                     __phantom: std::marker::PhantomData
                 })
             }
+
+            #[allow(unused_variables)]
+            fn test_update_from_self_props(&mut self, __vm: &mut dyn DomVM<H>) {
+                #self_props_bindings
+
+                // #(#fn_stmts)*
+                // #(#patch_stmts)*
+            }
         }
 
         impl<'p, H: Hypp> Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn patch(&mut self, #props_destructuring, __vm: &mut dyn DomVM<H>) {
+            fn set_props(&mut self, props: Self::Props, __vm: &mut dyn DomVM<H>) {
+                unimplemented!();
+            }
+
+            fn patch(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {
                 #(#fn_stmts)*
                 #(#patch_stmts)*
             }
@@ -122,7 +137,8 @@ fn analyze_ast(
     let root_idents = RootIdents::from_component_ident(ident);
 
     let props_struct = create_props_struct(&params, &root_idents);
-    let props_destructuring = create_props_destructuring(&params, &root_idents);
+    let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
+    let self_props_bindings = create_self_props_bindings(&params);
 
     let ir::Block {
         struct_fields,
@@ -141,7 +157,8 @@ fn analyze_ast(
         root_idents,
         props_struct,
         struct_fields,
-        props_destructuring,
+        fn_props_destructuring,
+        self_props_bindings,
         fn_stmts: vec![],
         statements,
     }
@@ -168,7 +185,7 @@ fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> Tok
     }
 }
 
-fn create_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
+fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
     let props_ident = &root_idents.props_ident;
 
     let fields = params.iter().map(|param| {
@@ -184,5 +201,24 @@ fn create_props_destructuring(params: &[param::Param], root_idents: &RootIdents)
             #(#fields)*
             ..
         }: #props_ident
+    }
+}
+
+fn create_self_props_bindings(params: &[param::Param]) -> TokenStream {
+    let bindings = params.iter().map(|param| {
+        let ident = &param.ident;
+
+        if param.is_reference() {
+            // Remember, when storing a _reference_ prop inside self,
+            // we use the `<T as ToOwned>::Owned` type to store it..
+            // so we can just take the reference to that again!
+            quote! { let #ident = &self.#ident; }
+        } else {
+            quote! { let #ident = self.#ident; }
+        }
+    });
+
+    quote! {
+        #(#bindings)*
     }
 }
