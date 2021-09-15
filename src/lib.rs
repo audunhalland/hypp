@@ -464,7 +464,7 @@ mod tests {
     }
 
     // doesn't work yet
-    component_dbg! {
+    component! {
         List(_items: &'p [String]) {}
 
         <ul>

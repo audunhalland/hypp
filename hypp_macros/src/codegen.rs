@@ -5,6 +5,12 @@ use crate::ir;
 use crate::template_ast;
 
 #[derive(Copy, Clone)]
+pub enum PatchKind {
+    SelfProps,
+    Legacy,
+}
+
+#[derive(Copy, Clone)]
 pub enum Lifecycle {
     Mount,
     Patch,
@@ -451,7 +457,12 @@ impl ir::Statement {
         }
     }
 
-    pub fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
+    pub fn gen_patch(
+        &self,
+        kind: PatchKind,
+        root_idents: &RootIdents,
+        ctx: CodegenCtx,
+    ) -> TokenStream {
         match &self.expression {
             ir::Expression::ConstDom(program) => {
                 if let Some(field) = &self.field {
@@ -480,10 +491,19 @@ impl ir::Statement {
                 variable_field,
             } => {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
-                let variable_field_ref = FieldRef(variable_field, ctx);
-                quote! {
-                    if let Some(v) = #variable_field_ref.update(#expr) {
-                        H::set_text(&#field_ref, v);
+                match kind {
+                    PatchKind::SelfProps => {
+                        quote! {
+                            H::set_text(&#field_ref, #expr);
+                        }
+                    }
+                    PatchKind::Legacy => {
+                        let variable_field_ref = FieldRef(variable_field, ctx);
+                        quote! {
+                            if let Some(v) = #variable_field_ref.update(#expr) {
+                                H::set_text(&#field_ref, v);
+                            }
+                        }
                     }
                 }
             }
@@ -540,6 +560,7 @@ impl ir::Statement {
 
                         let patch_stmts = block.statements.iter().map(|statement| {
                             statement.gen_patch(
+                                kind,
                                 root_idents,
                                 CodegenCtx {
                                     scope: Scope::Enum,

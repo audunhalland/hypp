@@ -16,6 +16,7 @@ struct Component {
     struct_fields: Vec<ir::StructField>,
     fn_props_destructuring: syn::FnArg,
     self_props_bindings: TokenStream,
+    props_updater: TokenStream,
     fn_stmts: Vec<syn::Stmt>,
     statements: Vec<ir::Statement>,
 }
@@ -29,6 +30,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         struct_fields,
         fn_props_destructuring,
         self_props_bindings,
+        props_updater,
         fn_stmts,
         statements,
     } = analyze_ast(ast);
@@ -56,6 +58,20 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let patch_stmts = statements.iter().map(|statement| {
         statement.gen_patch(
+            PatchKind::SelfProps,
+            &root_idents,
+            CodegenCtx {
+                lifecycle: Lifecycle::Patch,
+                scope: Scope::Component,
+            },
+        )
+    });
+
+    let legacy_fn_stmts = fn_stmts.clone();
+
+    let legacy_patch_stmts = statements.iter().map(|statement| {
+        statement.gen_patch(
+            PatchKind::Legacy,
             &root_idents,
             CodegenCtx {
                 lifecycle: Lifecycle::Patch,
@@ -99,24 +115,24 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             }
 
             #[allow(unused_variables)]
-            fn test_update_from_self_props(&mut self, __vm: &mut dyn DomVM<H>) {
+            fn patch_self(&mut self, __updates: &[bool], __vm: &mut dyn DomVM<H>) {
                 #self_props_bindings
 
-                // #(#fn_stmts)*
-                // #(#patch_stmts)*
+                #(#fn_stmts)*
+                #(#patch_stmts)*
             }
         }
 
         impl<'p, H: Hypp> Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn set_props(&mut self, props: Self::Props, __vm: &mut dyn DomVM<H>) {
-                unimplemented!();
+            fn set_props(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {
+                #props_updater
             }
 
             fn patch(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {
-                #(#fn_stmts)*
-                #(#patch_stmts)*
+                #(#legacy_fn_stmts)*
+                #(#legacy_patch_stmts)*
             }
 
             fn unmount(&self, __vm: &mut dyn DomVM<H>) {
@@ -139,6 +155,7 @@ fn analyze_ast(
     let props_struct = create_props_struct(&params, &root_idents);
     let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
     let self_props_bindings = create_self_props_bindings(&params);
+    let props_updater = create_props_updater(&params);
 
     let ir::Block {
         struct_fields,
@@ -159,6 +176,7 @@ fn analyze_ast(
         struct_fields,
         fn_props_destructuring,
         self_props_bindings,
+        props_updater,
         fn_stmts: vec![],
         statements,
     }
@@ -220,5 +238,44 @@ fn create_self_props_bindings(params: &[param::Param]) -> TokenStream {
 
     quote! {
         #(#bindings)*
+    }
+}
+
+fn create_props_updater(params: &[param::Param]) -> TokenStream {
+    let n_props = params
+        .iter()
+        .filter(|param| match &param.kind {
+            param::ParamKind::Prop => true,
+            _ => false,
+        })
+        .count();
+
+    let checks = params.iter().map(|param| {
+        let id = param.id as usize;
+        let ident = &param.ident;
+
+        let write = if param.is_reference() {
+            quote! {
+                self.#ident = #ident.to_owned();
+            }
+        } else {
+            quote! {
+                self.#ident = #ident;
+            }
+        };
+
+        quote! {
+            if self.#ident != #ident {
+                #write
+                __updates[#id] = true;
+            }
+        }
+    });
+
+    quote! {
+        // TODO: use bitvec
+        let mut __updates: [bool; #n_props] = [false; #n_props];
+
+        #(#checks)*
     }
 }
