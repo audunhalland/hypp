@@ -376,14 +376,30 @@ mod tests {
         </div>
     }
 
-    /*
-    not supported yet
     component! {
-        IfLet(something: Option<String>) {}
+        ITakeANumber(number: u32) {}
+
+        "lol"
+    }
+
+    component! {
+        IfLet(opt_number: Option<u32>) {}
 
         <article>
-            if let Some(stuff) = something {
-                <p></p>
+            if let Some(number) = opt_number {
+                <ITakeANumber number={number} />
+            }
+        </article>
+    }
+
+    // FIXME: Optional strings not working yet
+    /*
+    component! {
+        OptionString(opt_str: Option<&'p str>) {}
+
+        <article>
+            if let Some(str) = opt_str {
+                <p/>
             }
         </article>
     }

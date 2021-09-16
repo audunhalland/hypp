@@ -271,8 +271,14 @@ impl BlockBuilder {
             .into_iter()
             .enumerate()
             .map(|(index, arm)| {
+                // Help dataflow analysis inside the new variable scope
+                let mut arm_scope = flow::FlowScope::with_parent(scope);
+                // expr flows into arm.pat
+                arm_scope.bind_expr(&arm.pat, &expr);
+
+                // Compile the arm
                 let mut arm_builder = BlockBuilder::default();
-                arm_builder.lower_ast(arm.node, scope, ctx);
+                arm_builder.lower_ast(arm.node, &arm_scope, ctx);
 
                 ir::Arm {
                     enum_variant_ident: quote::format_ident!("V{}", index),
@@ -283,6 +289,9 @@ impl BlockBuilder {
             })
             .collect();
 
+        // FIXME: Should we take into account the deps inside the arms HERE?
+        // because we have to execute this Match update if any of the params
+        // used inside the match get touched.
         let param_deps = scope.lookup_params_deps_for_expr(&expr);
 
         self.push_statement(
