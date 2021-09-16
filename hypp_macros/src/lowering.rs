@@ -1,3 +1,4 @@
+use crate::flow;
 use crate::ir;
 use crate::param;
 use crate::template_ast;
@@ -19,7 +20,9 @@ pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir:
         current_dom_depth: 0,
     };
 
-    root_builder.lower_ast(root, &mut ctx);
+    let scope = flow::FlowScope::from_params(params);
+
+    root_builder.lower_ast(root, &scope, &mut ctx);
 
     for param in params {
         root_builder.struct_fields.push(ir::StructField {
@@ -114,6 +117,7 @@ impl BlockBuilder {
         self.statements.push(ir::Statement {
             field: opt_field,
             dom_depth: self.current_dom_program_depth,
+            param_deps: ir::ParamDeps::Const,
             expression: ir::Expression::ConstDom(ir::ConstDomProgram {
                 id: program_id,
                 opcodes,
@@ -129,23 +133,33 @@ impl BlockBuilder {
         self.statements.push(statement);
     }
 
-    fn lower_ast(&mut self, node: template_ast::Node, ctx: &mut Context) {
+    fn lower_ast<'p>(
+        &mut self,
+        node: template_ast::Node,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) {
         match node {
-            template_ast::Node::Element(element) => self.lower_element(element, ctx),
+            template_ast::Node::Element(element) => self.lower_element(element, scope, ctx),
             template_ast::Node::Fragment(nodes) => {
                 for node in nodes {
-                    self.lower_ast(node, ctx);
+                    self.lower_ast(node, scope, ctx);
                 }
             }
             template_ast::Node::Text(text) => self.lower_text(text),
-            template_ast::Node::Variable(variable) => self.lower_variable(variable, ctx),
-            template_ast::Node::Component(component) => self.lower_component(component, ctx),
-            template_ast::Node::If(the_if) => self.lower_if(the_if, ctx),
+            template_ast::Node::Variable(variable) => self.lower_variable(variable, scope, ctx),
+            template_ast::Node::Component(component) => self.lower_component(component, scope, ctx),
+            template_ast::Node::If(the_if) => self.lower_if(the_if, scope, ctx),
             template_ast::Node::For(_the_for) => {}
         }
     }
 
-    fn lower_element(&mut self, element: template_ast::Element, ctx: &mut Context) {
+    fn lower_element<'p>(
+        &mut self,
+        element: template_ast::Element,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         self.current_dom_opcodes
@@ -154,7 +168,7 @@ impl BlockBuilder {
         ctx.current_dom_depth += 1;
 
         for child in element.children {
-            self.lower_ast(child, ctx);
+            self.lower_ast(child, scope, ctx);
         }
 
         ctx.current_dom_depth -= 1;
@@ -166,7 +180,12 @@ impl BlockBuilder {
         self.current_dom_opcodes.push(ir::DomOpCode::Text(text.0));
     }
 
-    fn lower_variable(&mut self, variable: variable::Variable, ctx: &mut Context) {
+    fn lower_variable<'p>(
+        &mut self,
+        variable: variable::Variable,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) {
         let node_field = ctx.next_field_id();
         let variable_field = ctx.next_field_id();
 
@@ -184,6 +203,7 @@ impl BlockBuilder {
             ir::Statement {
                 field: Some(node_field),
                 dom_depth: ctx.current_dom_depth,
+                param_deps: scope.lookup_param_deps_for_ident(&variable.ident),
                 expression: ir::Expression::VariableText {
                     variable_field: variable_field.clone(),
                     expr: variable.ident.clone(),
@@ -195,13 +215,19 @@ impl BlockBuilder {
             ir::Statement {
                 field: Some(variable_field),
                 dom_depth: ctx.current_dom_depth,
+                param_deps: scope.lookup_param_deps_for_ident(&variable.ident),
                 expression: ir::Expression::LocalVar,
             },
             ctx,
         );
     }
 
-    fn lower_component(&mut self, component: template_ast::Component, ctx: &mut Context) {
+    fn lower_component<'p>(
+        &mut self,
+        component: template_ast::Component,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) {
         let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
@@ -211,10 +237,16 @@ impl BlockBuilder {
             ty: ir::StructFieldType::Component(component_path.clone()),
         });
 
+        let mut param_deps = ir::ParamDeps::Const;
+        for attr in &component.attrs {
+            param_deps = param_deps.union(scope.lookup_param_deps_for_ident(&attr.0));
+        }
+
         self.push_statement(
             ir::Statement {
                 field: Some(field),
                 dom_depth: ctx.current_dom_depth,
+                param_deps,
                 expression: ir::Expression::Component {
                     path: component_path,
                     props: component.attrs,
@@ -224,30 +256,38 @@ impl BlockBuilder {
         );
     }
 
-    fn lower_if(&mut self, the_if: template_ast::If, ctx: &mut Context) {
+    fn lower_if<'p>(
+        &mut self,
+        the_if: template_ast::If,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) {
         let test = the_if.test;
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
         let mut then_builder = BlockBuilder::default();
-        then_builder.lower_ast(*the_if.then_branch, ctx);
+        then_builder.lower_ast(*the_if.then_branch, scope, ctx);
 
         let mut else_builder = BlockBuilder::default();
 
         match the_if.else_branch {
             Some(template_ast::Else::If(_, else_if)) => {
-                else_builder.lower_if(*else_if, ctx);
+                else_builder.lower_if(*else_if, scope, ctx);
             }
             Some(template_ast::Else::Node(_, node)) => {
-                else_builder.lower_ast(*node, ctx);
+                else_builder.lower_ast(*node, scope, ctx);
             }
             None => {}
         }
+
+        let param_deps = scope.lookup_params_deps_for_expr(&test);
 
         self.push_statement(
             ir::Statement {
                 field: Some(field.clone()),
                 dom_depth: ctx.current_dom_depth,
+                param_deps,
                 expression: ir::Expression::Match {
                     enum_type: enum_type.clone(),
                     expr: test,

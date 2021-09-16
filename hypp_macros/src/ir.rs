@@ -1,5 +1,7 @@
 //! Intermediate Representation used during codegen
 
+use std::collections::BTreeSet;
+
 use crate::param;
 use crate::template_ast;
 
@@ -67,8 +69,33 @@ pub struct Statement {
     /// Whether this statement operates at the root of the component
     pub dom_depth: u16,
 
+    /// Which parameters this statement depends on
+    pub param_deps: ParamDeps,
+
     /// The expression to evaluate
     pub expression: Expression,
+}
+
+pub enum ParamDeps {
+    Const,
+    // Dependent upon some params
+    Some(BTreeSet<u16>),
+    // Dependent upon all params (i.e. undecidable which ones)
+    All,
+}
+
+impl ParamDeps {
+    pub fn union(self, other: ParamDeps) -> Self {
+        match self {
+            Self::Const => other,
+            Self::Some(ids) => match other {
+                Self::Const => Self::Some(ids),
+                Self::Some(other_ids) => Self::Some(ids.union(&other_ids).cloned().collect()),
+                Self::All => other,
+            },
+            Self::All => self,
+        }
+    }
 }
 
 /// Something which can be evaluated to a value with a type

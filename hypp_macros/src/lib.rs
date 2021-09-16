@@ -5,6 +5,7 @@ use proc_macro::TokenStream;
 mod codegen;
 mod component;
 mod component_ast;
+mod flow;
 mod ir;
 mod lowering;
 mod param;

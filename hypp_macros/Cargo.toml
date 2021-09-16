@@ -12,6 +12,7 @@ quote = "1.0.9"
 proc-macro2 = "1.0.24"
 
 [dev-dependencies]
+maplit = "1"
 
 [lib]
 proc-macro = true

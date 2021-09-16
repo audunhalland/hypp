@@ -9,6 +9,10 @@ use syn::parse::{Parse, ParseStream};
 
 use crate::variable::Variable;
 
+struct Scope {
+    lookup: std::collections::HashMap<syn::Ident, ()>,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Node {
     Element(Element),
@@ -76,10 +80,10 @@ pub struct For {
 }
 
 pub fn parse_at_least_one(input: ParseStream) -> syn::Result<Node> {
-    let mut nodes = vec![input.parse()?];
+    let mut nodes = vec![parse_node(input)?];
 
     while !input.is_empty() {
-        nodes.push(input.parse()?);
+        nodes.push(parse_node(input)?);
     }
 
     if nodes.len() == 1 {
@@ -89,32 +93,31 @@ pub fn parse_at_least_one(input: ParseStream) -> syn::Result<Node> {
     }
 }
 
-impl Parse for Node {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        if input.peek(syn::token::Lt) {
-            return Ok(parse_element_or_fragment(input)?);
-        }
-
-        if let Ok(text) = input.parse::<Text>() {
-            return Ok(Self::Text(text));
-        }
-
-        if input.peek(syn::token::If) {
-            return Ok(Node::If(parse_if(input)?));
-        }
-
-        if input.peek(syn::token::For) {
-            return Ok(Node::For(parse_for(input)?));
-        }
-
-        // Fallback: evaluate expression in {}
-        let content;
-        let _brace_token = syn::braced!(content in input);
-
-        let ident: syn::Ident = content.parse()?;
-
-        Ok(Self::Variable(Variable::with_ident(ident)))
+fn parse_node(input: ParseStream) -> syn::Result<Node> {
+    if input.peek(syn::token::Lt) {
+        return Ok(parse_element_or_fragment(input)?);
     }
+
+    if let Ok(text) = input.parse::<Text>() {
+        return Ok(Node::Text(text));
+    }
+
+    if input.peek(syn::token::If) {
+        return Ok(Node::If(parse_if(input)?));
+    }
+
+    if input.peek(syn::token::For) {
+        return Ok(Node::For(parse_for(input)?));
+    }
+
+    // Fallback: evaluate expression in {}
+    // BUG: produce custom error message
+    let content;
+    let _brace_token = syn::braced!(content in input);
+
+    let ident: syn::Ident = content.parse()?;
+
+    Ok(Node::Variable(Variable::with_ident(ident)))
 }
 
 fn parse_element_or_fragment(input: ParseStream) -> syn::Result<Node> {
@@ -255,7 +258,7 @@ fn parse_children(input: ParseStream) -> syn::Result<Vec<Node>> {
             break;
         }
 
-        children.push(input.parse()?);
+        children.push(parse_node(input)?);
     }
 
     Ok(children)
@@ -268,7 +271,7 @@ fn parse_braced_fragment(input: ParseStream) -> syn::Result<Node> {
 
     let mut nodes = vec![];
     while !content.is_empty() {
-        nodes.push(content.parse()?);
+        nodes.push(parse_node(&content)?);
     }
 
     if nodes.len() == 1 {
@@ -281,6 +284,13 @@ fn parse_braced_fragment(input: ParseStream) -> syn::Result<Node> {
 fn parse_if(input: ParseStream) -> syn::Result<If> {
     let if_token = input.parse::<syn::token::If>()?;
     let test = syn::Expr::parse_without_eager_brace(input)?;
+
+    match &test {
+        syn::Expr::Let(_) => {
+            panic!("if let is not supported yet (should support matching)");
+        }
+        _ => {}
+    }
 
     let then_branch = Box::new(parse_braced_fragment(input)?);
 
@@ -336,6 +346,10 @@ mod tests {
     use super::*;
     use quote::quote;
 
+    fn test_parse(stream: proc_macro2::TokenStream) -> syn::Result<Node> {
+        syn::parse::Parser::parse2(parse_node, stream)
+    }
+
     fn element(tag_name: &str, attrs: Vec<Attr>, children: Vec<Node>) -> Node {
         Node::Element(Element {
             tag_name: syn::Ident::new(tag_name, proc_macro2::Span::mixed_site()),
@@ -372,7 +386,7 @@ mod tests {
 
     #[test]
     fn parse_empty_element_no_children_not_self_closing() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <p></p>
         })
         .unwrap();
@@ -381,7 +395,7 @@ mod tests {
 
     #[test]
     fn parse_unmatched_closing_tag_fails() {
-        let result: syn::Result<Node> = syn::parse2(quote! {
+        let result: syn::Result<Node> = test_parse(quote! {
             <p></q>
         });
         assert!(result.is_err());
@@ -389,7 +403,7 @@ mod tests {
 
     #[test]
     fn parse_empty_element_self_closing() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <p/>
         })
         .unwrap();
@@ -398,7 +412,7 @@ mod tests {
 
     #[test]
     fn parse_empty_component_self_closing() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <P/>
         })
         .unwrap();
@@ -416,7 +430,7 @@ mod tests {
 
     #[test]
     fn parse_empty_component_with_path_self_closing() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <module::P/>
         })
         .unwrap();
@@ -433,7 +447,7 @@ mod tests {
 
     #[test]
     fn parse_element_with_children() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <p>
                 <strong>"Strong"</strong>
                 "not strong"
@@ -455,7 +469,7 @@ mod tests {
 
     #[test]
     fn parse_fragment() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <>
                 <p/>
                 <div/>
@@ -473,7 +487,7 @@ mod tests {
 
     #[test]
     fn parse_element_with_variable() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <p>
                 {variable}
             </p>
@@ -484,7 +498,7 @@ mod tests {
 
     #[test]
     fn parse_element_with_attrs() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <p a b="b" c=42 d={foo} />
         })
         .unwrap();
@@ -505,7 +519,7 @@ mod tests {
 
     #[test]
     fn parse_if() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <div>
                 if something {
                     <p />
@@ -534,7 +548,7 @@ mod tests {
 
     #[test]
     fn parse_if_let() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <div>
                 if let Some(for_sure) = maybe {
                     <p>{for_sure}</p>
@@ -559,7 +573,7 @@ mod tests {
 
     #[test]
     fn parse_for() {
-        let node: Node = syn::parse2(quote! {
+        let node: Node = test_parse(quote! {
             <ul>
                 for item in items {
                     <li>{item}</li>
