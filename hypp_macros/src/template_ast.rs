@@ -9,10 +9,6 @@ use syn::parse::{Parse, ParseStream};
 
 use crate::variable::Variable;
 
-struct Scope {
-    lookup: std::collections::HashMap<syn::Ident, ()>,
-}
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum Node {
     Element(Element),
@@ -283,13 +279,6 @@ fn parse_if(input: ParseStream) -> syn::Result<Match> {
     input.parse::<syn::token::If>()?;
     let expr = syn::Expr::parse_without_eager_brace(input)?;
 
-    match &expr {
-        syn::Expr::Let(_) => {
-            panic!("if let is not supported yet (should support matching)");
-        }
-        _ => {}
-    }
-
     let then_branch = parse_braced_fragment(input)?;
 
     let else_branch = if input.peek(syn::token::Else) {
@@ -298,19 +287,37 @@ fn parse_if(input: ParseStream) -> syn::Result<Match> {
         Node::Fragment(vec![])
     };
 
-    Ok(Match {
-        expr,
-        arms: vec![
-            MatchArm {
-                pat: syn::parse_quote! { true },
-                node: then_branch,
-            },
-            MatchArm {
-                pat: syn::parse_quote! { false },
-                node: else_branch,
-            },
-        ],
-    })
+    match expr {
+        syn::Expr::Let(the_let) => {
+            // transform into proper match
+            Ok(Match {
+                expr: *the_let.expr,
+                arms: vec![
+                    MatchArm {
+                        pat: the_let.pat,
+                        node: then_branch,
+                    },
+                    MatchArm {
+                        pat: syn::parse_quote! { _ },
+                        node: else_branch,
+                    },
+                ],
+            })
+        }
+        expr => Ok(Match {
+            expr,
+            arms: vec![
+                MatchArm {
+                    pat: syn::parse_quote! { true },
+                    node: then_branch,
+                },
+                MatchArm {
+                    pat: syn::parse_quote! { false },
+                    node: else_branch,
+                },
+            ],
+        }),
+    }
 }
 
 fn parse_else(input: ParseStream) -> syn::Result<Node> {
@@ -570,11 +577,18 @@ mod tests {
             element(
                 "div",
                 vec![],
-                vec![Node::If(If {
-                    if_token: syn::parse_quote! { if },
-                    test: syn::parse_quote! { let Some(for_sure) = maybe },
-                    then_branch: Box::new(element("p", vec![], vec![var("for_sure")])),
-                    else_branch: None
+                vec![Node::Match(Match {
+                    expr: syn::parse_quote! { maybe },
+                    arms: vec![
+                        MatchArm {
+                            pat: syn::parse_quote! { Some(for_sure) },
+                            node: element("p", vec![], vec![var("for_sure")])
+                        },
+                        MatchArm {
+                            pat: syn::parse_quote! { _ },
+                            node: fragment(vec![]),
+                        }
+                    ],
                 })]
             )
         );
