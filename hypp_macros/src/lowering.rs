@@ -149,7 +149,7 @@ impl BlockBuilder {
             template_ast::Node::Text(text) => self.lower_text(text),
             template_ast::Node::Variable(variable) => self.lower_variable(variable, scope, ctx),
             template_ast::Node::Component(component) => self.lower_component(component, scope, ctx),
-            template_ast::Node::If(the_if) => self.lower_if(the_if, scope, ctx),
+            template_ast::Node::Match(the_match) => self.lower_match(the_match, scope, ctx),
             template_ast::Node::For(_the_for) => {}
         }
     }
@@ -256,32 +256,34 @@ impl BlockBuilder {
         );
     }
 
-    fn lower_if<'p>(
+    fn lower_match<'p>(
         &mut self,
-        the_if: template_ast::If,
+        the_match: template_ast::Match,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
     ) {
-        let test = the_if.test;
+        let expr = the_match.expr;
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
-        let mut then_builder = BlockBuilder::default();
-        then_builder.lower_ast(*the_if.then_branch, scope, ctx);
+        let arms = the_match
+            .arms
+            .into_iter()
+            .enumerate()
+            .map(|(index, arm)| {
+                let mut arm_builder = BlockBuilder::default();
+                arm_builder.lower_ast(arm.node, scope, ctx);
 
-        let mut else_builder = BlockBuilder::default();
+                ir::Arm {
+                    enum_variant_ident: quote::format_ident!("V{}", index),
+                    mount_fn_ident: quote::format_ident!("mount_v{}", index),
+                    pattern: arm.pat,
+                    block: arm_builder.to_block(ctx),
+                }
+            })
+            .collect();
 
-        match the_if.else_branch {
-            Some(template_ast::Else::If(_, else_if)) => {
-                else_builder.lower_if(*else_if, scope, ctx);
-            }
-            Some(template_ast::Else::Node(_, node)) => {
-                else_builder.lower_ast(*node, scope, ctx);
-            }
-            None => {}
-        }
-
-        let param_deps = scope.lookup_params_deps_for_expr(&test);
+        let param_deps = scope.lookup_params_deps_for_expr(&expr);
 
         self.push_statement(
             ir::Statement {
@@ -290,21 +292,8 @@ impl BlockBuilder {
                 param_deps,
                 expression: ir::Expression::Match {
                     enum_type: enum_type.clone(),
-                    expr: test,
-                    arms: vec![
-                        ir::Arm {
-                            enum_variant_ident: quote::format_ident!("True"),
-                            mount_fn_ident: quote::format_ident!("mount_true"),
-                            pattern: syn::parse_quote! { true },
-                            block: then_builder.to_block(ctx),
-                        },
-                        ir::Arm {
-                            enum_variant_ident: quote::format_ident!("False"),
-                            mount_fn_ident: quote::format_ident!("mount_false"),
-                            pattern: syn::parse_quote! { false },
-                            block: else_builder.to_block(ctx),
-                        },
-                    ],
+                    expr,
+                    arms,
                 },
             },
             ctx,

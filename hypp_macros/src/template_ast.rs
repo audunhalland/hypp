@@ -20,7 +20,7 @@ pub enum Node {
     Text(Text),
     Variable(Variable),
     Component(Component),
-    If(If),
+    Match(Match),
     For(For),
 }
 
@@ -57,17 +57,15 @@ pub struct Component {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct If {
-    pub if_token: syn::token::If,
-    pub test: syn::Expr,
-    pub then_branch: Box<Node>,
-    pub else_branch: Option<Else>,
+pub struct Match {
+    pub expr: syn::Expr,
+    pub arms: Vec<MatchArm>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Else {
-    If(syn::token::Else, Box<If>),
-    Node(syn::token::Else, Box<Node>),
+pub struct MatchArm {
+    pub pat: syn::Pat,
+    pub node: Node,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -103,7 +101,7 @@ fn parse_node(input: ParseStream) -> syn::Result<Node> {
     }
 
     if input.peek(syn::token::If) {
-        return Ok(Node::If(parse_if(input)?));
+        return Ok(Node::Match(parse_if(input)?));
     }
 
     if input.peek(syn::token::For) {
@@ -281,45 +279,49 @@ fn parse_braced_fragment(input: ParseStream) -> syn::Result<Node> {
     }
 }
 
-fn parse_if(input: ParseStream) -> syn::Result<If> {
-    let if_token = input.parse::<syn::token::If>()?;
-    let test = syn::Expr::parse_without_eager_brace(input)?;
+fn parse_if(input: ParseStream) -> syn::Result<Match> {
+    input.parse::<syn::token::If>()?;
+    let expr = syn::Expr::parse_without_eager_brace(input)?;
 
-    match &test {
+    match &expr {
         syn::Expr::Let(_) => {
             panic!("if let is not supported yet (should support matching)");
         }
         _ => {}
     }
 
-    let then_branch = Box::new(parse_braced_fragment(input)?);
+    let then_branch = parse_braced_fragment(input)?;
 
     let else_branch = if input.peek(syn::token::Else) {
-        Some(parse_else(input)?)
+        parse_else(input)?
     } else {
-        None
+        Node::Fragment(vec![])
     };
 
-    Ok(If {
-        if_token,
-        test,
-        then_branch,
-        else_branch,
+    Ok(Match {
+        expr,
+        arms: vec![
+            MatchArm {
+                pat: syn::parse_quote! { true },
+                node: then_branch,
+            },
+            MatchArm {
+                pat: syn::parse_quote! { false },
+                node: else_branch,
+            },
+        ],
     })
 }
 
-fn parse_else(input: ParseStream) -> syn::Result<Else> {
-    let else_token = input.parse()?;
+fn parse_else(input: ParseStream) -> syn::Result<Node> {
+    input.parse::<syn::token::Else>()?;
 
     let lookahead = input.lookahead1();
 
     if input.peek(syn::token::If) {
-        Ok(Else::If(else_token, Box::new(parse_if(input)?)))
+        Ok(Node::Match(parse_if(input)?))
     } else if input.peek(syn::token::Brace) {
-        Ok(Else::Node(
-            else_token,
-            Box::new(parse_braced_fragment(input)?),
-        ))
+        parse_braced_fragment(input)
     } else {
         Err(lookahead.error())
     }
@@ -533,14 +535,21 @@ mod tests {
             element(
                 "div",
                 vec![],
-                vec![Node::If(If {
-                    if_token: syn::parse_quote! { if },
-                    test: syn::parse_quote! { something },
-                    then_branch: Box::new(fragment(vec![
-                        element("p", vec![], vec![]),
-                        element("span", vec![], vec![])
-                    ])),
-                    else_branch: None
+                vec![Node::Match(Match {
+                    expr: syn::parse_quote! { something },
+                    arms: vec![
+                        MatchArm {
+                            pat: syn::parse_quote! { true },
+                            node: fragment(vec![
+                                element("p", vec![], vec![]),
+                                element("span", vec![], vec![])
+                            ])
+                        },
+                        MatchArm {
+                            pat: syn::parse_quote! { false },
+                            node: fragment(vec![]),
+                        }
+                    ],
                 })]
             )
         );
