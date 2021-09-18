@@ -374,7 +374,7 @@ mod tests {
     component! {
         ITakeANumber(number: u32) {}
 
-        "lol"
+        "num"
     }
 
     component! {
@@ -385,6 +385,45 @@ mod tests {
                 <ITakeANumber number={number} />
             }
         </article>
+    }
+
+    #[test]
+    fn render_iflet_server() {
+        let hypp = server::ServerHypp::new();
+        let mut c = IfLet::mount(
+            IfLetProps {
+                opt_number: None,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        )
+        .unwrap();
+
+        assert_eq!(hypp.render(), "<body><article/></body>");
+
+        c.set_props(
+            IfLetProps {
+                opt_number: Some(42),
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        );
+
+        assert_eq!(hypp.render(), "<body><article>num</article></body>");
+
+        c.set_props(
+            IfLetProps {
+                opt_number: None,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        );
+
+        assert_eq!(hypp.render(), "<body><article/></body>");
+
+        c.unmount(&mut hypp.builder_at_body());
+
+        assert_eq!(hypp.render(), "<body/>");
     }
 
     component! {
@@ -452,7 +491,7 @@ mod tests {
     #[test]
     fn render_recursive_server() {
         let hypp = server::ServerHypp::new();
-        let c = Recursive::mount(
+        let mut c = Recursive::mount(
             RecursiveProps {
                 depth: 3,
                 __phantom: std::marker::PhantomData,
@@ -465,6 +504,16 @@ mod tests {
             hypp.render(),
             "<body><span><span><span/></span></span></body>"
         );
+
+        c.set_props(
+            RecursiveProps {
+                depth: 2,
+                __phantom: std::marker::PhantomData,
+            },
+            &mut hypp.builder_at_body(),
+        );
+
+        assert_eq!(hypp.render(), "<body><span><span/></span></body>");
 
         c.unmount(&mut hypp.builder_at_body());
 

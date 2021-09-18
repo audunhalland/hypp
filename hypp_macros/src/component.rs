@@ -68,6 +68,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let unmount_stmts = gen_unmount(
         &statements,
+        ir::DomDepth(0),
         CodegenCtx {
             lifecycle: Lifecycle::Unmount,
             scope: Scope::Component,

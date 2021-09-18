@@ -5,6 +5,9 @@ use std::collections::BTreeSet;
 use crate::param;
 use crate::template_ast;
 
+#[derive(Clone, Copy)]
+pub struct DomDepth(pub u16);
+
 /// A node reference that needs to be stored within the component
 pub struct StructField {
     pub field: FieldIdent,
@@ -67,7 +70,7 @@ pub struct Statement {
     pub field: Option<FieldIdent>,
 
     /// Whether this statement operates at the root of the component
-    pub dom_depth: u16,
+    pub dom_depth: DomDepth,
 
     /// Which parameters this statement depends on
     pub param_deps: ParamDeps,

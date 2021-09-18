@@ -155,7 +155,12 @@ pub fn collect_variant_enums(
             ir::Expression::Match {
                 enum_type, arms, ..
             } => {
-                output.push(generate_variant_enum(enum_type, arms, root_idents));
+                output.push(generate_variant_enum(
+                    enum_type,
+                    arms,
+                    statement.dom_depth,
+                    root_idents,
+                ));
                 for arm in arms {
                     collect_variant_enums(&arm.block.statements, root_idents, output);
                 }
@@ -168,6 +173,7 @@ pub fn collect_variant_enums(
 fn generate_variant_enum(
     enum_type: &ir::StructFieldType,
     arms: &[ir::Arm],
+    dom_depth: ir::DomDepth,
     root_idents: &RootIdents,
 ) -> TokenStream {
     let enum_ident = enum_type.to_tokens(root_idents, Scope::Enum, WithGenerics(false));
@@ -199,8 +205,10 @@ fn generate_variant_enum(
                 .struct_fields
                 .iter()
                 .map(ir::StructField::struct_param_tokens);
+
             let unmount_stmts = gen_unmount(
                 &block.statements,
+                dom_depth,
                 CodegenCtx {
                     lifecycle: Lifecycle::Unmount,
                     scope: Scope::Enum,
@@ -233,11 +241,15 @@ fn generate_variant_enum(
 ///
 /// Generate the rust program required to appropriately unmount
 ///
-pub fn gen_unmount(statements: &[ir::Statement], ctx: CodegenCtx) -> TokenStream {
+pub fn gen_unmount(
+    statements: &[ir::Statement],
+    base_dom_depth: ir::DomDepth,
+    ctx: CodegenCtx,
+) -> TokenStream {
     let mut stmts: Vec<TokenStream> = vec![];
 
     for statement in statements {
-        let mut dom_depth = statement.dom_depth;
+        let mut dom_depth = statement.dom_depth.0 - base_dom_depth.0;
 
         match &statement.expression {
             ir::Expression::ConstDom(ir::ConstDomProgram { opcodes, .. }) => {

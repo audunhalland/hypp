@@ -82,6 +82,14 @@ impl BlockBuilder {
         }
     }
 
+    fn push_dom_opcode(&mut self, opcode: ir::DomOpCode, ctx: &Context) {
+        if self.current_dom_opcodes.is_empty() {
+            self.current_dom_program_depth = ctx.current_dom_depth;
+        }
+
+        self.current_dom_opcodes.push(opcode);
+    }
+
     fn flush_dom_program(&mut self, ctx: &mut Context) {
         if self.current_dom_opcodes.is_empty() {
             return;
@@ -116,15 +124,13 @@ impl BlockBuilder {
 
         self.statements.push(ir::Statement {
             field: opt_field,
-            dom_depth: self.current_dom_program_depth,
+            dom_depth: ir::DomDepth(self.current_dom_program_depth),
             param_deps: ir::ParamDeps::Const,
             expression: ir::Expression::ConstDom(ir::ConstDomProgram {
                 id: program_id,
                 opcodes,
             }),
         });
-
-        self.current_dom_program_depth = ctx.current_dom_depth;
     }
 
     fn push_statement(&mut self, statement: ir::Statement, ctx: &mut Context) {
@@ -146,7 +152,7 @@ impl BlockBuilder {
                     self.lower_ast(node, scope, ctx);
                 }
             }
-            template_ast::Node::Text(text) => self.lower_text(text),
+            template_ast::Node::Text(text) => self.lower_text(text, ctx),
             template_ast::Node::Variable(variable) => self.lower_variable(variable, scope, ctx),
             template_ast::Node::Component(component) => self.lower_component(component, scope, ctx),
             template_ast::Node::Match(the_match) => self.lower_match(the_match, scope, ctx),
@@ -162,22 +168,19 @@ impl BlockBuilder {
     ) {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
-        self.current_dom_opcodes
-            .push(ir::DomOpCode::EnterElement(tag_name.clone()));
-
+        self.push_dom_opcode(ir::DomOpCode::EnterElement(tag_name.clone()), ctx);
         ctx.current_dom_depth += 1;
 
         for child in element.children {
             self.lower_ast(child, scope, ctx);
         }
 
+        self.push_dom_opcode(ir::DomOpCode::ExitElement, ctx);
         ctx.current_dom_depth -= 1;
-
-        self.current_dom_opcodes.push(ir::DomOpCode::ExitElement);
     }
 
-    fn lower_text(&mut self, text: template_ast::Text) {
-        self.current_dom_opcodes.push(ir::DomOpCode::Text(text.0));
+    fn lower_text(&mut self, text: template_ast::Text, ctx: &mut Context) {
+        self.push_dom_opcode(ir::DomOpCode::Text(text.0), ctx);
     }
 
     fn lower_variable<'p>(
@@ -202,7 +205,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(node_field),
-                dom_depth: ctx.current_dom_depth,
+                dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps: scope.lookup_param_deps_for_ident(&variable.ident),
                 expression: ir::Expression::VariableText {
                     variable_field: variable_field.clone(),
@@ -214,7 +217,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(variable_field),
-                dom_depth: ctx.current_dom_depth,
+                dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps: scope.lookup_param_deps_for_ident(&variable.ident),
                 expression: ir::Expression::LocalVar,
             },
@@ -245,7 +248,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(field),
-                dom_depth: ctx.current_dom_depth,
+                dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps,
                 expression: ir::Expression::Component {
                     path: component_path,
@@ -297,7 +300,7 @@ impl BlockBuilder {
         self.push_statement(
             ir::Statement {
                 field: Some(field.clone()),
-                dom_depth: ctx.current_dom_depth,
+                dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps,
                 expression: ir::Expression::Match {
                     enum_type: enum_type.clone(),
