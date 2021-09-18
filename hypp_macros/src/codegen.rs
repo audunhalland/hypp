@@ -127,6 +127,9 @@ pub fn generate_dom_program(
         ir::DomOpCode::EnterElement(lit_str) => quote! {
             ConstOpCode::EnterElement(#lit_str),
         },
+        ir::DomOpCode::Attr(name, value) => quote! {
+            ConstOpCode::Attribute(#name, #value),
+        },
         ir::DomOpCode::Text(lit_str) => quote! {
             ConstOpCode::Text(#lit_str),
         },
@@ -273,6 +276,7 @@ pub fn gen_unmount(
                         ir::DomOpCode::ExitElement => {
                             dom_depth -= 1;
                         }
+                        _ => {}
                     }
                 }
             }
@@ -393,13 +397,14 @@ impl ir::Statement {
             ir::Expression::ConstDom(program) => {
                 let program_ident = program.get_ident(root_idents);
 
-                match program.opcodes.last().unwrap() {
-                    ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement => quote! {
+                match program.last_node_opcode() {
+                    Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => quote! {
                         __vm.const_exec_element(&#program_ident) #err_handler
                     },
-                    ir::DomOpCode::Text(_) => quote! {
+                    Some(ir::DomOpCode::Text(_)) => quote! {
                         __vm.const_exec_text(&#program_ident) #err_handler
                     },
+                    _ => panic!(),
                 }
             }
             ir::Expression::Text { expr, .. } => quote! {
@@ -510,13 +515,14 @@ impl ir::Statement {
 
                     let field_ref = FieldRef(field, ctx);
 
-                    match program.opcodes.last().unwrap() {
-                        ir::DomOpCode::EnterElement(_) => quote! {
+                    match program.last_node_opcode() {
+                        Some(ir::DomOpCode::EnterElement(_)) => quote! {
                             __vm.advance_to_first_child_of(&#field_ref);
                         },
-                        ir::DomOpCode::Text(_) | ir::DomOpCode::ExitElement => quote! {
+                        Some(ir::DomOpCode::Text(_) | ir::DomOpCode::ExitElement) => quote! {
                             __vm.advance_to_next_sibling_of(#field_ref.as_node());
                         },
+                        _ => panic!(),
                     }
                 } else {
                     let program_ident = program.get_ident(root_idents);

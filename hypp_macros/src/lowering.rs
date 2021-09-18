@@ -100,27 +100,33 @@ impl BlockBuilder {
 
         let opcodes = std::mem::replace(&mut self.current_dom_opcodes, vec![]);
 
-        let program_id = ctx.next_dom_program_id();
+        let program = ir::ConstDomProgram {
+            id: ctx.next_dom_program_id(),
+            opcodes,
+        };
 
         // Determine the resulting type of running the program (the last opcode)
-        let program_ty = match opcodes.last().unwrap() {
-            ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement => {
-                ir::StructFieldType::DomElement
-            }
-            ir::DomOpCode::Text(_) => ir::StructFieldType::DomText,
+        let program_ty = match program.last_node_type() {
+            Some(ir::NodeType::Element) => Some(ir::StructFieldType::DomElement),
+            Some(ir::NodeType::Text) => Some(ir::StructFieldType::DomText),
+            None => None,
         };
 
         // TODO: this is a tradeoff.
         // Storing an extra reference to a dom node within the component
         // is not worth it when the program it skips is very short.
         // so we should have some kind of threshold for when to store the element.
-        let opt_field = if opcodes.len() >= SKIP_PROGRAM_THRESHOLD {
+        let opt_field = if program.opcodes.len() >= SKIP_PROGRAM_THRESHOLD {
             let field = ctx.next_field_id();
-            self.struct_fields.push(ir::StructField {
-                field: field.clone(),
-                ty: program_ty,
-            });
-            Some(field)
+            if let Some(program_ty) = program_ty {
+                self.struct_fields.push(ir::StructField {
+                    field: field.clone(),
+                    ty: program_ty,
+                });
+                Some(field)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -129,10 +135,7 @@ impl BlockBuilder {
             field: opt_field,
             dom_depth: ir::DomDepth(self.current_dom_program_depth),
             param_deps: ir::ParamDeps::Const,
-            expression: ir::Expression::ConstDom(ir::ConstDomProgram {
-                id: program_id,
-                opcodes,
-            }),
+            expression: ir::Expression::ConstDom(program),
         });
     }
 
@@ -172,6 +175,11 @@ impl BlockBuilder {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         self.push_dom_opcode(ir::DomOpCode::EnterElement(tag_name.clone()), ctx);
+
+        for attr in element.attrs {
+            self.lower_attr(attr, ctx);
+        }
+
         ctx.current_dom_depth += 1;
 
         for child in element.children {
@@ -180,6 +188,28 @@ impl BlockBuilder {
 
         self.push_dom_opcode(ir::DomOpCode::ExitElement, ctx);
         ctx.current_dom_depth -= 1;
+    }
+
+    fn lower_attr<'p>(&mut self, attr: template_ast::Attr, ctx: &mut Context) {
+        let attr_name = syn::LitStr::new(&attr.ident.to_string(), attr.ident.span());
+
+        match attr.value {
+            template_ast::AttrValue::ImplicitTrue => {
+                let attr_value = syn::LitStr::new("true", attr.ident.span());
+                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name, attr_value), ctx);
+            }
+            template_ast::AttrValue::Literal(lit) => {
+                let value_lit = match lit {
+                    syn::Lit::Str(lit_str) => lit_str,
+                    // BUG: Debug formatting
+                    lit => syn::LitStr::new(&format!("{:?}", lit), attr.ident.span()),
+                };
+                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name, value_lit), ctx);
+            }
+            template_ast::AttrValue::Expr(_expr) => {
+                // TODO: Implement
+            }
+        }
     }
 
     fn lower_text_const(&mut self, text: template_ast::Text, ctx: &mut Context) {

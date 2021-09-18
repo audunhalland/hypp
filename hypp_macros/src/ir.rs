@@ -8,6 +8,11 @@ use crate::template_ast;
 #[derive(Clone, Copy)]
 pub struct DomDepth(pub u16);
 
+pub enum NodeType {
+    Element,
+    Text,
+}
+
 /// A node reference that needs to be stored within the component
 pub struct StructField {
     pub field: FieldIdent,
@@ -142,8 +147,28 @@ pub struct ConstDomProgram {
     pub opcodes: Vec<DomOpCode>,
 }
 
+impl ConstDomProgram {
+    pub fn last_node_opcode(&self) -> Option<&DomOpCode> {
+        self.opcodes.iter().rev().find(|opcode| match opcode {
+            DomOpCode::EnterElement(_) => true,
+            DomOpCode::Attr(_, _) => false,
+            DomOpCode::Text(_) => true,
+            DomOpCode::ExitElement => true,
+        })
+    }
+
+    pub fn last_node_type(&self) -> Option<NodeType> {
+        self.last_node_opcode().and_then(|opcode| match opcode {
+            DomOpCode::EnterElement(_) | DomOpCode::ExitElement => Some(NodeType::Element),
+            DomOpCode::Text(_) => Some(NodeType::Text),
+            DomOpCode::Attr(_, _) => None,
+        })
+    }
+}
+
 pub enum DomOpCode {
     EnterElement(syn::LitStr),
+    Attr(syn::LitStr, syn::LitStr),
     Text(syn::LitStr),
     ExitElement,
 }

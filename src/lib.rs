@@ -139,13 +139,13 @@ mod tests {
     #[allow(unused_imports)]
     use hypp_macros::component_dbg;
 
-    component! {
+    component_dbg! {
         Foo(is_cool: bool) {}
 
         // let label = if is_cool { "cool" } else { "dull" };
 
         <div>
-            <p>
+            <p class="css">
                 <span>
                     // FIXME: Need some way to define this as a temporary variable?
                     // maybe let bindings before the template?
@@ -186,7 +186,7 @@ mod tests {
 
         assert_eq!(
             hypp.render(),
-            "<body><div><p><span>cool</span></p></div></body>"
+            "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
         );
 
         c.set_props(
