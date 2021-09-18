@@ -32,6 +32,7 @@ impl WebHypp {
             document: self.document.clone(),
             element: self.body.clone().dyn_into().unwrap(),
             next_child: self.body.first_child(),
+            loaded_attribute_name: None,
         }
     }
 }
@@ -63,10 +64,11 @@ pub struct WebBuilder {
     document: web_sys::Document,
     element: web_sys::Element,
     next_child: Option<web_sys::Node>,
+    loaded_attribute_name: Option<&'static str>,
 }
 
 impl WebBuilder {
-    fn enter_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
+    fn enter_element(&mut self, tag_name: &str) -> Result<web_sys::Element, Error> {
         let element = self.document.create_element(tag_name).unwrap();
         self.element
             .insert_before(element.as_ref(), self.next_child.as_ref())?;
@@ -75,6 +77,15 @@ impl WebBuilder {
         self.next_child = None;
 
         Ok(element)
+    }
+
+    fn set_attribute(&mut self, value: &str) -> Result<(), Error> {
+        let attribute_name = self
+            .loaded_attribute_name
+            .expect("needs an attribute name loaded");
+        self.element.set_attribute(attribute_name, value)?;
+
+        Ok(())
     }
 
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
@@ -127,8 +138,11 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
                 ConstOpCode::EnterElement(tag_name) => {
                     result = Ok(self.enter_element(tag_name)?);
                 }
-                ConstOpCode::Attribute(_name, _value) => {
-                    return Err(Error::SetAttribute);
+                ConstOpCode::AttributeName(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttributeTextValue(value) => {
+                    self.set_attribute(value)?;
                 }
                 ConstOpCode::Text(text) => {
                     self.text(text)?;
@@ -153,8 +167,11 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
                 ConstOpCode::EnterElement(tag_name) => {
                     self.enter_element(tag_name)?;
                 }
-                ConstOpCode::Attribute(_name, _value) => {
-                    return Err(Error::SetAttribute);
+                ConstOpCode::AttributeName(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttributeTextValue(value) => {
+                    self.set_attribute(value)?;
                 }
                 ConstOpCode::Text(text) => {
                     result = Ok(self.text(text)?);
@@ -222,7 +239,8 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
 
                     self.next_child = self.element.first_child();
                 }
-                ConstOpCode::Attribute(_name, _value) => {}
+                ConstOpCode::AttributeName(_) => {}
+                ConstOpCode::AttributeTextValue(_) => {}
                 ConstOpCode::Text(_) => {
                     let node = self.next_child.take().expect("Expected a text");
                     self.next_child = node.next_sibling();

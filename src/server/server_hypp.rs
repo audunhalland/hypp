@@ -124,9 +124,13 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
                         .loaded_attribute_name
                         .expect("Should call AttributeName before setting attribute value");
 
-                    match &mut self.element.kind {
+                    match &self.element.kind {
                         NodeKind::Element { attributes, .. } => {
-                            attributes.insert(attribute_name, AttributeValue::Static(value))
+                            attributes
+                                .borrow_mut()
+                                .map
+                                .insert(attribute_name, AttributeValue::Static(value));
+                            self.loaded_attribute_name = None;
                         }
                         _ => return Err(Error::SetAttribute),
                     };

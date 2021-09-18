@@ -14,7 +14,7 @@ pub enum NodeKind {
     Text(RefCell<String>),
     Element {
         tag_name: &'static str,
-        attributes: BTreeMap<&'static str, AttributeValue>,
+        attributes: RefCell<Attributes>,
     },
     Fragment,
 }
@@ -28,6 +28,11 @@ struct Links {
 
     pub first_child: Option<RcNode>,
     pub last_child: Option<Weak<Node>>,
+}
+
+#[derive(Default)]
+pub struct Attributes {
+    pub map: BTreeMap<&'static str, AttributeValue>,
 }
 
 pub enum AttributeValue {
@@ -75,7 +80,7 @@ impl Node {
         Rc::new(Node {
             kind: NodeKind::Element {
                 tag_name,
-                attributes: BTreeMap::new(),
+                attributes: RefCell::new(Attributes::default()),
             },
             links: RefCell::new(Links::default()),
         })
@@ -273,7 +278,7 @@ impl ToString for Node {
                     buf.push('<');
                     buf.push_str(tag_name);
 
-                    for (name, value) in attributes.iter() {
+                    for (name, value) in attributes.borrow().map.iter() {
                         buf.push(' ');
                         buf.push_str(name);
                         buf.push_str("=\"");

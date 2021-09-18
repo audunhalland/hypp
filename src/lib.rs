@@ -39,29 +39,35 @@ pub trait Hypp: Sized {
 /// Small program instructions for manipulating DOM.
 ///
 /// The const opcodes are not lifetime constrained, and thus
-/// may be allocated in static memory.
+/// may be "allocated" in static memory.
 ///
 pub enum ConstOpCode {
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
+    /// The "return value" of this opcode is the element produced.
     EnterElement(&'static str),
 
     /// Moves the cursor to a specific attribute name within the current element.
+    /// This opcode has no return value, and has no effect on the return value of the whole program.
     AttributeName(&'static str),
 
     /// Define text-based attribute value on the current attribute.
+    /// This opcode has no return value, and has no effect on the return value of the whole program.
     AttributeTextValue(&'static str),
 
-    /// Define a text. The cursor moves past this text.
+    /// Define a text node. The cursor moves past this text.
+    /// The "return value" of this opcode is the text node produced.
     Text(&'static str),
 
     /// Exit the current element, advancing the cursor position to
     /// the element's next sibling.
+    /// The "return value" of this opcode is the element just exited.
     ExitElement,
 
     /// Remove the element at the current cursor position.
     /// The element's name must match the tag name passed.
     /// The cursor moves to point at the next sibling.
+    /// The "return value" of this opcode is the element that has been removed.
     RemoveElement(&'static str),
 }
 
@@ -73,11 +79,11 @@ pub enum ConstOpCode {
 ///
 pub trait DomVM<'doc, H: Hypp> {
     /// Execute a series of opcodes.
-    /// The last opcode must produce an element.
+    /// The last node opcode must produce an element.
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
 
     /// Execute a series of opcodes.
-    /// The last opcode must produce a text node.
+    /// The last node opcode must produce a text node.
     fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
 
     /// Define a text. The cursor moves past this text.
@@ -142,7 +148,7 @@ mod tests {
     #[allow(unused_imports)]
     use hypp_macros::component_dbg;
 
-    component_dbg! {
+    component! {
         Foo(is_cool: bool) {}
 
         // let label = if is_cool { "cool" } else { "dull" };
@@ -202,7 +208,7 @@ mod tests {
 
         assert_eq!(
             &hypp.render(),
-            "<body><div><p><span>dull</span></p></div></body>"
+            "<body><div><p class=\"css\"><span>dull</span></p></div></body>"
         );
     }
 
