@@ -6,12 +6,6 @@ use crate::param;
 use crate::template_ast;
 
 #[derive(Copy, Clone)]
-pub enum PatchKind {
-    SelfProps,
-    Legacy,
-}
-
-#[derive(Copy, Clone)]
 pub enum Lifecycle {
     Mount,
     Patch,
@@ -490,12 +484,7 @@ impl ir::Statement {
         }
     }
 
-    pub fn gen_patch(
-        &self,
-        kind: PatchKind,
-        root_idents: &RootIdents,
-        ctx: CodegenCtx,
-    ) -> TokenStream {
+    pub fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
         match &self.expression {
             ir::Expression::ConstDom(program) => {
                 if let Some(field) = &self.field {
@@ -524,23 +513,11 @@ impl ir::Statement {
                 variable_field,
             } => {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
-                match kind {
-                    PatchKind::SelfProps => {
-                        let test = self.param_deps.update_test_tokens();
+                let test = self.param_deps.update_test_tokens();
 
-                        quote! {
-                            if #test {
-                                H::set_text(&#field_ref, #expr);
-                            }
-                        }
-                    }
-                    PatchKind::Legacy => {
-                        let variable_field_ref = FieldRef(variable_field, ctx);
-                        quote! {
-                            if let Some(v) = #variable_field_ref.update(#expr) {
-                                H::set_text(&#field_ref, v);
-                            }
-                        }
+                quote! {
+                    if #test {
+                        H::set_text(&#field_ref, #expr);
                     }
                 }
             }
@@ -561,7 +538,7 @@ impl ir::Statement {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
 
                 quote! {
-                    #field_ref.patch(#props_path {
+                    #field_ref.set_props(#props_path {
                         #(#prop_list)*
                         __phantom: std::marker::PhantomData,
                     }, __vm);
@@ -571,94 +548,132 @@ impl ir::Statement {
                 enum_type,
                 expr,
                 arms,
-            } => {
-                // The match arms generated here should be twice as many as in the mounter.
-                // We match a tuple of two things: the existing value and the new value.
-                // The first match arms are for when the existing value matches the old value.
-                // The rest of the matches are for mismatches, one for each new value.
-
-                let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
-                let field = self.field.as_ref().unwrap();
-                let field_ref = FieldRef(field, ctx);
-                let field_assign = FieldAssign(field, ctx);
-                let mut_field_ref = MutFieldRef(field, ctx);
-
-                let matching_arms = arms.iter().map(
-                    |ir::Arm {
-                         enum_variant_ident,
-                         pattern,
-                         block,
-                         ..
-                     }| {
-                        let fields = block
-                            .struct_fields
-                            .iter()
-                            .map(ir::StructField::mut_pattern_tokens);
-
-                        let patch_stmts = block.statements.iter().map(|statement| {
-                            statement.gen_patch(
-                                kind,
-                                root_idents,
-                                CodegenCtx {
-                                    scope: Scope::Enum,
-                                    ..ctx
-                                },
-                            )
-                        });
-
-                        quote! {
-                           (#enum_ident::#enum_variant_ident { #(#fields)* .. }, #pattern) => {
-                               #(#patch_stmts)*
-                           },
-                        }
-                    },
-                );
-
-                let nonmatching_arms = arms.iter().map(
-                    |ir::Arm {
-                         enum_variant_ident,
-                         pattern,
-                         block,
-                         ..
-                     }| {
-                        let mount_stmts = block.statements.iter().map(|statement| {
-                            statement.gen_mount(
-                                &root_idents,
-                                CodegenCtx {
-                                    scope: Scope::Enum,
-                                    ..ctx
-                                },
-                            )
-                        });
-                        let struct_params = block
-                            .struct_fields
-                            .iter()
-                            .map(ir::StructField::struct_param_tokens);
-
-                        quote! {
-                            (_, #pattern) => {
-                                #field_ref.unmount(__vm);
-                                #(#mount_stmts)*
-
-                                #field_assign = #enum_ident::#enum_variant_ident {
-                                    #(#struct_params)*
-                                    __phantom: std::marker::PhantomData
-                                };
-                           },
-                        }
-                    },
-                );
-
-                quote! {
-                    match (#mut_field_ref, #expr) {
-                        #(#matching_arms)*
-                        #(#nonmatching_arms)*
-
-                        _ => {}
-                    }
-                }
-            }
+            } => gen_match_patch(self, enum_type, expr, arms, root_idents, ctx),
             _ => TokenStream::new(),
+        }
+    }
+}
+
+/// The match arms generated here should be twice as many as in the mounter.
+/// We match a tuple of two things: the existing value and the new value.
+/// Algorithm/arm order:
+/// First, take every "new" value, and generate match arms for that.
+///
+/// match (old, new) {
+///    (A, A) => { update A; },
+///    (B | C, A) => { unmount B|C; mount A; }
+///    (B, B) => { update B; },
+///    (A | C, B) => { unmount A|C; mount B; },
+///    ...etc
+/// }
+/// Always be explicit about every enum.
+/// This is because the last match arm is sometimes a wildcard, e.g. when
+/// generated from `if let Some(stuff) = stuff`.
+fn gen_match_patch(
+    statement: &ir::Statement,
+    enum_type: &ir::StructFieldType,
+    expr: &syn::Expr,
+    arms: &[ir::Arm],
+    root_idents: &RootIdents,
+    ctx: CodegenCtx,
+) -> TokenStream {
+    let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+    let field = statement.field.as_ref().unwrap();
+    let field_ref = FieldRef(field, ctx);
+    let field_assign = FieldAssign(field, ctx);
+    let mut_field_ref = MutFieldRef(field, ctx);
+
+    let patterns_without_variables: Vec<_> = arms
+        .iter()
+        .map(
+            |ir::Arm {
+                 enum_variant_ident, ..
+             }| {
+                quote! {
+                    #enum_ident::#enum_variant_ident { .. }
+                }
+            },
+        )
+        .collect();
+
+    // make "arm pairs" for every variant, a pair consists of one match and one mismatch.
+    let arm_pairs = arms.iter().enumerate().map(
+        |(
+            arm_index,
+            ir::Arm {
+                enum_variant_ident,
+                pattern,
+                block,
+                ..
+            },
+        )| {
+            let fields = block
+                .struct_fields
+                .iter()
+                .map(ir::StructField::mut_pattern_tokens);
+
+            let patch_stmts = block.statements.iter().map(|statement| {
+                statement.gen_patch(
+                    root_idents,
+                    CodegenCtx {
+                        scope: Scope::Enum,
+                        ..ctx
+                    },
+                )
+            });
+
+            let nonmatching_enum_patterns = patterns_without_variables
+                .iter()
+                .enumerate()
+                .filter_map(
+                    |(i, pattern)| {
+                        if i == arm_index {
+                            None
+                        } else {
+                            Some(pattern)
+                        }
+                    },
+                );
+
+            let mount_stmts = block.statements.iter().map(|statement| {
+                statement.gen_mount(
+                    &root_idents,
+                    CodegenCtx {
+                        scope: Scope::Enum,
+                        ..ctx
+                    },
+                )
+            });
+            let struct_params = block
+                .struct_fields
+                .iter()
+                .map(ir::StructField::struct_param_tokens);
+
+            quote! {
+                // Matching variant:
+                (#enum_ident::#enum_variant_ident { #(#fields)* .. }, #pattern) => {
+                    #(#patch_stmts)*
+                },
+
+                // Non-matching variant:
+                (#(#nonmatching_enum_patterns)|*, #pattern) => {
+                    #field_ref.unmount(__vm);
+                    #(#mount_stmts)*
+
+                    #field_assign = #enum_ident::#enum_variant_ident {
+                        #(#struct_params)*
+                        __phantom: std::marker::PhantomData
+                    };
+                },
+            }
+        },
+    );
+
+    quote! {
+        match (#mut_field_ref, #expr) {
+            #(#arm_pairs)*
+
+            _ => {}
         }
     }
 }

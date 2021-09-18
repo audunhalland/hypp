@@ -58,20 +58,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let patch_stmts = statements.iter().map(|statement| {
         statement.gen_patch(
-            PatchKind::SelfProps,
-            &root_idents,
-            CodegenCtx {
-                lifecycle: Lifecycle::Patch,
-                scope: Scope::Component,
-            },
-        )
-    });
-
-    let legacy_fn_stmts = fn_stmts.clone();
-
-    let legacy_patch_stmts = statements.iter().map(|statement| {
-        statement.gen_patch(
-            PatchKind::Legacy,
             &root_idents,
             CodegenCtx {
                 lifecycle: Lifecycle::Patch,
@@ -115,7 +101,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             }
 
             #[allow(unused_variables)]
-            fn patch_self(&mut self, __updates: &[bool], __vm: &mut dyn DomVM<H>) {
+            fn patch(&mut self, __updates: &[bool], __vm: &mut dyn DomVM<H>) {
                 #self_props_bindings
 
                 #(#fn_stmts)*
@@ -128,11 +114,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             fn set_props(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {
                 #props_updater
-            }
 
-            fn patch(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {
-                #(#legacy_fn_stmts)*
-                #(#legacy_patch_stmts)*
+                self.patch(&__updates, __vm);
             }
 
             fn unmount(&self, __vm: &mut dyn DomVM<H>) {

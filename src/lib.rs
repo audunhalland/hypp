@@ -141,15 +141,10 @@ pub trait Component<'p, H: Hypp> {
     /// DOM update if the component determines that anything changes.
     ///
     /// The __vm cursor __must__ point to the component start.
-    ///
-    fn set_props(&mut self, props: Self::Props, __vm: &mut dyn DomVM<H>);
-
-    /// Patch the component, given new properties.
-    /// The __vm cursor __must__ point at where the component
-    /// starts at the time of the call.
     /// After the patch is finished, the __vm cursor __must__
     /// point to the position after the component.
-    fn patch(&mut self, _props: Self::Props, __vm: &mut dyn DomVM<H>) {}
+    ///
+    fn set_props(&mut self, props: Self::Props, __vm: &mut dyn DomVM<H>);
 
     /// Unmount the component, removing all its nodes
     /// from under its mount point in the tree, using the DomVM.
@@ -224,7 +219,7 @@ mod tests {
             "<body><div><p><span>cool</span></p></div></body>"
         );
 
-        c.patch(
+        c.set_props(
             FooProps {
                 is_cool: false,
                 __phantom: std::marker::PhantomData,
@@ -311,7 +306,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><div/></body>");
 
-        c.patch(
+        c.set_props(
             ConditionalProps {
                 hello: false,
                 world: true,
@@ -323,7 +318,7 @@ mod tests {
         // No change:
         assert_eq!(hypp.render(), "<body><div/></body>");
 
-        c.patch(
+        c.set_props(
             ConditionalProps {
                 hello: true,
                 world: false,
@@ -337,7 +332,7 @@ mod tests {
             "<body><div><span>Hello</span><span>Universe</span></div></body>"
         );
 
-        c.patch(
+        c.set_props(
             ConditionalProps {
                 hello: true,
                 world: true,
@@ -392,7 +387,7 @@ mod tests {
         </article>
     }
 
-    component_dbg! {
+    component! {
         OptionString(opt_str: Option<&str>) {}
 
         <article>
@@ -429,7 +424,7 @@ mod tests {
             "<body><div>first</div><span>second</span><p>third</p></body>"
         );
 
-        c.patch(
+        c.set_props(
             Fragment1Props {
                 perhaps: false,
                 __phantom: std::marker::PhantomData,
