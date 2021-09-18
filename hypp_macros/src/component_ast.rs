@@ -62,7 +62,14 @@ fn parse_state(input: ParseStream) -> syn::Result<param::Param> {
 fn parse_param(kind: param::ParamKind, input: ParseStream) -> syn::Result<param::Param> {
     let ident = input.parse()?;
     let _: syn::token::Colon = input.parse()?;
-    let ty = input.parse()?;
+    let ty =
+        param::ParamRootType::try_from_type(input.parse()?).map_err(
+            |param_error| match param_error {
+                param::ParamError::UnparseableType(span) => {
+                    syn::Error::new(span, "Incomprehensible type")
+                }
+            },
+        )?;
 
     Ok(param::Param {
         id: 0,

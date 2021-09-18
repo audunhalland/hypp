@@ -187,7 +187,16 @@ fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> Tok
 
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
-        let ty = &param.ty;
+        let ty = match &param.ty {
+            param::ParamRootType::One(ty) => match ty {
+                param::ParamLeafType::Owned(ty) => quote! { #ty },
+                param::ParamLeafType::Ref(ty) => quote! { &'p #ty },
+            },
+            param::ParamRootType::Option(ty) => match ty {
+                param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
+                param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
+            },
+        };
 
         quote! {
             pub #ident: #ty,
@@ -226,13 +235,22 @@ fn create_self_props_bindings(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
-        if param.is_reference() {
-            // Remember, when storing a _reference_ prop inside self,
-            // we use the `<T as ToOwned>::Owned` type to store it..
-            // so we can just take the reference to that again!
-            quote! { let #ident = &self.#ident; }
-        } else {
-            quote! { let #ident = self.#ident; }
+        match &param.ty {
+            param::ParamRootType::One(ty) => match ty {
+                param::ParamLeafType::Owned(_) => quote! { let #ident = self.#ident; },
+                param::ParamLeafType::Ref(_) => {
+                    // Remember, when storing a _reference_ prop inside self,
+                    // we use the `<T as ToOwned>::Owned` type to store it..
+                    // so we can just take the reference to that again!
+                    quote! {
+                        let #ident = &self.#ident;
+                    }
+                }
+            },
+            param::ParamRootType::Option(ty) => match ty {
+                param::ParamLeafType::Owned(_) => quote! { let #ident = self.#ident; },
+                param::ParamLeafType::Ref(_) => quote! { let #ident = self.#ident.as_deref(); },
+            },
         }
     });
 
@@ -254,18 +272,31 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
         let id = param.id as usize;
         let ident = &param.ident;
 
-        let write = if param.is_reference() {
-            quote! {
-                self.#ident = #ident.to_owned();
-            }
-        } else {
-            quote! {
-                self.#ident = #ident;
-            }
+        let self_prop_as_ref = match &param.ty {
+            param::ParamRootType::One(_) => quote! { self.#ident },
+            param::ParamRootType::Option(ty) => match ty {
+                param::ParamLeafType::Owned(_) => quote! { self.#ident },
+                param::ParamLeafType::Ref(_) => quote! {self.#ident.as_deref() },
+            },
+        };
+
+        let write = match &param.ty {
+            param::ParamRootType::One(ty) => match ty {
+                param::ParamLeafType::Owned(_) => quote! { self.#ident = #ident; },
+                param::ParamLeafType::Ref(_) => quote! {
+                    self.#ident = #ident.to_owned();
+                },
+            },
+            param::ParamRootType::Option(ty) => match ty {
+                param::ParamLeafType::Owned(_) => quote! { self.#ident = #ident; },
+                param::ParamLeafType::Ref(_) => quote! {
+                    self.#ident = #ident.map(|val| val.to_owned());
+                },
+            },
         };
 
         quote! {
-            if self.#ident != #ident {
+            if #self_prop_as_ref != #ident {
                 #write
                 __updates[#id] = true;
             }

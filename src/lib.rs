@@ -242,7 +242,7 @@ mod tests {
         use super::*;
 
         component! {
-            P1(text: &'p str) {}
+            P1(text: &str) {}
 
             <p>{text}</p>
         }
@@ -357,7 +357,7 @@ mod tests {
     }
 
     component! {
-        ConditionalWithVariableText(hello: bool, yo: &'p str) {}
+        ConditionalWithVariableText(hello: bool, yo: &str) {}
 
         <div>
         if hello {
@@ -392,18 +392,15 @@ mod tests {
         </article>
     }
 
-    // FIXME: Optional strings not working yet
-    /*
-    component! {
-        OptionString(opt_str: Option<&'p str>) {}
+    component_dbg! {
+        OptionString(opt_str: Option<&str>) {}
 
         <article>
             if let Some(str) = opt_str {
-                <p/>
+                <p>{str}</p>
             }
         </article>
     }
-    */
 
     component! {
         Fragment1(perhaps: bool) {}
@@ -481,7 +478,7 @@ mod tests {
 
     // doesn't work yet
     component! {
-        List(_items: &'p [String]) {}
+        List(_items: &[String]) {}
 
         <ul>
             for item in items {
@@ -491,7 +488,7 @@ mod tests {
     }
 
     component! {
-        TopLevelConditional(lol: bool, text: &'p str) {}
+        TopLevelConditional(lol: bool, text: &str) {}
 
         if lol {
             {text}
@@ -501,17 +498,17 @@ mod tests {
     }
 
     component! {
-        StringProp1(arg: &'p str) {}
+        StringProp1(arg: &str) {}
         <p>{arg}</p>
     }
 
     component! {
-        StringProp2(arg: &'p str) {}
+        StringProp2(arg: &str) {}
         <div>{arg}</div>
     }
 
     component! {
-        ConditionalStringProp(arg: &'p str, draw_one: bool) {}
+        ConditionalStringProp(arg: &str, draw_one: bool) {}
 
         if draw_one {
             <StringProp1 arg={arg} />
@@ -522,7 +519,7 @@ mod tests {
 
     // Experimentation with new surface syntax
     component! {
-        Stuff(prop1: bool, prop2: &'p str) {
+        Stuff(prop1: bool, prop2: &str) {
             state: bool,
         }
 

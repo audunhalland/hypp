@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::ir;
+use crate::param;
 use crate::template_ast;
 
 #[derive(Copy, Clone)]
@@ -313,13 +314,24 @@ impl ir::StructField {
         let field = &self.field;
 
         match &self.ty {
-            ir::StructFieldType::Param(param) => {
-                if param.is_reference() {
-                    quote! { #field: #field.to_owned(), }
-                } else {
-                    quote! { #field, }
-                }
-            }
+            ir::StructFieldType::Param(param) => match &param.ty {
+                param::ParamRootType::One(ty) => match ty {
+                    param::ParamLeafType::Owned(_) => {
+                        quote! { #field, }
+                    }
+                    param::ParamLeafType::Ref(_) => {
+                        quote! { #field: #field.to_owned(), }
+                    }
+                },
+                param::ParamRootType::Option(ty) => match ty {
+                    param::ParamLeafType::Owned(_) => {
+                        quote! { #field, }
+                    }
+                    param::ParamLeafType::Ref(_) => {
+                        quote! { #field: #field.map(|val| val.to_owned()), }
+                    }
+                },
+            },
             _ => quote! {#field, },
         }
     }
@@ -339,6 +351,27 @@ impl ir::StructField {
             ir::StructFieldType::DomElement | ir::StructFieldType::DomText => quote! {
                 ref #field,
             },
+        }
+    }
+}
+
+impl ir::ParamDeps {
+    pub fn update_test_tokens(&self) -> TokenStream {
+        match self {
+            Self::Const => quote! { false },
+            Self::Some(ids) => {
+                let clauses = ids.iter().map(|id| {
+                    let id = *id as usize;
+                    quote! {
+                        __updates[#id]
+                    }
+                });
+
+                quote! {
+                    #(#clauses)||*
+                }
+            }
+            Self::All => quote! { true },
         }
     }
 }
@@ -493,8 +526,12 @@ impl ir::Statement {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
                 match kind {
                     PatchKind::SelfProps => {
+                        let test = self.param_deps.update_test_tokens();
+
                         quote! {
-                            H::set_text(&#field_ref, #expr);
+                            if #test {
+                                H::set_text(&#field_ref, #expr);
+                            }
                         }
                     }
                     PatchKind::Legacy => {
@@ -649,15 +686,24 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
-            Self::Param(param) => {
-                let ty = &param.ty;
-                match ty {
-                    syn::Type::Reference(syn::TypeReference { elem, .. }) => quote! {
-                        <#elem as ToOwned>::Owned
-                    },
-                    _ => quote! { #ty },
-                }
-            }
+            Self::Param(param) => match &param.ty {
+                param::ParamRootType::One(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => {
+                        quote! { #ty }
+                    }
+                    param::ParamLeafType::Ref(ty) => {
+                        quote! { <#ty as ToOwned>::Owned }
+                    }
+                },
+                param::ParamRootType::Option(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => {
+                        quote! { Option<#ty> }
+                    }
+                    param::ParamLeafType::Ref(ty) => {
+                        quote! { Option<<#ty as ToOwned>::Owned> }
+                    }
+                },
+            },
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
