@@ -452,9 +452,10 @@ mod tests {
         Recursive(depth: usize) {}
 
         <span>
-        if depth > 1 {
-            <Recursive depth={depth - 1} />
-        }
+            {format!("{}", depth)}
+            if depth > 1 {
+                <Recursive depth={depth - 1} />
+            }
         </span>
     }
 
@@ -472,7 +473,7 @@ mod tests {
 
         assert_eq!(
             hypp.render(),
-            "<body><span><span><span/></span></span></body>"
+            "<body><span>3<span>2<span>1</span></span></span></body>"
         );
 
         c.set_props(
@@ -483,7 +484,7 @@ mod tests {
             &mut hypp.builder_at_body(),
         );
 
-        assert_eq!(hypp.render(), "<body><span><span/></span></body>");
+        assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 
         c.unmount(&mut hypp.builder_at_body());
 

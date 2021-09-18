@@ -492,6 +492,11 @@ impl ir::Statement {
     }
 
     pub fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
+        // FIXME: Do some "peephole optimization" here.
+        // E.g. there is no reason to output "advance to next"
+        // if the next instruction does not require the cursor
+        // to be at the correct location. For example H::set_text.
+
         match &self.expression {
             ir::Expression::ConstDom(program) => {
                 if let Some(field) = &self.field {
@@ -521,8 +526,9 @@ impl ir::Statement {
 
                 quote! {
                     if #test {
-                        H::set_text(&#field_ref, #expr);
+                        H::set_text(&#field_ref, #expr.as_ref());
                     }
+                    __vm.advance_to_next_sibling_of(#field_ref.as_node());
                 }
             }
             ir::Expression::Component { path, props } => {
