@@ -276,7 +276,7 @@ pub fn gen_unmount(
                     }
                 }
             }
-            ir::Expression::VariableText { .. } => {
+            ir::Expression::Text { .. } => {
                 if dom_depth == 0 {
                     stmts.push(quote! {
                         __vm.remove_text().unwrap();
@@ -299,7 +299,6 @@ pub fn gen_unmount(
                     });
                 }
             }
-            ir::Expression::LocalVar { .. } => {}
         }
     }
 
@@ -349,8 +348,7 @@ impl ir::StructField {
             // mutable types
             ir::StructFieldType::Param(_)
             | ir::StructFieldType::Component(_)
-            | ir::StructFieldType::Enum(_)
-            | ir::StructFieldType::Variable(_) => quote! {
+            | ir::StructFieldType::Enum(_) => quote! {
                 ref mut #field,
             },
             // immutable types
@@ -404,11 +402,8 @@ impl ir::Statement {
                     },
                 }
             }
-            ir::Expression::VariableText { expr, .. } => quote! {
+            ir::Expression::Text { expr, .. } => quote! {
                 __vm.text(#expr.as_ref()) #err_handler
-            },
-            ir::Expression::LocalVar => quote! {
-                Var::new()
             },
             ir::Expression::Component { path, props, .. } => {
                 let prop_list = props.iter().map(|(name, value)| match value {
@@ -520,10 +515,7 @@ impl ir::Statement {
                     }
                 }
             }
-            ir::Expression::VariableText {
-                expr,
-                variable_field,
-            } => {
+            ir::Expression::Text { expr, .. } => {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
                 let test = self.param_deps.update_test_tokens();
 
@@ -742,9 +734,6 @@ impl ir::StructFieldType {
                 let ident =
                     quote::format_ident!("{}Enum{}", root_idents.component_ident, enum_index);
                 quote! { #ident #generics }
-            }
-            Self::Variable(ty) => {
-                quote! { Var<#ty> }
             }
         }
     }

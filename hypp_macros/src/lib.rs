@@ -10,7 +10,6 @@ mod ir;
 mod lowering;
 mod param;
 mod template_ast;
-mod variable;
 
 #[proc_macro]
 pub fn component(input: TokenStream) -> proc_macro::TokenStream {

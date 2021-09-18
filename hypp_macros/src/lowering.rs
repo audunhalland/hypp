@@ -2,7 +2,6 @@ use crate::flow;
 use crate::ir;
 use crate::param;
 use crate::template_ast;
-use crate::variable;
 
 // Minimum size of programs to directly skip when
 // generating patch code.
@@ -152,8 +151,8 @@ impl BlockBuilder {
                     self.lower_ast(node, scope, ctx);
                 }
             }
-            template_ast::Node::Text(text) => self.lower_text(text, ctx),
-            template_ast::Node::Variable(variable) => self.lower_variable(variable, scope, ctx),
+            template_ast::Node::Text(text) => self.lower_text_const(text, ctx),
+            template_ast::Node::TextExpr(expr) => self.lower_text_expr(expr, scope, ctx),
             template_ast::Node::Component(component) => self.lower_component(component, scope, ctx),
             template_ast::Node::Match(the_match) => self.lower_match(the_match, scope, ctx),
             template_ast::Node::For(_the_for) => {}
@@ -179,13 +178,13 @@ impl BlockBuilder {
         ctx.current_dom_depth -= 1;
     }
 
-    fn lower_text(&mut self, text: template_ast::Text, ctx: &mut Context) {
+    fn lower_text_const(&mut self, text: template_ast::Text, ctx: &mut Context) {
         self.push_dom_opcode(ir::DomOpCode::Text(text.0), ctx);
     }
 
-    fn lower_variable<'p>(
+    fn lower_text_expr<'p>(
         &mut self,
-        variable: variable::Variable,
+        expr: syn::Expr,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
     ) {
@@ -197,29 +196,15 @@ impl BlockBuilder {
             ty: ir::StructFieldType::DomText,
         });
 
-        self.struct_fields.push(ir::StructField {
-            field: variable_field.clone(),
-            ty: ir::StructFieldType::Variable(variable.ty),
-        });
-
         self.push_statement(
             ir::Statement {
                 field: Some(node_field),
                 dom_depth: ir::DomDepth(ctx.current_dom_depth),
-                param_deps: scope.lookup_param_deps_for_ident(&variable.ident),
-                expression: ir::Expression::VariableText {
+                param_deps: scope.lookup_params_deps_for_expr(&expr),
+                expression: ir::Expression::Text {
                     variable_field: variable_field.clone(),
-                    expr: variable.ident.clone(),
+                    expr,
                 },
-            },
-            ctx,
-        );
-        self.push_statement(
-            ir::Statement {
-                field: Some(variable_field),
-                dom_depth: ir::DomDepth(ctx.current_dom_depth),
-                param_deps: scope.lookup_param_deps_for_ident(&variable.ident),
-                expression: ir::Expression::LocalVar,
             },
             ctx,
         );

@@ -103,36 +103,6 @@ pub struct State<T: Default> {
     pub value: T,
 }
 
-pub struct Var<T: Eq> {
-    value: Option<T>,
-}
-
-impl<T: Eq> Var<T> {
-    pub fn new() -> Self {
-        Self { value: None }
-    }
-
-    pub fn update<V>(&mut self, value: V) -> Option<&T>
-    where
-        T: From<V> + PartialEq<V>,
-    {
-        match &self.value {
-            None => {
-                self.value = Some(T::from(value));
-                self.value.as_ref()
-            }
-            Some(old_value) => {
-                if old_value != &value {
-                    self.value = Some(T::from(value));
-                    self.value.as_ref()
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
 pub trait Component<'p, H: Hypp> {
     type Props: 'p;
 

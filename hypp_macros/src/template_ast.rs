@@ -7,14 +7,12 @@ use std::fmt::Display;
 
 use syn::parse::{Parse, ParseStream};
 
-use crate::variable::Variable;
-
 #[derive(Debug, Eq, PartialEq)]
 pub enum Node {
     Element(Element),
     Fragment(Vec<Node>),
     Text(Text),
-    Variable(Variable),
+    TextExpr(syn::Expr),
     Component(Component),
     Match(Match),
     For(For),
@@ -109,9 +107,9 @@ fn parse_node(input: ParseStream) -> syn::Result<Node> {
     let content;
     let _brace_token = syn::braced!(content in input);
 
-    let ident: syn::Ident = content.parse()?;
+    let expr: syn::Expr = content.parse()?;
 
-    Ok(Node::Variable(Variable::with_ident(ident)))
+    Ok(Node::TextExpr(expr))
 }
 
 fn parse_element_or_fragment(input: ParseStream) -> syn::Result<Node> {
@@ -378,8 +376,9 @@ mod tests {
         )))
     }
 
-    fn var(name: &str) -> Node {
-        Node::Variable(Variable::with_ident(quote::format_ident!("{}", name)))
+    fn text_var(name: &str) -> Node {
+        let ident = quote::format_ident!("{}", name);
+        Node::TextExpr(syn::parse_quote! { #ident })
     }
 
     fn component(type_path: syn::TypePath, attrs: Vec<Attr>) -> Node {
@@ -502,7 +501,7 @@ mod tests {
             </p>
         })
         .unwrap();
-        assert_eq!(node, element("p", vec![], vec![var("variable")]));
+        assert_eq!(node, element("p", vec![], vec![text_var("variable")]));
     }
 
     #[test]
@@ -582,7 +581,7 @@ mod tests {
                     arms: vec![
                         MatchArm {
                             pat: syn::parse_quote! { Some(for_sure) },
-                            node: element("p", vec![], vec![var("for_sure")])
+                            node: element("p", vec![], vec![text_var("for_sure")])
                         },
                         MatchArm {
                             pat: syn::parse_quote! { _ },
@@ -614,7 +613,7 @@ mod tests {
                     binding: syn::parse_quote! { item },
                     in_token: syn::parse_quote! { in },
                     expression: syn::parse_quote! { items },
-                    repeating_node: Box::new(element("li", vec![], vec![var("item")])),
+                    repeating_node: Box::new(element("li", vec![], vec![text_var("item")])),
                 })]
             )
         );

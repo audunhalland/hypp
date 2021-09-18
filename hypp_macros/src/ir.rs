@@ -28,7 +28,6 @@ pub enum StructFieldType {
     Param(param::Param),
     Component(ComponentPath),
     Enum(u16),
-    Variable(syn::Type),
 }
 
 // A type path representing another component
@@ -106,14 +105,11 @@ pub enum Expression {
     /// A constant DOM program
     ConstDom(ConstDomProgram),
 
-    /// A text variable (in the DOM)
-    VariableText {
+    /// Something that should evaluate to text at runtime
+    Text {
         variable_field: FieldIdent,
-        expr: syn::Ident,
+        expr: syn::Expr,
     },
-
-    /// A local variable field (Var<T> field)
-    LocalVar,
 
     /// A component instantiation
     Component {

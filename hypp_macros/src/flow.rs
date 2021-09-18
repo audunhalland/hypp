@@ -108,7 +108,6 @@ fn deps_to_param_deps(deps: BTreeSet<Dep>) -> ir::ParamDeps {
     }
 }
 
-/*
 fn analyze_block<'p>(block: &syn::Block, parent_scope: &'p FlowScope<'p>) -> FlowScope<'p> {
     let mut scope = FlowScope::with_parent(parent_scope);
 
@@ -139,7 +138,6 @@ fn analyze_statement<'p>(stmt: &syn::Stmt, scope: &mut FlowScope<'p>) {
         }
     }
 }
-*/
 
 fn collect_expr_deps<'p>(expr: &syn::Expr, collect: &mut BTreeSet<Dep>, scope: &FlowScope<'p>) {
     match expr {
