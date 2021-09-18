@@ -144,6 +144,7 @@ fn analyze_ast(
     let ir::Block {
         struct_fields,
         statements,
+        ..
     } = lowering::lower_root_node(template, &params);
 
     let mut dom_programs = vec![];

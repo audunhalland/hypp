@@ -496,9 +496,9 @@ mod tests {
         List(_items: &[String]) {}
 
         <ul>
-            for item in items {
-                <li>{item}</li>
-            }
+        for item in items {
+            <li>{item}</li>
+        }
         </ul>
     }
 

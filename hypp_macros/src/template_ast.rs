@@ -18,7 +18,11 @@ pub enum Node {
     For(For),
 }
 
-type Attr = (syn::Ident, AttrValue);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Attr {
+    pub ident: syn::Ident,
+    pub value: AttrValue,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttrValue {
@@ -217,7 +221,7 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
             break;
         }
 
-        let name: syn::Ident = input.parse()?;
+        let ident: syn::Ident = input.parse()?;
 
         let value = if input.peek(syn::token::Eq) {
             input.parse::<syn::token::Eq>()?;
@@ -236,7 +240,7 @@ fn parse_attrs(input: ParseStream) -> syn::Result<Vec<Attr>> {
             AttrValue::ImplicitTrue
         };
 
-        attrs.push((name, value));
+        attrs.push(Attr { ident, value });
     }
 
     Ok(attrs)

@@ -406,16 +406,19 @@ impl ir::Statement {
                 __vm.text(#expr.as_ref()) #err_handler
             },
             ir::Expression::Component { path, props, .. } => {
-                let prop_list = props.iter().map(|(name, value)| match value {
-                    template_ast::AttrValue::ImplicitTrue => quote! {
-                        #name: true,
-                    },
-                    template_ast::AttrValue::Literal(lit) => quote! {
-                        #name: #lit,
-                    },
-                    template_ast::AttrValue::Expr(expr) => quote! {
-                        #name: #expr,
-                    },
+                let prop_list = props.iter().map(|attr| {
+                    let ident = &attr.ident;
+                    match &attr.value {
+                        template_ast::AttrValue::ImplicitTrue => quote! {
+                            #ident: true,
+                        },
+                        template_ast::AttrValue::Literal(lit) => quote! {
+                            #ident: #lit,
+                        },
+                        template_ast::AttrValue::Expr(expr) => quote! {
+                            #ident: #expr,
+                        },
+                    }
                 });
 
                 let component_path = &path.type_path;
@@ -495,7 +498,10 @@ impl ir::Statement {
         // FIXME: Do some "peephole optimization" here.
         // E.g. there is no reason to output "advance to next"
         // if the next instruction does not require the cursor
-        // to be at the correct location. For example H::set_text.
+        // to be at the correct location:
+        // Examples:
+        // 1. H::set_text
+        // 2. the next statement is constant, and therefore is never updated
 
         match &self.expression {
             ir::Expression::ConstDom(program) => {
@@ -531,35 +537,48 @@ impl ir::Statement {
                     __vm.advance_to_next_sibling_of(#field_ref.as_node());
                 }
             }
-            ir::Expression::Component { path, props } => {
-                let prop_list = props.iter().map(|(name, value)| match value {
-                    template_ast::AttrValue::ImplicitTrue => quote! {
-                        #name: true,
-                    },
-                    template_ast::AttrValue::Literal(lit) => quote! {
-                        #name: #lit,
-                    },
-                    template_ast::AttrValue::Expr(expr) => quote! {
-                        #name: #expr,
-                    },
-                });
-                let props_path = path.props_path();
+            ir::Expression::Component { path, props } => match &self.param_deps {
+                // Const components never need to update!
+                // (all their parameters are constants)
+                ir::ParamDeps::Const => quote! {},
+                _ => {
+                    let prop_list = props.iter().map(|attr| {
+                        let ident = &attr.ident;
+                        match &attr.value {
+                            template_ast::AttrValue::ImplicitTrue => quote! {
+                                #ident: true,
+                            },
+                            template_ast::AttrValue::Literal(lit) => quote! {
+                                #ident: #lit,
+                            },
+                            template_ast::AttrValue::Expr(expr) => quote! {
+                                #ident: #expr,
+                            },
+                        }
+                    });
+                    let props_path = path.props_path();
 
-                let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
+                    let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
+                    let test = self.param_deps.update_test_tokens();
 
-                quote! {
-                    #field_ref.set_props(#props_path {
-                        #(#prop_list)*
-                        __phantom: std::marker::PhantomData,
-                    }, __vm);
+                    quote! {
+                        if #test {
+                            #field_ref.set_props(#props_path {
+                                #(#prop_list)*
+                                __phantom: std::marker::PhantomData,
+                            }, __vm);
+                        }
+                    }
                 }
-            }
+            },
             ir::Expression::Match {
                 enum_type,
                 expr,
                 arms,
-            } => gen_match_patch(self, enum_type, expr, arms, root_idents, ctx),
-            _ => TokenStream::new(),
+            } => match &self.param_deps {
+                ir::ParamDeps::Const => quote! {},
+                _ => gen_match_patch(self, enum_type, expr, arms, root_idents, ctx),
+            },
         }
     }
 }

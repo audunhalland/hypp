@@ -60,6 +60,7 @@ impl ComponentPath {
 pub struct Block {
     pub struct_fields: Vec<StructField>,
     pub statements: Vec<Statement>,
+    pub param_deps: ParamDeps,
 }
 
 /// Something we assign to a variable
@@ -78,6 +79,7 @@ pub struct Statement {
     pub expression: Expression,
 }
 
+#[derive(Clone)]
 pub enum ParamDeps {
     Const,
     // Dependent upon some params
@@ -87,16 +89,24 @@ pub enum ParamDeps {
 }
 
 impl ParamDeps {
-    pub fn union(self, other: ParamDeps) -> Self {
+    pub fn extend(&mut self, other: &ParamDeps) {
         match self {
-            Self::Const => other,
-            Self::Some(ids) => match other {
-                Self::Const => Self::Some(ids),
-                Self::Some(other_ids) => Self::Some(ids.union(&other_ids).cloned().collect()),
-                Self::All => other,
+            Self::Const => *self = other.clone(),
+            Self::Some(ref mut ids) => match other {
+                Self::Const => {}
+                Self::Some(other_ids) => {
+                    ids.extend(other_ids.iter());
+                }
+                Self::All => *self = Self::All,
             },
-            Self::All => self,
+            Self::All => {}
         }
+    }
+}
+
+impl Default for ParamDeps {
+    fn default() -> Self {
+        Self::Const
     }
 }
 
@@ -114,7 +124,7 @@ pub enum Expression {
     /// A component instantiation
     Component {
         path: ComponentPath,
-        props: Vec<(syn::Ident, template_ast::AttrValue)>,
+        props: Vec<template_ast::Attr>,
     },
 
     /// A match expression (something which is conditional)

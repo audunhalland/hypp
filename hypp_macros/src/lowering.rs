@@ -67,6 +67,9 @@ struct BlockBuilder {
     pub struct_fields: Vec<ir::StructField>,
     pub statements: Vec<ir::Statement>,
 
+    // Param deps for the whole block
+    param_deps: ir::ParamDeps,
+
     current_dom_program_depth: u16,
     current_dom_opcodes: Vec<ir::DomOpCode>,
 }
@@ -78,6 +81,7 @@ impl BlockBuilder {
         ir::Block {
             struct_fields: self.struct_fields,
             statements: self.statements,
+            param_deps: self.param_deps,
         }
     }
 
@@ -196,11 +200,14 @@ impl BlockBuilder {
             ty: ir::StructFieldType::DomText,
         });
 
+        let param_deps = scope.lookup_params_deps_for_expr(&expr);
+        self.param_deps.extend(&param_deps);
+
         self.push_statement(
             ir::Statement {
                 field: Some(node_field),
                 dom_depth: ir::DomDepth(ctx.current_dom_depth),
-                param_deps: scope.lookup_params_deps_for_expr(&expr),
+                param_deps,
                 expression: ir::Expression::Text {
                     variable_field: variable_field.clone(),
                     expr,
@@ -227,8 +234,16 @@ impl BlockBuilder {
 
         let mut param_deps = ir::ParamDeps::Const;
         for attr in &component.attrs {
-            param_deps = param_deps.union(scope.lookup_param_deps_for_ident(&attr.0));
+            match &attr.value {
+                template_ast::AttrValue::ImplicitTrue => {}
+                template_ast::AttrValue::Literal(_) => {}
+                template_ast::AttrValue::Expr(expr) => {
+                    param_deps.extend(&scope.lookup_params_deps_for_expr(expr));
+                }
+            }
         }
+
+        self.param_deps.extend(&param_deps);
 
         self.push_statement(
             ir::Statement {
@@ -254,7 +269,7 @@ impl BlockBuilder {
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
 
-        let arms = the_match
+        let arms: Vec<_> = the_match
             .arms
             .into_iter()
             .enumerate()
@@ -277,10 +292,12 @@ impl BlockBuilder {
             })
             .collect();
 
-        // FIXME: Should we take into account the deps inside the arms HERE?
-        // because we have to execute this Match update if any of the params
-        // used inside the match get touched.
-        let param_deps = scope.lookup_params_deps_for_expr(&expr);
+        // Param deps for the whole match expression
+        let mut param_deps = scope.lookup_params_deps_for_expr(&expr);
+        for arm in arms.iter() {
+            param_deps.extend(&arm.block.param_deps);
+        }
+        self.param_deps.extend(&param_deps);
 
         self.push_statement(
             ir::Statement {
