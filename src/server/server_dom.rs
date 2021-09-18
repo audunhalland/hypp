@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
 
 pub type RcNode = Rc<Node>;
@@ -11,7 +12,10 @@ pub struct Node {
 
 pub enum NodeKind {
     Text(RefCell<String>),
-    Element { tag_name: &'static str },
+    Element {
+        tag_name: &'static str,
+        attributes: BTreeMap<&'static str, AttributeValue>,
+    },
     Fragment,
 }
 
@@ -26,6 +30,11 @@ struct Links {
     pub last_child: Option<Weak<Node>>,
 }
 
+pub enum AttributeValue {
+    Static(&'static str),
+    Dynamic(String),
+}
+
 impl Node {
     pub fn is(&self, other: &Node) -> bool {
         self as *const _ == other as *const _
@@ -35,6 +44,7 @@ impl Node {
         match &self.kind {
             NodeKind::Element {
                 tag_name: self_tag_name,
+                ..
             } => {
                 assert_eq!(*self_tag_name, tag_name);
             }
@@ -63,7 +73,10 @@ impl Node {
 
     pub fn create_element(tag_name: &'static str) -> RcNode {
         Rc::new(Node {
-            kind: NodeKind::Element { tag_name },
+            kind: NodeKind::Element {
+                tag_name,
+                attributes: BTreeMap::new(),
+            },
             links: RefCell::new(Links::default()),
         })
     }
@@ -253,9 +266,27 @@ impl ToString for Node {
     fn to_string(&self) -> String {
         fn recurse(node: &Node, buf: &mut String) {
             match &node.kind {
-                NodeKind::Element { tag_name } => {
+                NodeKind::Element {
+                    tag_name,
+                    attributes,
+                } => {
                     buf.push('<');
                     buf.push_str(tag_name);
+
+                    for (name, value) in attributes.iter() {
+                        buf.push(' ');
+                        buf.push_str(name);
+                        buf.push_str("=\"");
+                        match value {
+                            AttributeValue::Static(str) => {
+                                buf.push_str(str);
+                            }
+                            AttributeValue::Dynamic(string) => {
+                                buf.push_str(&string);
+                            }
+                        }
+                        buf.push('"');
+                    }
 
                     if let Some(first_child) = node.first_child() {
                         buf.push('>');

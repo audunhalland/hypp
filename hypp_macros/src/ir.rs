@@ -151,7 +151,8 @@ impl ConstDomProgram {
     pub fn last_node_opcode(&self) -> Option<&DomOpCode> {
         self.opcodes.iter().rev().find(|opcode| match opcode {
             DomOpCode::EnterElement(_) => true,
-            DomOpCode::Attr(_, _) => false,
+            DomOpCode::AttrName(_) => false,
+            DomOpCode::AttrTextValue(_) => false,
             DomOpCode::Text(_) => true,
             DomOpCode::ExitElement => true,
         })
@@ -160,15 +161,16 @@ impl ConstDomProgram {
     pub fn last_node_type(&self) -> Option<NodeType> {
         self.last_node_opcode().and_then(|opcode| match opcode {
             DomOpCode::EnterElement(_) | DomOpCode::ExitElement => Some(NodeType::Element),
+            DomOpCode::AttrName(_) | DomOpCode::AttrTextValue(_) => None,
             DomOpCode::Text(_) => Some(NodeType::Text),
-            DomOpCode::Attr(_, _) => None,
         })
     }
 }
 
 pub enum DomOpCode {
     EnterElement(syn::LitStr),
-    Attr(syn::LitStr, syn::LitStr),
+    AttrName(syn::LitStr),
+    AttrTextValue(syn::LitStr),
     Text(syn::LitStr),
     ExitElement,
 }

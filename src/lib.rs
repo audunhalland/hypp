@@ -46,8 +46,11 @@ pub enum ConstOpCode {
     /// The cursor position moves into that element's first child.
     EnterElement(&'static str),
 
-    /// Define an attribute on the current element,
-    Attribute(&'static str, &'static str),
+    /// Moves the cursor to a specific attribute name within the current element.
+    AttributeName(&'static str),
+
+    /// Define text-based attribute value on the current attribute.
+    AttributeTextValue(&'static str),
 
     /// Define a text. The cursor moves past this text.
     Text(&'static str),

@@ -192,11 +192,12 @@ impl BlockBuilder {
 
     fn lower_attr<'p>(&mut self, attr: template_ast::Attr, ctx: &mut Context) {
         let attr_name = syn::LitStr::new(&attr.ident.to_string(), attr.ident.span());
+        self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
 
         match attr.value {
             template_ast::AttrValue::ImplicitTrue => {
                 let attr_value = syn::LitStr::new("true", attr.ident.span());
-                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name, attr_value), ctx);
+                self.push_dom_opcode(ir::DomOpCode::AttrTextValue(attr_value), ctx);
             }
             template_ast::AttrValue::Literal(lit) => {
                 let value_lit = match lit {
@@ -204,7 +205,7 @@ impl BlockBuilder {
                     // BUG: Debug formatting
                     lit => syn::LitStr::new(&format!("{:?}", lit), attr.ident.span()),
                 };
-                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name, value_lit), ctx);
+                self.push_dom_opcode(ir::DomOpCode::AttrTextValue(value_lit), ctx);
             }
             template_ast::AttrValue::Expr(_expr) => {
                 // TODO: Implement

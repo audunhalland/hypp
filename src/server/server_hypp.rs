@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::server_dom::{Node, NodeKind, RcNode};
+use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
 use crate::{AsNode, ConstOpCode, DomVM, Hypp};
 
 impl AsNode<ServerHypp> for RcNode {
@@ -25,6 +25,7 @@ impl ServerHypp {
         ServerBuilder {
             element: self.body.clone(),
             next_child: self.body.first_child(),
+            loaded_attribute_name: None,
         }
     }
 
@@ -46,6 +47,7 @@ impl Hypp for ServerHypp {
 pub struct ServerBuilder {
     element: RcNode,
     next_child: Option<RcNode>,
+    loaded_attribute_name: Option<&'static str>,
 }
 
 impl ServerBuilder {
@@ -86,6 +88,7 @@ impl ServerBuilder {
             Some(next_child) => match &next_child.kind {
                 NodeKind::Element {
                     tag_name: node_tag_name,
+                    ..
                 } => {
                     if *node_tag_name != tag_name {
                         Err(Error::RemoveElement)
@@ -113,8 +116,20 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
                 ConstOpCode::EnterElement(tag_name) => {
                     result = Ok(self.enter_element(tag_name));
                 }
-                ConstOpCode::Attribute(_name, _value) => {
-                    return Err(Error::SetAttribute);
+                ConstOpCode::AttributeName(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttributeTextValue(value) => {
+                    let attribute_name = self
+                        .loaded_attribute_name
+                        .expect("Should call AttributeName before setting attribute value");
+
+                    match &mut self.element.kind {
+                        NodeKind::Element { attributes, .. } => {
+                            attributes.insert(attribute_name, AttributeValue::Static(value))
+                        }
+                        _ => return Err(Error::SetAttribute),
+                    };
                 }
                 ConstOpCode::Text(text) => {
                     result = Ok(self.text(text));
@@ -182,7 +197,8 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
 
                     self.next_child = self.element.first_child();
                 }
-                ConstOpCode::Attribute(_name, _value) => {}
+                ConstOpCode::AttributeName(_) => {}
+                ConstOpCode::AttributeTextValue(_) => {}
                 ConstOpCode::Text(text) => {
                     let node = self.next_child.take().expect("Expected a text");
                     node.assert_is_text(text);

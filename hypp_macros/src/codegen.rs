@@ -127,8 +127,11 @@ pub fn generate_dom_program(
         ir::DomOpCode::EnterElement(lit_str) => quote! {
             ConstOpCode::EnterElement(#lit_str),
         },
-        ir::DomOpCode::Attr(name, value) => quote! {
-            ConstOpCode::Attribute(#name, #value),
+        ir::DomOpCode::AttrName(name) => quote! {
+            ConstOpCode::AttributeName(#name),
+        },
+        ir::DomOpCode::AttrTextValue(value) => quote! {
+            ConstOpCode::AttributeTextValue(#value),
         },
         ir::DomOpCode::Text(lit_str) => quote! {
             ConstOpCode::Text(#lit_str),
