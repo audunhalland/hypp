@@ -5,14 +5,21 @@ use wasm_bindgen::prelude::*;
 use web_sys::console;
 
 hypp::component! {
-    App() {}
+    App() {
+        toggled: bool,
+    }
 
     fn handle_click(&mut self) {
-        console::log_1(&"Inside handle_click!".into());
+        console::log_1(&"Toggling!".into());
+        self.toggled = !self.toggled;
     }
 
     <button on_click={Self::handle_click}>
-        "Some text to test!"
+        if self.toggled {
+            "Toggled"
+        } else {
+            "Not toggled"
+        }
     </button>
 }
 

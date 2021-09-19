@@ -341,22 +341,28 @@ impl ir::StructField {
         let field = &self.field;
 
         match &self.ty {
-            ir::StructFieldType::Param(param) => match &param.ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => {
-                        quote! { #field, }
-                    }
-                    param::ParamLeafType::Ref(_) => {
-                        quote! { #field: #field.to_owned(), }
-                    }
+            ir::StructFieldType::Param(param) => match &param.kind {
+                param::ParamKind::Prop => match &param.ty {
+                    param::ParamRootType::One(ty) => match ty {
+                        param::ParamLeafType::Owned(_) => quote! { #field, },
+                        param::ParamLeafType::Ref(_) => quote! { #field: #field.to_owned(), },
+                    },
+                    param::ParamRootType::Option(ty) => match ty {
+                        param::ParamLeafType::Owned(_) => quote! { #field, },
+
+                        param::ParamLeafType::Ref(_) => {
+                            quote! { #field: #field.map(|val| val.to_owned()), }
+                        }
+                    },
                 },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => {
-                        quote! { #field, }
-                    }
-                    param::ParamLeafType::Ref(_) => {
-                        quote! { #field: #field.map(|val| val.to_owned()), }
-                    }
+                param::ParamKind::State => match &param.ty {
+                    param::ParamRootType::One(ty) => match ty {
+                        param::ParamLeafType::Owned(ty) => quote! { #field: #ty::default(), },
+                        param::ParamLeafType::Ref(ty) => quote! { #field: #ty::default(), },
+                    },
+                    param::ParamRootType::Option(_) => quote! {
+                        #field: Option::default(),
+                    },
                 },
             },
             ir::StructFieldType::Callback => quote! { #field: #field.clone(), },

@@ -584,9 +584,9 @@ mod tests {
     }
 
     // Experimentation with new surface syntax
-    component! {
-        Stuff(prop1: bool, prop2: &str) {
-            state: bool,
+    component_dbg! {
+        Toggle(prop1: bool, prop2: &str) {
+            toggled: bool,
         }
 
         fn update(&mut self) {
@@ -598,7 +598,7 @@ mod tests {
         }
 
         fn handle_click(&mut self) {
-            println!("On click!");
+            self.toggled = !self.toggled;
         }
 
         <div>

@@ -14,6 +14,19 @@ pub struct Param {
     pub ty: ParamRootType,
 }
 
+impl Param {
+    pub fn is_prop(&self) -> bool {
+        match &self.kind {
+            ParamKind::Prop => true,
+            ParamKind::State => false,
+        }
+    }
+
+    pub fn is_state(&self) -> bool {
+        !self.is_prop()
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum ParamKind {
     Prop,

@@ -166,22 +166,26 @@ fn analyze_ast(
 fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
     let props_ident = &root_idents.props_ident;
 
-    let fields = params.iter().map(|param| {
-        let ident = &param.ident;
-        let ty = match &param.ty {
-            param::ParamRootType::One(ty) => match ty {
-                param::ParamLeafType::Owned(ty) => quote! { #ty },
-                param::ParamLeafType::Ref(ty) => quote! { &'p #ty },
-            },
-            param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
-                param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
-            },
-        };
+    let fields = params.iter().filter_map(|param| match &param.kind {
+        param::ParamKind::Prop => {
+            let ident = &param.ident;
 
-        quote! {
-            pub #ident: #ty,
+            let ty = match &param.ty {
+                param::ParamRootType::One(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => quote! { #ty },
+                    param::ParamLeafType::Ref(ty) => quote! { &'p #ty },
+                },
+                param::ParamRootType::Option(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
+                    param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
+                },
+            };
+
+            Some(quote! {
+                pub #ident: #ty,
+            })
         }
+        param::ParamKind::State => None,
     });
 
     quote! {
@@ -196,12 +200,15 @@ fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> Tok
 fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
     let props_ident = &root_idents.props_ident;
 
-    let fields = params.iter().map(|param| {
-        let ident = &param.ident;
+    let fields = params.iter().filter_map(|param| match &param.kind {
+        param::ParamKind::Prop => {
+            let ident = &param.ident;
 
-        quote! {
-            #ident,
+            Some(quote! {
+                #ident,
+            })
         }
+        param::ParamKind::State => None,
     });
 
     syn::parse_quote! {
@@ -249,7 +256,7 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
         })
         .count();
 
-    let checks = params.iter().map(|param| {
+    let checks = params.iter().filter(|param| param.is_prop()).map(|param| {
         let id = param.id as usize;
         let ident = &param.ident;
 
