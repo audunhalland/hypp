@@ -5,6 +5,20 @@ use std::collections::BTreeSet;
 use crate::param;
 use crate::template_ast;
 
+/// The way something must be owned in order to work.
+/// Things with internal cyclic references need Shared ownership,
+/// for example when callbacks are involved.
+pub enum HandleKind {
+    Unique,
+    Shared,
+}
+
+impl Default for HandleKind {
+    fn default() -> Self {
+        Self::Unique
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct DomDepth(pub u16);
 
@@ -64,6 +78,7 @@ impl ComponentPath {
 /// A 'block' of code that should run atomically.
 #[derive(Default)]
 pub struct Block {
+    pub handle_kind: HandleKind,
     pub struct_fields: Vec<StructField>,
     pub statements: Vec<Statement>,
     pub param_deps: ParamDeps,

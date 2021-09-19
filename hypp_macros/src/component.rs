@@ -12,14 +12,12 @@ struct Component {
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
     props_struct: TokenStream,
-    handle_kind: component_ast::HandleKind,
+    root_block: ir::Block,
     variant_enums: Vec<TokenStream>,
-    struct_fields: Vec<ir::StructField>,
     fn_props_destructuring: syn::FnArg,
     self_props_bindings: TokenStream,
     props_updater: TokenStream,
     fn_stmts: Vec<syn::Stmt>,
-    statements: Vec<ir::Statement>,
     methods: Vec<syn::ItemFn>,
 }
 
@@ -28,29 +26,29 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         dom_programs,
         root_idents,
         props_struct,
-        handle_kind,
+        root_block,
         variant_enums,
-        struct_fields,
         fn_props_destructuring,
         self_props_bindings,
         props_updater,
         fn_stmts,
-        statements,
         methods,
     } = analyze_ast(ast);
 
     let component_ident = &root_idents.component_ident;
     let props_ident = &root_idents.props_ident;
 
-    let struct_field_defs = struct_fields
+    let struct_field_defs = root_block
+        .struct_fields
         .iter()
         .map(|field| field.field_def_tokens(&root_idents, Scope::Component));
 
-    let struct_params = struct_fields
+    let struct_params = root_block
+        .struct_fields
         .iter()
         .map(ir::StructField::struct_param_tokens);
 
-    let mount_stmts = statements.iter().map(|statement| {
+    let mount_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_mount(
             &root_idents,
             CodegenCtx {
@@ -60,7 +58,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         )
     });
 
-    let patch_stmts = statements.iter().map(|statement| {
+    let patch_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_patch(
             &root_idents,
             CodegenCtx {
@@ -71,7 +69,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     });
 
     let unmount_stmts = gen_unmount(
-        &statements,
+        &root_block.statements,
         ir::DomDepth(0),
         CodegenCtx {
             lifecycle: Lifecycle::Unmount,
@@ -79,17 +77,17 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
     );
 
-    let handle_path = handle_kind.handle_path();
+    let handle_path = root_block.handle_kind.handle_path();
 
-    let self_constructor = match handle_kind {
-        component_ast::HandleKind::Unique => quote! {
+    let self_constructor = match root_block.handle_kind {
+        ir::HandleKind::Unique => quote! {
             Ok(#handle_path::new(Self {
                 #(#struct_params)*
 
                 __phantom: std::marker::PhantomData
             }))
         },
-        component_ast::HandleKind::Shared => quote! {
+        ir::HandleKind::Shared => quote! {
             let __self = std::rc::Rc::new(
                 std::cell::RefCell::new(
                     Self {
@@ -161,7 +159,6 @@ fn analyze_ast(
         ident,
         params,
         methods,
-        handle_kind,
         template,
     }: component_ast::Component,
 ) -> Component {
@@ -172,30 +169,24 @@ fn analyze_ast(
     let self_props_bindings = create_self_props_bindings(&params);
     let props_updater = create_props_updater(&params);
 
-    let ir::Block {
-        struct_fields,
-        statements,
-        ..
-    } = lowering::lower_root_node(template, &params);
+    let root_block = lowering::lower_root_node(template, &params);
 
     let mut dom_programs = vec![];
-    collect_dom_programs(&statements, &root_idents, &mut dom_programs);
+    collect_dom_programs(&root_block.statements, &root_idents, &mut dom_programs);
 
     let mut variant_enums = vec![];
-    collect_variant_enums(&statements, &root_idents, &mut variant_enums);
+    collect_variant_enums(&root_block.statements, &root_idents, &mut variant_enums);
 
     Component {
         dom_programs,
         variant_enums,
         root_idents,
         props_struct,
-        handle_kind,
-        struct_fields,
+        root_block,
         fn_props_destructuring,
         self_props_bindings,
         props_updater,
         fn_stmts: vec![],
-        statements,
         methods,
     }
 }

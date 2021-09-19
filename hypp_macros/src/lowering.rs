@@ -70,6 +70,8 @@ struct BlockBuilder {
     // Param deps for the whole block
     param_deps: ir::ParamDeps,
 
+    handle_kind: ir::HandleKind,
+
     current_dom_program_depth: u16,
     current_dom_opcodes: Vec<ir::DomOpCode>,
 }
@@ -79,6 +81,7 @@ impl BlockBuilder {
         self.flush_dom_program(ctx);
 
         ir::Block {
+            handle_kind: self.handle_kind,
             struct_fields: self.struct_fields,
             statements: self.statements,
             param_deps: self.param_deps,
@@ -221,6 +224,9 @@ impl BlockBuilder {
                         field: callback_field.clone(),
                         ty: ir::StructFieldType::Callback,
                     });
+
+                    // When callbacks are involved, we need a shared handle
+                    self.handle_kind = ir::HandleKind::Shared;
 
                     // Break the DOM program to produce a callback here:
                     self.push_statement(

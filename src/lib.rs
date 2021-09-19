@@ -596,7 +596,7 @@ mod tests {
     }
 
     // Experimentation with new surface syntax
-    component_dbg! {
+    component! {
         Stuff(prop1: bool, prop2: &str) {
             state: bool,
         }

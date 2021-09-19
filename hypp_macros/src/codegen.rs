@@ -1,7 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::component_ast;
 use crate::ir;
 use crate::param;
 use crate::template_ast;
@@ -793,7 +792,7 @@ impl ir::StructFieldType {
     }
 }
 
-impl component_ast::HandleKind {
+impl ir::HandleKind {
     pub fn handle_path(&self) -> TokenStream {
         match self {
             Self::Unique => quote! { handle::Unique },
