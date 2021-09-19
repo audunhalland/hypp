@@ -1,7 +1,3 @@
 ```
-wasm-pack build --target web
-```
-
-```
-python3 -m http.server
+wasm-pack build --target web && python3 -m http.server
 ```
