@@ -192,11 +192,11 @@ impl BlockBuilder {
 
     fn lower_attr<'p>(&mut self, attr: template_ast::Attr, ctx: &mut Context) {
         let attr_name = syn::LitStr::new(&attr.ident.to_string(), attr.ident.span());
-        self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
 
         match attr.value {
             template_ast::AttrValue::ImplicitTrue => {
                 let attr_value = syn::LitStr::new("true", attr.ident.span());
+                self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
                 self.push_dom_opcode(ir::DomOpCode::AttrTextValue(attr_value), ctx);
             }
             template_ast::AttrValue::Literal(lit) => {
@@ -205,11 +205,38 @@ impl BlockBuilder {
                     // BUG: Debug formatting
                     lit => syn::LitStr::new(&format!("{:?}", lit), attr.ident.span()),
                 };
+                self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
                 self.push_dom_opcode(ir::DomOpCode::AttrTextValue(value_lit), ctx);
             }
-            template_ast::AttrValue::Expr(_expr) => {
-                // TODO: Implement
-            }
+            template_ast::AttrValue::Expr(_expr) => match attr_name.value().as_ref() {
+                // Hack: need some better way to do this.. :)
+                "on_click" => {
+                    // First push the attribute name into const program:
+                    self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
+
+                    // Callback must be stored, because it must release ref counts on unmount.
+                    let callback_field = ctx.next_field_id();
+
+                    self.struct_fields.push(ir::StructField {
+                        field: callback_field.clone(),
+                        ty: ir::StructFieldType::Callback,
+                    });
+
+                    // Break the DOM program to produce a callback here:
+                    self.push_statement(
+                        ir::Statement {
+                            field: Some(callback_field),
+                            dom_depth: ir::DomDepth(ctx.current_dom_depth),
+                            param_deps: ir::ParamDeps::Const,
+                            expression: ir::Expression::AttributeCallback,
+                        },
+                        ctx,
+                    );
+                }
+                _ => {
+                    panic!("TODO: proper error handling for non on_click attribute :P");
+                }
+            },
         }
     }
 
@@ -224,7 +251,6 @@ impl BlockBuilder {
         ctx: &mut Context,
     ) {
         let node_field = ctx.next_field_id();
-        let variable_field = ctx.next_field_id();
 
         self.struct_fields.push(ir::StructField {
             field: node_field.clone(),
@@ -239,10 +265,7 @@ impl BlockBuilder {
                 field: Some(node_field),
                 dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps,
-                expression: ir::Expression::Text {
-                    variable_field: variable_field.clone(),
-                    expr,
-                },
+                expression: ir::Expression::Text(expr),
             },
             ctx,
         );

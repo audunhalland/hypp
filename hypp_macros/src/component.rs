@@ -149,7 +149,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 self.patch(&__updates, __vm);
             }
 
-            fn unmount(&self, __vm: &mut dyn DomVM<H>) {
+            fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
                 #unmount_stmts
             }
         }

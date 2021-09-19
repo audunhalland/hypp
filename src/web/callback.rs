@@ -34,6 +34,11 @@ impl Callback for WebCallback {
         let mut cell = self.cell.borrow_mut();
         cell.rust_function = Some(function);
     }
+
+    fn release(&mut self) {
+        let mut cell = self.cell.borrow_mut();
+        cell.rust_function = None;
+    }
 }
 
 struct CallbackCell {

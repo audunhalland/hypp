@@ -48,6 +48,8 @@ impl Hypp for ServerHypp {
 
 impl Callback for () {
     fn bind(&mut self, function: Box<dyn Fn()>) {}
+
+    fn release(&mut self) {}
 }
 
 pub struct ServerBuilder {

@@ -236,7 +236,7 @@ fn generate_variant_enum(
         }
 
         impl<H: Hypp + 'static> #enum_ident<H> {
-            pub fn unmount(&self, __vm: &mut dyn DomVM<H>) {
+            pub fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
                 match self {
                     #(#unmount_arms)*
                 }
@@ -284,6 +284,12 @@ pub fn gen_unmount(
                     }
                 }
             }
+            ir::Expression::AttributeCallback => {
+                let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
+                stmts.push(quote! {
+                    #field_ref.release();
+                });
+            }
             ir::Expression::Text { .. } => {
                 if dom_depth == 0 {
                     stmts.push(quote! {
@@ -295,7 +301,7 @@ pub fn gen_unmount(
                 if dom_depth == 0 {
                     let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
-                        #field_ref.borrow().unmount(__vm);
+                        #field_ref.borrow_mut().unmount(__vm);
                     });
                 }
             }
@@ -360,7 +366,9 @@ impl ir::StructField {
                 ref mut #field,
             },
             // immutable types
-            ir::StructFieldType::DomElement | ir::StructFieldType::DomText => quote! {
+            ir::StructFieldType::DomElement
+            | ir::StructFieldType::DomText
+            | ir::StructFieldType::Callback => quote! {
                 ref #field,
             },
         }
@@ -411,7 +419,10 @@ impl ir::Statement {
                     _ => panic!(),
                 }
             }
-            ir::Expression::Text { expr, .. } => quote! {
+            ir::Expression::AttributeCallback => quote! {
+                __vm.attribute_value_callback() #err_handler
+            },
+            ir::Expression::Text(expr) => quote! {
                 __vm.text(#expr.as_ref()) #err_handler
             },
             ir::Expression::Component { path, props, .. } => {
@@ -445,6 +456,8 @@ impl ir::Statement {
 
                 match ctx.scope {
                     Scope::Component => mount_expr,
+                    // If inside an enum, the component is _conditional_,
+                    // and might be used for recursion:
                     Scope::Enum => quote! { #mount_expr.into_boxed() },
                 }
             }
@@ -536,7 +549,8 @@ impl ir::Statement {
                     }
                 }
             }
-            ir::Expression::Text { expr, .. } => {
+            ir::Expression::AttributeCallback => quote! {},
+            ir::Expression::Text(expr) => {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
                 let test = self.param_deps.update_test_tokens();
 
@@ -740,6 +754,7 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
+            Self::Callback => quote! { H::Callback },
             Self::Param(param) => match &param.ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(ty) => {

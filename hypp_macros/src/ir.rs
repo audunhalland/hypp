@@ -30,6 +30,7 @@ pub enum FieldIdent {
 pub enum StructFieldType {
     DomElement,
     DomText,
+    Callback,
     Param(param::Param),
     Component(ComponentPath),
     Enum(u16),
@@ -120,11 +121,10 @@ pub enum Expression {
     /// A constant DOM program
     ConstDom(ConstDomProgram),
 
+    AttributeCallback,
+
     /// Something that should evaluate to text at runtime
-    Text {
-        variable_field: FieldIdent,
-        expr: syn::Expr,
-    },
+    Text(syn::Expr),
 
     /// A component instantiation
     Component {

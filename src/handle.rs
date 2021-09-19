@@ -139,7 +139,7 @@ mod test {
         type Props = LolProps<'p>;
 
         fn set_props(&mut self, _props: Self::Props, _: &mut dyn DomVM<H>) {}
-        fn unmount(&self, _vm: &mut dyn DomVM<H>) {}
+        fn unmount(&mut self, _vm: &mut dyn DomVM<H>) {}
     }
 
     struct CompB {
@@ -162,7 +162,7 @@ mod test {
         type Props = LolProps<'p>;
 
         fn set_props(&mut self, _props: Self::Props, _: &mut dyn DomVM<H>) {}
-        fn unmount(&self, _vm: &mut dyn DomVM<H>) {}
+        fn unmount(&mut self, _vm: &mut dyn DomVM<H>) {}
     }
 
     #[test]

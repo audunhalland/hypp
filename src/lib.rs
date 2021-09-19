@@ -41,6 +41,8 @@ pub trait Hypp: Sized {
 
 pub trait Callback {
     fn bind(&mut self, function: Box<dyn Fn()>);
+
+    fn release(&mut self);
 }
 
 ///
@@ -140,7 +142,7 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     /// Unmount the component, removing all its nodes
     /// from under its mount point in the tree, using the DomVM.
     /// The only purpose of this call is to clean up nodes in the DOM.
-    fn unmount(&self, __vm: &mut dyn DomVM<H>);
+    fn unmount(&mut self, __vm: &mut dyn DomVM<H>);
 }
 
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
@@ -377,7 +379,7 @@ mod tests {
             "<body><div><span>Hello</span><a>World</a></div></body>"
         );
 
-        c.borrow().unmount(&mut hypp.builder_at_body());
+        c.borrow_mut().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -452,7 +454,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><article/></body>");
 
-        c.borrow().unmount(&mut hypp.builder_at_body());
+        c.borrow_mut().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -504,12 +506,12 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><div>first</div><p>third</p></body>");
 
-        c.borrow().unmount(&mut hypp.builder_at_body());
+        c.borrow_mut().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
 
-    component_dbg! {
+    component! {
         Recursive(depth: usize) {}
 
         <span>
@@ -547,7 +549,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 
-        c.borrow().unmount(&mut hypp.builder_at_body());
+        c.borrow_mut().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -594,7 +596,7 @@ mod tests {
     }
 
     // Experimentation with new surface syntax
-    component! {
+    component_dbg! {
         Stuff(prop1: bool, prop2: &str) {
             state: bool,
         }
