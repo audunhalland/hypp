@@ -7,22 +7,15 @@
 //! The philosophy is to precompile as much as we can.
 //!
 
-use std::marker::PhantomData;
-
 pub mod error;
 pub mod handle;
 pub mod server;
 pub mod web;
 
+pub mod prelude;
+
 pub use error::Error;
 pub use hypp_macros::component;
-
-///
-/// "upcast" a DOM node of a specific type to its generic type
-///
-pub trait AsNode<H: Hypp> {
-    fn as_node(&self) -> &H::Node;
-}
 
 ///
 /// Main abstraction for hypp (as of writing)
@@ -40,32 +33,10 @@ pub trait Hypp: Sized {
 }
 
 ///
-/// Callback
+/// "upcast" a DOM node of a specific type to its generic type
 ///
-/// Ownership structure:
-///
-///  [Rc] ------> [RefCell] -----> [COMPONENT]
-///    ^                                |
-///    |                                v
-///    |                               [Rc]
-///  [Fn]                               |
-///    ^                                v
-///    |                           [Callback]       [DOM Node]
-///    |                                |                 |
-///  [Box]                              v                 v
-///    ^                               [Rc] <------- [wasm closure]
-///    |                                |
-///    |                                v
-/// [Option] <--- [CallbackCell] <-- [RefCell]
-///
-/// When a component is unmounted, it must release() all its callbacks.
-/// releasing the callback means setting the `Option` within `CallbackCell` to `None`,
-/// so that the Fn no longer owns the component.
-///
-pub trait Callback {
-    fn bind(&self, function: Box<dyn Fn()>);
-
-    fn release(&self);
+pub trait AsNode<H: Hypp> {
+    fn as_node(&self) -> &H::Node;
 }
 
 ///
@@ -147,10 +118,7 @@ pub trait DomVM<'doc, H: Hypp> {
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
-pub struct State<T: Default> {
-    pub value: T,
-}
-
+/// The component trait
 pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     /// The type of properties this component recieves
     type Props: 'p;
@@ -171,447 +139,31 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     fn unmount(&mut self, __vm: &mut dyn DomVM<H>);
 }
 
-pub type PhantomProp<'p> = PhantomData<&'p ()>;
-pub type PhantomField<A> = PhantomData<A>;
+///
+/// Callback
+///
+/// Ownership structure:
+///
+///  [Rc] ------> [RefCell] -----> [COMPONENT]
+///    ^                                |
+///    |                                v
+///    |                               [Rc]
+///  [Fn]                               |
+///    ^                                v
+///    |                           [Callback]       [DOM Node]
+///    |                                |                 |
+///  [Box]                              v                 v
+///    ^                               [Rc] <------- [wasm closure]
+///    |                                |
+///    |                                v
+/// [Option] <--- [CallbackCell] <-- [RefCell]
+///
+/// When a component is unmounted, it must release() all its callbacks.
+/// releasing the callback means setting the `Option` within `CallbackCell` to `None`,
+/// so that the Fn no longer owns the component.
+///
+pub trait Callback {
+    fn bind(&self, function: Box<dyn Fn()>);
 
-#[allow(unused_imports)]
-mod debugging {
-    use super::handle::Handle;
-    use super::*;
+    fn release(&self);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::handle::Handle;
-    use super::*;
-
-    use wasm_bindgen_test::*;
-
-    #[allow(unused_imports)]
-    use hypp_macros::component_dbg;
-
-    component! {
-        Foo(is_cool: bool) {}
-
-        // let label = if is_cool { "cool" } else { "dull" };
-
-        <div>
-            <p class="css">
-                <span>
-                    // FIXME: Need some way to define this as a temporary variable?
-                    // maybe let bindings before the template?
-                    if is_cool {
-                        "cool"
-                    } else {
-                        "dull"
-                    }
-                </span>
-            </p>
-        </div>
-    }
-
-    #[wasm_bindgen_test]
-    fn render_foo_web() {
-        let hypp = web::WebHypp::new();
-        let _comp = Foo::mount(
-            FooProps {
-                is_cool: true,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn render_foo_server() {
-        let hypp = server::ServerHypp::new();
-        let mut c = Foo::mount(
-            FooProps {
-                is_cool: true,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            hypp.render(),
-            "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
-        );
-
-        c.borrow_mut().set_props(
-            FooProps {
-                is_cool: false,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(
-            &hypp.render(),
-            "<body><div><p class=\"css\"><span>dull</span></p></div></body>"
-        );
-    }
-
-    mod inside {
-        use super::*;
-
-        component! {
-            P1(text: &str) {}
-
-            <p>{text}</p>
-        }
-
-        component! {
-            P2() {}
-
-            <p>"static"</p>
-        }
-    }
-
-    component! {
-        Baz() {}
-
-        <div>
-            // En kommentar
-            <inside::P1 text="variable"/>
-            <inside::P2/>
-        </div>
-    }
-
-    #[test]
-    fn render_baz_server() {
-        let hypp = server::ServerHypp::new();
-        Baz::mount(
-            BazProps {
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            &hypp.render(),
-            "<body><div><p>variable</p><p>static</p></div></body>"
-        );
-    }
-
-    component! {
-        Conditional(hello: bool, world: bool) {}
-
-        <div>
-            if hello {
-                <span>"Hello"</span>
-                if world {
-                    <a>"World"</a>
-                } else {
-                    <span>"Universe"</span>
-                }
-            }
-        </div>
-    }
-
-    #[test]
-    fn render_conditional_server() {
-        let hypp = server::ServerHypp::new();
-        let mut c = Conditional::mount(
-            ConditionalProps {
-                hello: false,
-                world: false,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-
-        assert_eq!(hypp.render(), "<body><div/></body>");
-
-        c.borrow_mut().set_props(
-            ConditionalProps {
-                hello: false,
-                world: true,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        // No change:
-        assert_eq!(hypp.render(), "<body><div/></body>");
-
-        c.borrow_mut().set_props(
-            ConditionalProps {
-                hello: true,
-                world: false,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(
-            hypp.render(),
-            "<body><div><span>Hello</span><span>Universe</span></div></body>"
-        );
-
-        c.borrow_mut().set_props(
-            ConditionalProps {
-                hello: true,
-                world: true,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(
-            hypp.render(),
-            "<body><div><span>Hello</span><a>World</a></div></body>"
-        );
-
-        c.borrow_mut().unmount(&mut hypp.builder_at_body());
-
-        assert_eq!(hypp.render(), "<body/>");
-    }
-
-    component! {
-        ConditionalWithVariableText(hello: bool, yo: &str) {}
-
-        <div>
-        if hello {
-            {yo}
-        }
-        </div>
-    }
-
-    component! {
-        ConditionalWithComponent(hello: bool) {}
-
-        <div>
-        if hello {
-            <Baz />
-        }
-        </div>
-    }
-
-    component! {
-        ITakeANumber(number: u32) {}
-
-        "num"
-    }
-
-    component! {
-        IfLet(opt_number: Option<u32>) {}
-
-        <article>
-            if let Some(number) = opt_number {
-                <ITakeANumber number={number} />
-            }
-        </article>
-    }
-
-    #[test]
-    fn render_iflet_server() {
-        let hypp = server::ServerHypp::new();
-        let mut c = IfLet::mount(
-            IfLetProps {
-                opt_number: None,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-
-        assert_eq!(hypp.render(), "<body><article/></body>");
-
-        c.borrow_mut().set_props(
-            IfLetProps {
-                opt_number: Some(42),
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(hypp.render(), "<body><article>num</article></body>");
-
-        c.borrow_mut().set_props(
-            IfLetProps {
-                opt_number: None,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(hypp.render(), "<body><article/></body>");
-
-        c.borrow_mut().unmount(&mut hypp.builder_at_body());
-
-        assert_eq!(hypp.render(), "<body/>");
-    }
-
-    component! {
-        OptionString(opt_str: Option<&str>) {}
-
-        <article>
-            if let Some(str) = opt_str {
-                <p>{str}</p>
-            }
-        </article>
-    }
-
-    component! {
-        Fragment1(perhaps: bool) {}
-
-        <div>"first"</div>
-        if perhaps {
-            <span>"second"</span>
-        }
-        <p>"third"</p>
-    }
-
-    #[test]
-    fn render_fragment1() {
-        let hypp = server::ServerHypp::new();
-        let mut c = Fragment1::mount(
-            Fragment1Props {
-                perhaps: true,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            hypp.render(),
-            "<body><div>first</div><span>second</span><p>third</p></body>"
-        );
-
-        c.borrow_mut().set_props(
-            Fragment1Props {
-                perhaps: false,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(hypp.render(), "<body><div>first</div><p>third</p></body>");
-
-        c.borrow_mut().unmount(&mut hypp.builder_at_body());
-
-        assert_eq!(hypp.render(), "<body/>");
-    }
-
-    component! {
-        Recursive(depth: usize) {}
-
-        <span>
-            {format!("{}", depth)}
-            if depth > 1 {
-                <Recursive depth={depth - 1} />
-            }
-        </span>
-    }
-
-    #[test]
-    fn render_recursive_server() {
-        let hypp = server::ServerHypp::new();
-        let mut c = Recursive::mount(
-            RecursiveProps {
-                depth: 3,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            hypp.render(),
-            "<body><span>3<span>2<span>1</span></span></span></body>"
-        );
-
-        c.borrow_mut().set_props(
-            RecursiveProps {
-                depth: 2,
-                __phantom: std::marker::PhantomData,
-            },
-            &mut hypp.builder_at_body(),
-        );
-
-        assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
-
-        c.borrow_mut().unmount(&mut hypp.builder_at_body());
-
-        assert_eq!(hypp.render(), "<body/>");
-    }
-
-    // doesn't work yet
-    component! {
-        List(_items: &[String]) {}
-
-        <ul>
-        for item in items {
-            <li>{item}</li>
-        }
-        </ul>
-    }
-
-    component! {
-        TopLevelConditional(lol: bool, text: &str) {}
-
-        if lol {
-            {text}
-        } else {
-            <p>"goo"</p>
-        }
-    }
-
-    component! {
-        StringProp1(arg: &str) {}
-        <p>{arg}</p>
-    }
-
-    component! {
-        StringProp2(arg: &str) {}
-        <div>{arg}</div>
-    }
-
-    component! {
-        ConditionalStringProp(arg: &str, draw_one: bool) {}
-
-        if draw_one {
-            <StringProp1 arg={arg} />
-        } else {
-            <StringProp2 arg={arg} />
-        }
-    }
-
-    // Experimentation with new surface syntax
-    component_dbg! {
-        Toggle(prop1: bool, prop2: &str) {
-            toggled: bool,
-        }
-
-        fn update(&mut self) {
-            /*
-            if self.prop1 {
-                self.state = false;
-            }
-            */
-        }
-
-        fn handle_click(&mut self) {
-            self.toggled = !self.toggled;
-        }
-
-        <div>
-            if prop1 {
-                <p>"yep"</p>
-            }
-        </div>
-        <div>
-            <button on_click={Self::handle_click}>
-                "A button"
-            </button>
-        </div>
-    }
-}
-
-mod test_owning {}

@@ -1,4 +1,4 @@
-use hypp::*;
+use hypp::prelude::*;
 
 use wasm_bindgen::prelude::*;
 

@@ -134,19 +134,19 @@ pub fn generate_dom_program(
 ) -> TokenStream {
     let opcodes = program.opcodes.iter().map(|opcode| match opcode {
         ir::DomOpCode::EnterElement(lit_str) => quote! {
-            ConstOpCode::EnterElement(#lit_str),
+            ::hypp::ConstOpCode::EnterElement(#lit_str),
         },
         ir::DomOpCode::AttrName(name) => quote! {
-            ConstOpCode::AttributeName(#name),
+            ::hypp::ConstOpCode::AttributeName(#name),
         },
         ir::DomOpCode::AttrTextValue(value) => quote! {
-            ConstOpCode::AttributeTextValue(#value),
+            ::hypp::ConstOpCode::AttributeTextValue(#value),
         },
         ir::DomOpCode::Text(lit_str) => quote! {
-            ConstOpCode::Text(#lit_str),
+            ::hypp::ConstOpCode::Text(#lit_str),
         },
         ir::DomOpCode::ExitElement => quote! {
-            ConstOpCode::ExitElement,
+            ::hypp::ConstOpCode::ExitElement,
         },
     });
 
@@ -154,7 +154,7 @@ pub fn generate_dom_program(
     let ident = program.get_ident(root_idents);
 
     quote! {
-        static #ident: [ConstOpCode; #len] = [
+        static #ident: [::hypp::ConstOpCode; #len] = [
             #(#opcodes)*
         ];
     }
@@ -205,7 +205,7 @@ fn generate_variant_enum(
             #ident {
                 #(#struct_field_defs)*
 
-                __phantom: PhantomField<H>
+                __phantom: ::std::marker::PhantomData<H>
             },
         }
     });
@@ -239,12 +239,12 @@ fn generate_variant_enum(
     );
 
     quote! {
-        enum #enum_ident<H: Hypp> {
+        enum #enum_ident<H: ::hypp::Hypp> {
             #(#variant_defs)*
         }
 
-        impl<H: Hypp + 'static> #enum_ident<H> {
-            pub fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
+        impl<H: ::hypp::Hypp + 'static> #enum_ident<H> {
+            pub fn unmount(&mut self, __vm: &mut dyn ::hypp::DomVM<H>) {
                 match self {
                     #(#unmount_arms)*
                 }
@@ -453,7 +453,7 @@ impl ir::Block {
                 ir::Expression::AttributeCallback(_) => FieldInit {
                     field_mut: false,
                     init: quote! {
-                        std::rc::Rc::new(__vm.attribute_value_callback() #err_handler)
+                        ::std::rc::Rc::new(__vm.attribute_value_callback() #err_handler)
                     },
                 },
                 ir::Expression::Text(expr) => FieldInit {
@@ -485,7 +485,7 @@ impl ir::Block {
                         #component_path::mount(
                             #props_path {
                                 #(#prop_list)*
-                                __phantom: std::marker::PhantomData
+                                __phantom: ::std::marker::PhantomData
                             },
                             __vm
                         ) #err_handler
@@ -497,7 +497,9 @@ impl ir::Block {
                             Scope::Component => mount_expr,
                             // If inside an enum, the component is _conditional_,
                             // and might be used for recursion:
-                            Scope::Enum => quote! { #mount_expr.into_boxed() },
+                            Scope::Enum => {
+                                quote! { #mount_expr.into_boxed() }
+                            }
                         },
                     }
                 }
@@ -601,19 +603,19 @@ impl ir::Block {
                 let __mounted = #constructor_path {
                     #(#struct_params)*
 
-                    __phantom: std::marker::PhantomData
+                    __phantom: ::std::marker::PhantomData
                 };
             },
             ir::HandleKind::Shared => {
                 quote! {
                     #(#field_inits)*
 
-                    let __mounted = std::rc::Rc::new(
-                        std::cell::RefCell::new(
+                    let __mounted = ::std::rc::Rc::new(
+                        ::std::cell::RefCell::new(
                             #constructor_path {
                                 #(#struct_params)*
 
-                                __phantom: std::marker::PhantomData
+                                __phantom: ::std::marker::PhantomData
                             }
                         )
                     );
@@ -646,7 +648,7 @@ impl ir::Statement {
                         Some(ir::DomOpCode::EnterElement(_)) => quote! {
                             __vm.advance_to_first_child_of(&#field_ref);
                         },
-                        Some(ir::DomOpCode::Text(_) | ir::DomOpCode::ExitElement) => quote! {
+                        Some(ir::DomOpCode::ExitElement | ir::DomOpCode::Text(_)) => quote! {
                             __vm.advance_to_next_sibling_of(#field_ref.as_node());
                         },
                         _ => panic!(),
@@ -697,10 +699,13 @@ impl ir::Statement {
 
                     quote! {
                         if #test {
-                            #field_ref.borrow_mut().set_props(#props_path {
-                                #(#prop_list)*
-                                __phantom: std::marker::PhantomData,
-                            }, __vm);
+                            #field_ref.borrow_mut().set_props(
+                                #props_path {
+                                    #(#prop_list)*
+                                    __phantom: ::std::marker::PhantomData,
+                                },
+                                __vm
+                            );
                         }
                     }
                 }
@@ -859,7 +864,7 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
-            Self::Callback => quote! { std::rc::Rc<H::Callback> },
+            Self::Callback => quote! { ::std::rc::Rc<H::Callback> },
             Self::Param(param) => match &param.ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(ty) => {
@@ -882,10 +887,10 @@ impl ir::StructFieldType {
                 let type_path = &path.type_path;
                 match scope {
                     Scope::Enum => quote! {
-                        <<#type_path #generics as handle::ToHandle>::Handle as handle::Handle<#type_path #generics>>::Boxed
+                        <<#type_path #generics as ::hypp::handle::ToHandle>::Handle as ::hypp::handle::Handle<#type_path #generics>>::Boxed
                     },
                     Scope::Component => {
-                        quote! { <#type_path #generics as handle::ToHandle>::Handle }
+                        quote! { <#type_path #generics as ::hypp::handle::ToHandle>::Handle }
                     }
                 }
             }
@@ -901,8 +906,8 @@ impl ir::StructFieldType {
 impl ir::HandleKind {
     pub fn handle_path(&self) -> TokenStream {
         match self {
-            Self::Unique => quote! { handle::Unique },
-            Self::Shared => quote! { handle::Shared },
+            Self::Unique => quote! { ::hypp::handle::Unique },
+            Self::Shared => quote! { ::hypp::handle::Shared },
         }
     }
 }

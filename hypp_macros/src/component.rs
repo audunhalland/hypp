@@ -81,21 +81,21 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         #(#variant_enums)*
 
         #[allow(dead_code)]
-        pub struct #component_ident<H: Hypp> {
+        pub struct #component_ident<H: ::hypp::Hypp> {
             #(#struct_field_defs)*
 
-            __phantom: PhantomField<H>,
+            __phantom: ::std::marker::PhantomData<H>,
         }
 
-        impl<H: Hypp + 'static> #component_ident<H> {
-            pub fn mount(#fn_props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<#handle_path<Self>, Error> {
+        impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
+            pub fn mount(#fn_props_destructuring, __vm: &mut dyn ::hypp::DomVM<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
                 #(#fn_stmts)*
                 #mount
                 Ok(#handle_path::new(__mounted))
             }
 
             #[allow(unused_variables)]
-            fn patch(&mut self, __updates: &[bool], __vm: &mut dyn DomVM<H>) {
+            fn patch(&mut self, __updates: &[bool], __vm: &mut dyn ::hypp::DomVM<H>) {
                 #self_props_bindings
 
                 #(#fn_stmts)*
@@ -105,20 +105,20 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             #(#methods)*
         }
 
-        impl<H: Hypp> handle::ToHandle for #component_ident<H> {
+        impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
             type Handle = #handle_path<Self>;
         }
 
-        impl<'p, H: Hypp + 'static> Component<'p, H> for #component_ident<H> {
+        impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn set_props(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {
+            fn set_props(&mut self, #fn_props_destructuring, __vm: &mut dyn ::hypp::DomVM<H>) {
                 #props_updater
 
                 self.patch(&__updates, __vm);
             }
 
-            fn unmount(&mut self, __vm: &mut dyn DomVM<H>) {
+            fn unmount(&mut self, __vm: &mut dyn ::hypp::DomVM<H>) {
                 #unmount_stmts
             }
         }
@@ -192,7 +192,7 @@ fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> Tok
         pub struct #props_ident<'p> {
             #(#fields)*
 
-            pub __phantom: PhantomProp<'p>
+            pub __phantom: ::std::marker::PhantomData<&'p ()>
         }
     }
 }
