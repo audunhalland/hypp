@@ -572,6 +572,7 @@ mod tests {
         }
 
         fn handle_click(&mut self) {
+            println!("On click!");
         }
 
         <div>

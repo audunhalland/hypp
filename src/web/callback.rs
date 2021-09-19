@@ -8,7 +8,7 @@ pub struct WebCallback {
     cell: Rc<RefCell<CallbackCell>>,
 
     // Just for the sake of "owning it":
-    _web_closure: Closure<dyn Fn()>,
+    pub web_closure: Closure<dyn Fn()>,
 }
 
 impl WebCallback {
@@ -24,7 +24,7 @@ impl WebCallback {
 
         Self {
             cell: local_cell,
-            _web_closure: web_closure,
+            web_closure: web_closure,
         }
     }
 }

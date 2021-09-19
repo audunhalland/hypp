@@ -193,8 +193,23 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
     }
 
     fn attribute_value_callback(&mut self) -> Result<callback::WebCallback, Error> {
-        let callback = callback::WebCallback::new();
-        Ok(callback)
+        let attribute_name = self
+            .loaded_attribute_name
+            .expect("needs an attribute name loaded");
+
+        match attribute_name {
+            "on_click" => {
+                let callback = callback::WebCallback::new();
+
+                self.element
+                    .dyn_ref::<web_sys::HtmlElement>()
+                    .expect("must be a HtmlElement")
+                    .set_onclick(Some(callback.web_closure.as_ref().unchecked_ref()));
+
+                Ok(callback)
+            }
+            _ => Err(Error::SetAttribute),
+        }
     }
 
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
