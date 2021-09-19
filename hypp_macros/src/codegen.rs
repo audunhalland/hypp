@@ -30,6 +30,14 @@ pub struct RootIdents {
     pub uppercase_prefix: String,
 }
 
+pub enum ConstructorKind<'a> {
+    Component,
+    Enum {
+        enum_type: &'a ir::StructFieldType,
+        variant: &'a syn::Ident,
+    },
+}
+
 impl RootIdents {
     pub fn from_component_ident(component_ident: syn::Ident) -> Self {
         let props_ident = quote::format_ident!("{}Props", component_ident);
@@ -395,126 +403,172 @@ impl ir::ParamDeps {
     }
 }
 
-impl ir::Statement {
-    /// Rust statement used when mounting
-    pub fn gen_mount(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
+impl ir::Block {
+    /// Generate code that will have a local called `__mounted` at the end.
+    pub fn gen_mount(
+        &self,
+        constructor_kind: ConstructorKind<'_>,
+        root_idents: &RootIdents,
+        ctx: CodegenCtx,
+    ) -> TokenStream {
         // Mount is error-tolerant:
         let err_handler = match &ctx.lifecycle {
             Lifecycle::Mount => quote! { ? },
             Lifecycle::Patch | Lifecycle::Unmount => quote! { .unwrap() },
         };
 
-        let expr = match &self.expression {
-            ir::Expression::ConstDom(program) => {
-                let program_ident = program.get_ident(root_idents);
+        let field_inits = self.statements.iter().map(|statement| {
+            let expr = match &statement.expression {
+                ir::Expression::ConstDom(program) => {
+                    let program_ident = program.get_ident(root_idents);
 
-                match program.last_node_opcode() {
-                    Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => quote! {
-                        __vm.const_exec_element(&#program_ident) #err_handler
-                    },
-                    Some(ir::DomOpCode::Text(_)) => quote! {
-                        __vm.const_exec_text(&#program_ident) #err_handler
-                    },
-                    _ => panic!(),
-                }
-            }
-            ir::Expression::AttributeCallback => quote! {
-                __vm.attribute_value_callback() #err_handler
-            },
-            ir::Expression::Text(expr) => quote! {
-                __vm.text(#expr.as_ref()) #err_handler
-            },
-            ir::Expression::Component { path, props, .. } => {
-                let prop_list = props.iter().map(|attr| {
-                    let ident = &attr.ident;
-                    match &attr.value {
-                        template_ast::AttrValue::ImplicitTrue => quote! {
-                            #ident: true,
+                    match program.last_node_opcode() {
+                        Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
+                            quote! {
+                                __vm.const_exec_element(&#program_ident) #err_handler
+                            }
+                        }
+                        Some(ir::DomOpCode::Text(_)) => quote! {
+                            __vm.const_exec_text(&#program_ident) #err_handler
                         },
-                        template_ast::AttrValue::Literal(lit) => quote! {
-                            #ident: #lit,
-                        },
-                        template_ast::AttrValue::Expr(expr) => quote! {
-                            #ident: #expr,
-                        },
+                        _ => panic!(),
                     }
-                });
-
-                let component_path = &path.type_path;
-                let props_path = path.props_path();
-
-                let mount_expr = quote! {
-                    #component_path::mount(
-                        #props_path {
-                            #(#prop_list)*
-                            __phantom: std::marker::PhantomData
-                        },
-                        __vm
-                    ) #err_handler
-                };
-
-                match ctx.scope {
-                    Scope::Component => mount_expr,
-                    // If inside an enum, the component is _conditional_,
-                    // and might be used for recursion:
-                    Scope::Enum => quote! { #mount_expr.into_boxed() },
                 }
-            }
-            ir::Expression::Match {
-                enum_type,
-                expr,
-                arms,
-                ..
-            } => {
-                let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+                ir::Expression::AttributeCallback => quote! {
+                    __vm.attribute_value_callback() #err_handler
+                },
+                ir::Expression::Text(expr) => quote! {
+                    __vm.text(#expr.as_ref()) #err_handler
+                },
+                ir::Expression::Component { path, props, .. } => {
+                    let prop_list = props.iter().map(|attr| {
+                        let ident = &attr.ident;
+                        match &attr.value {
+                            template_ast::AttrValue::ImplicitTrue => quote! {
+                                #ident: true,
+                            },
+                            template_ast::AttrValue::Literal(lit) => quote! {
+                                #ident: #lit,
+                            },
+                            template_ast::AttrValue::Expr(expr) => quote! {
+                                #ident: #expr,
+                            },
+                        }
+                    });
 
-                let arms = arms.iter().map(
-                    |ir::Arm {
-                         enum_variant_ident,
-                         pattern,
-                         block,
-                         ..
-                     }| {
-                        let mount_stmts = block.statements.iter().map(|statement| {
-                            statement.gen_mount(
+                    let component_path = &path.type_path;
+                    let props_path = path.props_path();
+
+                    let mount_expr = quote! {
+                        #component_path::mount(
+                            #props_path {
+                                #(#prop_list)*
+                                __phantom: std::marker::PhantomData
+                            },
+                            __vm
+                        ) #err_handler
+                    };
+
+                    match ctx.scope {
+                        Scope::Component => mount_expr,
+                        // If inside an enum, the component is _conditional_,
+                        // and might be used for recursion:
+                        Scope::Enum => quote! { #mount_expr.into_boxed() },
+                    }
+                }
+                ir::Expression::Match {
+                    enum_type,
+                    expr,
+                    arms,
+                    ..
+                } => {
+                    let arms = arms.iter().map(
+                        |ir::Arm {
+                             enum_variant_ident,
+                             pattern,
+                             block,
+                             ..
+                         }| {
+                            let mount = block.gen_mount(
+                                ConstructorKind::Enum {
+                                    enum_type,
+                                    variant: enum_variant_ident,
+                                },
                                 &root_idents,
                                 CodegenCtx {
                                     scope: Scope::Enum,
                                     ..ctx
                                 },
-                            )
-                        });
-                        let struct_params = block
-                            .struct_fields
-                            .iter()
-                            .map(ir::StructField::struct_param_tokens);
+                            );
 
-                        quote! {
-                            #pattern => {
-                                #(#mount_stmts)*
+                            quote! {
+                                #pattern => {
+                                    #mount
+                                    __mounted
+                                },
+                            }
+                        },
+                    );
 
-                                #enum_ident::#enum_variant_ident {
-                                    #(#struct_params)*
-                                    __phantom: std::marker::PhantomData
-                                }
-                            },
-                        }
-                    },
-                );
+                    quote! {
+                        match #expr { #(#arms)* }
+                    }
+                }
+            };
+
+            if let Some(field) = &statement.field {
+                quote! { let #field = #expr; }
+            } else {
+                quote! { #expr; }
+            }
+        });
+
+        let struct_params = self
+            .struct_fields
+            .iter()
+            .map(ir::StructField::struct_param_tokens);
+
+        let constructor_path = match constructor_kind {
+            ConstructorKind::Component => quote! { Self },
+            ConstructorKind::Enum { enum_type, variant } => {
+                let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
 
                 quote! {
-                    match #expr { #(#arms)* }
+                    #enum_ident::#variant
                 }
             }
         };
 
-        if let Some(field) = &self.field {
-            quote! { let #field = #expr; }
-        } else {
-            quote! { #expr; }
+        match self.handle_kind {
+            ir::HandleKind::Unique => quote! {
+                #(#field_inits)*
+
+                let __mounted = #constructor_path {
+                    #(#struct_params)*
+
+                    __phantom: std::marker::PhantomData
+                };
+            },
+            ir::HandleKind::Shared => {
+                quote! {
+                    #(#field_inits)*
+
+                    let __mounted = std::rc::Rc::new(
+                        std::cell::RefCell::new(
+                            #constructor_path {
+                                #(#struct_params)*
+
+                                __phantom: std::marker::PhantomData
+                            }
+                        )
+                    );
+                }
+            }
         }
     }
+}
 
+impl ir::Statement {
     pub fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
         // FIXME: Do some "peephole optimization" here.
         // E.g. there is no reason to output "advance to next"
@@ -687,19 +741,17 @@ fn gen_match_patch(
                     },
                 );
 
-            let mount_stmts = block.statements.iter().map(|statement| {
-                statement.gen_mount(
-                    &root_idents,
-                    CodegenCtx {
-                        scope: Scope::Enum,
-                        ..ctx
-                    },
-                )
-            });
-            let struct_params = block
-                .struct_fields
-                .iter()
-                .map(ir::StructField::struct_param_tokens);
+            let mount = block.gen_mount(
+                ConstructorKind::Enum {
+                    enum_type,
+                    variant: enum_variant_ident,
+                },
+                &root_idents,
+                CodegenCtx {
+                    scope: Scope::Enum,
+                    ..ctx
+                },
+            );
 
             quote! {
                 // Matching variant:
@@ -710,12 +762,9 @@ fn gen_match_patch(
                 // Non-matching variant:
                 (#(#nonmatching_enum_patterns)|*, #pattern) => {
                     #field_ref.unmount(__vm);
-                    #(#mount_stmts)*
+                    #mount
 
-                    #field_assign = #enum_ident::#enum_variant_ident {
-                        #(#struct_params)*
-                        __phantom: std::marker::PhantomData
-                    };
+                    #field_assign = __mounted;
                 },
             }
         },

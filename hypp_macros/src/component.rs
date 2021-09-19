@@ -43,20 +43,14 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         .iter()
         .map(|field| field.field_def_tokens(&root_idents, Scope::Component));
 
-    let struct_params = root_block
-        .struct_fields
-        .iter()
-        .map(ir::StructField::struct_param_tokens);
-
-    let mount_stmts = root_block.statements.iter().map(|statement| {
-        statement.gen_mount(
-            &root_idents,
-            CodegenCtx {
-                lifecycle: Lifecycle::Mount,
-                scope: Scope::Component,
-            },
-        )
-    });
+    let mount = root_block.gen_mount(
+        ConstructorKind::Component,
+        &root_idents,
+        CodegenCtx {
+            lifecycle: Lifecycle::Mount,
+            scope: Scope::Component,
+        },
+    );
 
     let patch_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_patch(
@@ -79,29 +73,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let handle_path = root_block.handle_kind.handle_path();
 
-    let self_constructor = match root_block.handle_kind {
-        ir::HandleKind::Unique => quote! {
-            Ok(#handle_path::new(Self {
-                #(#struct_params)*
-
-                __phantom: std::marker::PhantomData
-            }))
-        },
-        ir::HandleKind::Shared => quote! {
-            let __self = std::rc::Rc::new(
-                std::cell::RefCell::new(
-                    Self {
-                        #(#struct_params)*
-
-                        __phantom: std::marker::PhantomData
-                    }
-                )
-            );
-
-            Ok(#handle_path::new(__self))
-        },
-    };
-
     quote! {
         #props_struct
 
@@ -119,8 +90,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         impl<H: Hypp + 'static> #component_ident<H> {
             pub fn mount(#fn_props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<#handle_path<Self>, Error> {
                 #(#fn_stmts)*
-                #(#mount_stmts)*
-                #self_constructor
+                #mount
+                Ok(#handle_path::new(__mounted))
             }
 
             #[allow(unused_variables)]
