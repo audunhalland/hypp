@@ -2,12 +2,18 @@ use hypp::*;
 
 use wasm_bindgen::prelude::*;
 
+use web_sys::console;
+
 hypp::component! {
     App() {}
 
-    <div>
+    fn handle_click(&mut self) {
+        console::log_1(&"Inside handle_click!".into());
+    }
+
+    <button on_click={Self::handle_click}>
         "Some text to test!"
-    </div>
+    </button>
 }
 
 // Called when the wasm module is instantiated

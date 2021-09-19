@@ -44,20 +44,22 @@ pub trait Hypp: Sized {
 ///
 /// Ownership structure:
 ///
-/// Rc <----------------------------------------------------------------
-/// `---> RefCell                                                       |
-///       `---> COMPONENT                   JSClosure <--- DOM node     |
-///             `----> Rc                   |                           |
-///                    `----> Callback      |                           |
-///                           `----> Rc <---´                           |
-///                                  `----> RefCell                     |
-///                                         `-----> CallbackCell        |
-///                                                 `----> Option       |
-///                                                        `----> Box   |
-///                                                               `---> Fn
+///  [Rc] ------> [RefCell] -----> [COMPONENT]
+///    ^                                |
+///    |                                v
+///    |                               [Rc]
+///  [Fn]                               |
+///    ^                                v
+///    |                           [Callback]       [DOM Node]
+///    |                                |                 |
+///  [Box]                              v                 v
+///    ^                               [Rc] <------- [wasm closure]
+///    |                                |
+///    |                                v
+/// [Option] <--- [CallbackCell] <-- [RefCell]
 ///
 /// When a component is unmounted, it must release() all its callbacks.
-/// releasing the callback means setting the Option within `CallbackCell` to `None`,
+/// releasing the callback means setting the `Option` within `CallbackCell` to `None`,
 /// so that the Fn no longer owns the component.
 ///
 pub trait Callback {

@@ -6,8 +6,6 @@ use crate::Callback;
 
 pub struct WebCallback {
     cell: Rc<RefCell<CallbackCell>>,
-
-    // Just for the sake of "owning it":
     pub web_closure: Closure<dyn Fn()>,
 }
 
@@ -46,5 +44,12 @@ struct CallbackCell {
 }
 
 impl CallbackCell {
-    fn call(&self) {}
+    fn call(&self) {
+        let rust_function = self
+            .rust_function
+            .as_ref()
+            .expect("No Rust function defined in callback");
+
+        rust_function();
+    }
 }
