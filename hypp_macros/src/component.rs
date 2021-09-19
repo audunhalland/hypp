@@ -12,6 +12,7 @@ struct Component {
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
     props_struct: TokenStream,
+    handle_kind: component_ast::HandleKind,
     variant_enums: Vec<TokenStream>,
     struct_fields: Vec<ir::StructField>,
     fn_props_destructuring: syn::FnArg,
@@ -19,6 +20,7 @@ struct Component {
     props_updater: TokenStream,
     fn_stmts: Vec<syn::Stmt>,
     statements: Vec<ir::Statement>,
+    methods: Vec<syn::ItemFn>,
 }
 
 pub fn generate_component(ast: component_ast::Component) -> TokenStream {
@@ -26,6 +28,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         dom_programs,
         root_idents,
         props_struct,
+        handle_kind,
         variant_enums,
         struct_fields,
         fn_props_destructuring,
@@ -33,6 +36,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         props_updater,
         fn_stmts,
         statements,
+        methods,
     } = analyze_ast(ast);
 
     let component_ident = &root_idents.component_ident;
@@ -75,6 +79,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
     );
 
+    let handle_path = handle_kind.handle_path();
+
     quote! {
         #props_struct
 
@@ -86,19 +92,19 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         pub struct #component_ident<H: Hypp> {
             #(#struct_field_defs)*
 
-            __phantom: PhantomField<H>
+            __phantom: PhantomField<H>,
         }
 
         impl<H: Hypp> #component_ident<H> {
-            pub fn mount(#fn_props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<Self, Error> {
+            pub fn mount(#fn_props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<#handle_path<Self>, Error> {
                 #(#fn_stmts)*
                 #(#mount_stmts)*
 
-                Ok(Self {
+                Ok(#handle_path::new(Self {
                     #(#struct_params)*
 
                     __phantom: std::marker::PhantomData
-                })
+                }))
             }
 
             #[allow(unused_variables)]
@@ -108,6 +114,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #(#fn_stmts)*
                 #(#patch_stmts)*
             }
+
+            #(#methods)*
+        }
+
+        impl<H: Hypp> handle::ToHandle for #component_ident<H> {
+            type Handle = #handle_path<Self>;
         }
 
         impl<'p, H: Hypp> Component<'p, H> for #component_ident<H> {
@@ -130,7 +142,8 @@ fn analyze_ast(
     component_ast::Component {
         ident,
         params,
-        fns: _fns,
+        methods,
+        handle_kind,
         template,
     }: component_ast::Component,
 ) -> Component {
@@ -158,12 +171,14 @@ fn analyze_ast(
         variant_enums,
         root_idents,
         props_struct,
+        handle_kind,
         struct_fields,
         fn_props_destructuring,
         self_props_bindings,
         props_updater,
         fn_stmts: vec![],
         statements,
+        methods,
     }
 }
 
@@ -289,7 +304,7 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
     });
 
     quote! {
-        // TODO: use bitvec
+        // TODO: use bitvec?
         let mut __updates: [bool; #n_props] = [false; #n_props];
 
         #(#checks)*

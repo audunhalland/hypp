@@ -6,8 +6,14 @@ use crate::template_ast;
 pub struct Component {
     pub ident: syn::Ident,
     pub params: Vec<param::Param>,
-    pub fns: Vec<syn::ItemFn>,
+    pub handle_kind: HandleKind,
+    pub methods: Vec<syn::ItemFn>,
     pub template: template_ast::Node,
+}
+
+pub enum HandleKind {
+    Unique,
+    Shared,
 }
 
 impl Parse for Component {
@@ -33,11 +39,11 @@ impl Parse for Component {
             param.id = id as u16;
         }
 
-        let mut fns = vec![];
+        let mut methods = vec![];
 
         while input.peek(syn::token::Fn) {
             // TODO: ignore for now
-            fns.push(input.parse::<syn::ItemFn>()?);
+            methods.push(input.parse::<syn::ItemFn>()?);
         }
 
         let template = template_ast::parse_at_least_one(input)?;
@@ -45,7 +51,8 @@ impl Parse for Component {
         Ok(Self {
             ident,
             params,
-            fns,
+            handle_kind: HandleKind::Unique,
+            methods,
             template,
         })
     }

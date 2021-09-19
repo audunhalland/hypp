@@ -390,10 +390,10 @@ mod tests {
     }
 
     fn attr(name: &str, value: AttrValue) -> Attr {
-        (
-            syn::Ident::new(name, proc_macro2::Span::mixed_site()),
+        Attr {
+            ident: syn::Ident::new(name, proc_macro2::Span::mixed_site()),
             value,
-        )
+        }
     }
 
     #[test]

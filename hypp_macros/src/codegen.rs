@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::component_ast;
 use crate::ir;
 use crate::param;
 use crate::template_ast;
@@ -294,7 +295,7 @@ pub fn gen_unmount(
                 if dom_depth == 0 {
                     let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
-                        #field_ref.unmount(__vm);
+                        #field_ref.borrow().unmount(__vm);
                     });
                 }
             }
@@ -444,7 +445,7 @@ impl ir::Statement {
 
                 match ctx.scope {
                     Scope::Component => mount_expr,
-                    Scope::Enum => quote! { Box::new(#mount_expr) },
+                    Scope::Enum => quote! { #mount_expr.into_boxed() },
                 }
             }
             ir::Expression::Match {
@@ -572,7 +573,7 @@ impl ir::Statement {
 
                     quote! {
                         if #test {
-                            #field_ref.set_props(#props_path {
+                            #field_ref.borrow_mut().set_props(#props_path {
                                 #(#prop_list)*
                                 __phantom: std::marker::PhantomData,
                             }, __vm);
@@ -760,8 +761,12 @@ impl ir::StructFieldType {
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
-                    Scope::Enum => quote! { Box<#type_path #generics> },
-                    Scope::Component => quote! { #type_path #generics },
+                    Scope::Enum => quote! {
+                        <<#type_path #generics as handle::ToHandle>::Handle as handle::Handle<#type_path #generics>>::Boxed
+                    },
+                    Scope::Component => {
+                        quote! { <#type_path #generics as handle::ToHandle>::Handle }
+                    }
                 }
             }
             Self::Enum(enum_index) => {
@@ -769,6 +774,15 @@ impl ir::StructFieldType {
                     quote::format_ident!("{}Enum{}", root_idents.component_ident, enum_index);
                 quote! { #ident #generics }
             }
+        }
+    }
+}
+
+impl component_ast::HandleKind {
+    pub fn handle_path(&self) -> TokenStream {
+        match self {
+            Self::Unique => quote! { handle::Unique },
+            Self::Shared => quote! { handle::Shared },
         }
     }
 }

@@ -2,6 +2,7 @@ use crate::error::Error;
 
 use super::{AsNode, ConstOpCode, DomVM, Hypp};
 
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
 pub struct WebHypp {

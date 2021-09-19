@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![feature(generic_associated_types)]
 
 //!
 //! The hypp crate allows expressing a reactive DOM.
@@ -9,6 +10,7 @@
 use std::marker::PhantomData;
 
 pub mod error;
+pub mod handle;
 pub mod server;
 pub mod web;
 
@@ -112,7 +114,8 @@ pub struct State<T: Default> {
     pub value: T,
 }
 
-pub trait Component<'p, H: Hypp> {
+pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
+    /// The type of properties this component recieves
     type Props: 'p;
 
     ///
@@ -141,6 +144,7 @@ mod debugging {
 
 #[cfg(test)]
 mod tests {
+    use super::handle::Handle;
     use super::*;
 
     use wasm_bindgen_test::*;
@@ -198,7 +202,7 @@ mod tests {
             "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
         );
 
-        c.set_props(
+        c.borrow_mut().set_props(
             FooProps {
                 is_cool: false,
                 __phantom: std::marker::PhantomData,
@@ -285,7 +289,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><div/></body>");
 
-        c.set_props(
+        c.borrow_mut().set_props(
             ConditionalProps {
                 hello: false,
                 world: true,
@@ -297,7 +301,7 @@ mod tests {
         // No change:
         assert_eq!(hypp.render(), "<body><div/></body>");
 
-        c.set_props(
+        c.borrow_mut().set_props(
             ConditionalProps {
                 hello: true,
                 world: false,
@@ -311,7 +315,7 @@ mod tests {
             "<body><div><span>Hello</span><span>Universe</span></div></body>"
         );
 
-        c.set_props(
+        c.borrow_mut().set_props(
             ConditionalProps {
                 hello: true,
                 world: true,
@@ -325,7 +329,7 @@ mod tests {
             "<body><div><span>Hello</span><a>World</a></div></body>"
         );
 
-        c.unmount(&mut hypp.builder_at_body());
+        c.borrow().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -380,7 +384,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><article/></body>");
 
-        c.set_props(
+        c.borrow_mut().set_props(
             IfLetProps {
                 opt_number: Some(42),
                 __phantom: std::marker::PhantomData,
@@ -390,7 +394,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
-        c.set_props(
+        c.borrow_mut().set_props(
             IfLetProps {
                 opt_number: None,
                 __phantom: std::marker::PhantomData,
@@ -400,7 +404,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><article/></body>");
 
-        c.unmount(&mut hypp.builder_at_body());
+        c.borrow().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -442,7 +446,7 @@ mod tests {
             "<body><div>first</div><span>second</span><p>third</p></body>"
         );
 
-        c.set_props(
+        c.borrow_mut().set_props(
             Fragment1Props {
                 perhaps: false,
                 __phantom: std::marker::PhantomData,
@@ -452,7 +456,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><div>first</div><p>third</p></body>");
 
-        c.unmount(&mut hypp.builder_at_body());
+        c.borrow().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -485,7 +489,7 @@ mod tests {
             "<body><span>3<span>2<span>1</span></span></span></body>"
         );
 
-        c.set_props(
+        c.borrow_mut().set_props(
             RecursiveProps {
                 depth: 2,
                 __phantom: std::marker::PhantomData,
@@ -495,7 +499,7 @@ mod tests {
 
         assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 
-        c.unmount(&mut hypp.builder_at_body());
+        c.borrow().unmount(&mut hypp.builder_at_body());
 
         assert_eq!(hypp.render(), "<body/>");
     }
@@ -548,12 +552,14 @@ mod tests {
         }
 
         fn update(&mut self) {
+            /*
             if self.prop1 {
                 self.state = false;
             }
+            */
         }
 
-        fn handle_click(&mut self, event: SomeType) {
+        fn handle_click(&mut self) {
         }
 
         <div>
@@ -568,3 +574,5 @@ mod tests {
         </div>
     }
 }
+
+mod test_owning {}
