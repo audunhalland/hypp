@@ -39,6 +39,27 @@ pub trait Hypp: Sized {
     fn set_text(node: &Self::Text, text: &str);
 }
 
+///
+/// Callback
+///
+/// Ownership structure:
+///
+/// Rc <----------------------------------------------------------------
+/// `---> RefCell                                                       |
+///       `---> COMPONENT                   JSClosure <--- DOM node     |
+///             `----> Rc                   |                           |
+///                    `----> Callback      |                           |
+///                           `----> Rc <---´                           |
+///                                  `----> RefCell                     |
+///                                         `-----> CallbackCell        |
+///                                                 `----> Option       |
+///                                                        `----> Box   |
+///                                                               `---> Fn
+///
+/// When a component is unmounted, it must release() all its callbacks.
+/// releasing the callback means setting the Option within `CallbackCell` to `None`,
+/// so that the Fn no longer owns the component.
+///
 pub trait Callback {
     fn bind(&self, function: Box<dyn Fn()>);
 
@@ -97,6 +118,9 @@ pub trait DomVM<'doc, H: Hypp> {
     fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
 
     /// Set up a callback bound to the current attribute.
+    /// The way this works is that we bind the H::Callback to the element,
+    /// but that callback doesn't do anything yet. Later, using the Callback
+    /// handle, the callback is set up to do its work.
     fn attribute_value_callback(&mut self) -> Result<H::Callback, Error>;
 
     /// Define a text. The cursor moves past this text.

@@ -131,6 +131,12 @@ impl WebBuilder {
             Ok(next_element)
         }
     }
+
+    fn html_element(&self) -> &web_sys::HtmlElement {
+        self.element
+            .dyn_ref::<web_sys::HtmlElement>()
+            .expect("must be a HtmlElement")
+    }
 }
 
 impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
@@ -201,9 +207,7 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
             "on_click" => {
                 let callback = callback::WebCallback::new();
 
-                self.element
-                    .dyn_ref::<web_sys::HtmlElement>()
-                    .expect("must be a HtmlElement")
+                self.html_element()
                     .set_onclick(Some(callback.web_closure.as_ref().unchecked_ref()));
 
                 Ok(callback)
