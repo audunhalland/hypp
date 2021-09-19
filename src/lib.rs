@@ -10,6 +10,7 @@
 pub mod error;
 pub mod handle;
 pub mod server;
+pub mod state_ref;
 pub mod web;
 
 pub mod prelude;
@@ -144,13 +145,16 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
 ///
 /// Ownership structure:
 ///
-///  [Rc] ------> [RefCell] -----> [COMPONENT]
-///    ^                                |
+/// [Parent component]
+///    |
+///    v                           ****************
+///  [Rc] ------> [RefCell] -----> *THIS COMPONENT*
+///    ^                           *****|**********
 ///    |                                v
 ///    |                               [Rc]
 ///  [Fn]                               |
 ///    ^                                v
-///    |                           [Callback]       [DOM Node]
+///    |                           [Callback]         [DOM Node]
 ///    |                                |                 |
 ///  [Box]                              v                 v
 ///    ^                               [Rc] <------- [wasm closure]
