@@ -81,6 +81,29 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let handle_path = handle_kind.handle_path();
 
+    let self_constructor = match handle_kind {
+        component_ast::HandleKind::Unique => quote! {
+            Ok(#handle_path::new(Self {
+                #(#struct_params)*
+
+                __phantom: std::marker::PhantomData
+            }))
+        },
+        component_ast::HandleKind::Shared => quote! {
+            let __self = std::rc::Rc::new(
+                std::cell::RefCell::new(
+                    Self {
+                        #(#struct_params)*
+
+                        __phantom: std::marker::PhantomData
+                    }
+                )
+            );
+
+            Ok(#handle_path::new(__self))
+        },
+    };
+
     quote! {
         #props_struct
 
@@ -95,16 +118,11 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             __phantom: PhantomField<H>,
         }
 
-        impl<H: Hypp> #component_ident<H> {
+        impl<H: Hypp + 'static> #component_ident<H> {
             pub fn mount(#fn_props_destructuring, __vm: &mut dyn DomVM<H>) -> Result<#handle_path<Self>, Error> {
                 #(#fn_stmts)*
                 #(#mount_stmts)*
-
-                Ok(#handle_path::new(Self {
-                    #(#struct_params)*
-
-                    __phantom: std::marker::PhantomData
-                }))
+                #self_constructor
             }
 
             #[allow(unused_variables)]
@@ -122,7 +140,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             type Handle = #handle_path<Self>;
         }
 
-        impl<'p, H: Hypp> Component<'p, H> for #component_ident<H> {
+        impl<'p, H: Hypp + 'static> Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
             fn set_props(&mut self, #fn_props_destructuring, __vm: &mut dyn DomVM<H>) {

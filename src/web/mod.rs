@@ -2,8 +2,9 @@ use crate::error::Error;
 
 use super::{AsNode, ConstOpCode, DomVM, Hypp};
 
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+
+mod callback;
 
 pub struct WebHypp {
     _window: web_sys::Window,
@@ -55,6 +56,8 @@ impl Hypp for WebHypp {
     type Node = web_sys::Node;
     type Element = web_sys::Element;
     type Text = web_sys::Text;
+
+    type Callback = callback::WebCallback;
 
     fn set_text(node: &Self::Text, text: &str) {
         node.set_data(text);
@@ -187,6 +190,11 @@ impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
         }
 
         result
+    }
+
+    fn attribute_value_callback(&mut self) -> Result<callback::WebCallback, Error> {
+        let callback = callback::WebCallback::new();
+        Ok(callback)
     }
 
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {

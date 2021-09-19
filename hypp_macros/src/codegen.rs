@@ -235,7 +235,7 @@ fn generate_variant_enum(
             #(#variant_defs)*
         }
 
-        impl<H: Hypp> #enum_ident<H> {
+        impl<H: Hypp + 'static> #enum_ident<H> {
             pub fn unmount(&self, __vm: &mut dyn DomVM<H>) {
                 match self {
                     #(#unmount_arms)*

@@ -34,7 +34,13 @@ pub trait Hypp: Sized {
     type Element: Clone + AsNode<Self>;
     type Text: Clone + AsNode<Self>;
 
+    type Callback: Callback;
+
     fn set_text(node: &Self::Text, text: &str);
+}
+
+pub trait Callback {
+    fn bind(&mut self, function: Box<dyn Fn()>);
 }
 
 ///
@@ -88,6 +94,9 @@ pub trait DomVM<'doc, H: Hypp> {
     /// The last node opcode must produce a text node.
     fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
 
+    /// Set up a callback bound to the current attribute.
+    fn attribute_value_callback(&mut self) -> Result<H::Callback, Error>;
+
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
 
@@ -137,8 +146,47 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
 pub type PhantomField<A> = PhantomData<A>;
 
+/*
+    CALLBACK HANDLING:
+
+            let __f2 = __vm.const_exec_element(&STUFF_PRG1)?;
+            let mut on_click = __vm.attribute_value_callback()?;
+            let __f0 = match prop1 {
+                true => {
+                    let __f1 = __vm.const_exec_element(&STUFF_PRG0)?;
+                    StuffEnum0::V0 {
+                        __f1,
+                        __phantom: std::marker::PhantomData,
+                    }
+                }
+                false => StuffEnum0::V1 {
+                    __phantom: std::marker::PhantomData,
+                },
+            };
+            let __f3 = __vm.const_exec_element(&STUFF_PRG2)?;
+            let __self = std::rc::Rc::new(std::cell::RefCell::new(Self {
+                __f2,
+                __f0,
+                prop1,
+                prop2: prop2.to_owned(),
+                state,
+                __f3,
+                __phantom: std::marker::PhantomData,
+            }));
+
+            {
+                let __self = __self.clone();
+                on_click.bind(Box::new(move || {
+                    __self.borrow_mut().handle_click();
+                }));
+            }
+
+            Ok(handle::Shared::new(__self))
+*/
+
 #[allow(unused_imports)]
 mod debugging {
+    use super::handle::Handle;
     use super::*;
 }
 
@@ -461,7 +509,7 @@ mod tests {
         assert_eq!(hypp.render(), "<body/>");
     }
 
-    component! {
+    component_dbg! {
         Recursive(depth: usize) {}
 
         <span>

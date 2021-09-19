@@ -48,10 +48,17 @@ impl Parse for Component {
 
         let template = template_ast::parse_at_least_one(input)?;
 
+        // Just a test: Use shared handle if there are any methods
+        let handle_kind = if methods.len() > 0 {
+            HandleKind::Shared
+        } else {
+            HandleKind::Unique
+        };
+
         Ok(Self {
             ident,
             params,
-            handle_kind: HandleKind::Unique,
+            handle_kind,
             methods,
             template,
         })

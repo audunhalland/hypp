@@ -1,7 +1,7 @@
 use crate::error::Error;
 
 use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
-use crate::{AsNode, ConstOpCode, DomVM, Hypp};
+use crate::{AsNode, Callback, ConstOpCode, DomVM, Hypp};
 
 impl AsNode<ServerHypp> for RcNode {
     #[inline]
@@ -39,9 +39,15 @@ impl Hypp for ServerHypp {
     type Element = RcNode;
     type Text = RcNode;
 
+    type Callback = ();
+
     fn set_text(node: &Self::Text, text: &str) {
         node.set_text(text);
     }
+}
+
+impl Callback for () {
+    fn bind(&mut self, function: Box<dyn Fn()>) {}
 }
 
 pub struct ServerBuilder {
@@ -152,6 +158,11 @@ impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
 
     fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<RcNode, Error> {
         self.const_exec_element(program)
+    }
+
+    fn attribute_value_callback(&mut self) -> Result<(), Error> {
+        // Callbacks do nothing on the server
+        Ok(())
     }
 
     fn text(&mut self, text: &str) -> Result<RcNode, Error> {
