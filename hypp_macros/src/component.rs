@@ -140,7 +140,8 @@ fn analyze_ast(
     let self_props_bindings = create_self_props_bindings(&params);
     let props_updater = create_props_updater(&params);
 
-    let root_block = lowering::lower_root_node(template, &params);
+    let root_block =
+        lowering::lower_root_node(template, &params).expect("Compile error: Lowering problem");
 
     let mut dom_programs = vec![];
     collect_dom_programs(&root_block.statements, &root_idents, &mut dom_programs);

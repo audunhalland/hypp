@@ -30,12 +30,12 @@ impl WebCallback {
 }
 
 impl Callback for WebCallback {
-    fn bind(&mut self, function: Box<dyn Fn()>) {
+    fn bind(&self, function: Box<dyn Fn()>) {
         let mut cell = self.cell.borrow_mut();
         cell.rust_function = Some(function);
     }
 
-    fn release(&mut self) {
+    fn release(&self) {
         let mut cell = self.cell.borrow_mut();
         cell.rust_function = None;
     }

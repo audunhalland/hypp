@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::callback;
 use crate::ir;
 use crate::param;
 use crate::template_ast;
@@ -291,7 +292,7 @@ pub fn gen_unmount(
                     }
                 }
             }
-            ir::Expression::AttributeCallback => {
+            ir::Expression::AttributeCallback(_) => {
                 let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                 stmts.push(quote! {
                     #field_ref.release();
@@ -358,6 +359,7 @@ impl ir::StructField {
                     }
                 },
             },
+            ir::StructFieldType::Callback => quote! { #field: #field.clone(), },
             _ => quote! {#field, },
         }
     }
@@ -417,28 +419,42 @@ impl ir::Block {
             Lifecycle::Patch | Lifecycle::Unmount => quote! { .unwrap() },
         };
 
+        struct FieldInit {
+            field_mut: bool,
+            init: TokenStream,
+        }
+
         let field_inits = self.statements.iter().map(|statement| {
-            let expr = match &statement.expression {
+            let FieldInit { field_mut, init } = match &statement.expression {
                 ir::Expression::ConstDom(program) => {
                     let program_ident = program.get_ident(root_idents);
 
-                    match program.last_node_opcode() {
-                        Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
-                            quote! {
-                                __vm.const_exec_element(&#program_ident) #err_handler
+                    FieldInit {
+                        field_mut: false,
+                        init: match program.last_node_opcode() {
+                            Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
+                                quote! {
+                                    __vm.const_exec_element(&#program_ident) #err_handler
+                                }
                             }
-                        }
-                        Some(ir::DomOpCode::Text(_)) => quote! {
-                            __vm.const_exec_text(&#program_ident) #err_handler
+                            Some(ir::DomOpCode::Text(_)) => quote! {
+                                __vm.const_exec_text(&#program_ident) #err_handler
+                            },
+                            _ => panic!(),
                         },
-                        _ => panic!(),
                     }
                 }
-                ir::Expression::AttributeCallback => quote! {
-                    __vm.attribute_value_callback() #err_handler
+                ir::Expression::AttributeCallback(_) => FieldInit {
+                    field_mut: false,
+                    init: quote! {
+                        std::rc::Rc::new(__vm.attribute_value_callback() #err_handler)
+                    },
                 },
-                ir::Expression::Text(expr) => quote! {
-                    __vm.text(#expr.as_ref()) #err_handler
+                ir::Expression::Text(expr) => FieldInit {
+                    field_mut: true,
+                    init: quote! {
+                        __vm.text(#expr.as_ref()) #err_handler
+                    },
                 },
                 ir::Expression::Component { path, props, .. } => {
                     let prop_list = props.iter().map(|attr| {
@@ -469,11 +485,14 @@ impl ir::Block {
                         ) #err_handler
                     };
 
-                    match ctx.scope {
-                        Scope::Component => mount_expr,
-                        // If inside an enum, the component is _conditional_,
-                        // and might be used for recursion:
-                        Scope::Enum => quote! { #mount_expr.into_boxed() },
+                    FieldInit {
+                        field_mut: false,
+                        init: match ctx.scope {
+                            Scope::Component => mount_expr,
+                            // If inside an enum, the component is _conditional_,
+                            // and might be used for recursion:
+                            Scope::Enum => quote! { #mount_expr.into_boxed() },
+                        },
                     }
                 }
                 ir::Expression::Match {
@@ -510,16 +529,25 @@ impl ir::Block {
                         },
                     );
 
-                    quote! {
-                        match #expr { #(#arms)* }
+                    FieldInit {
+                        field_mut: false,
+                        init: quote! {
+                            match #expr { #(#arms)* }
+                        },
                     }
                 }
             };
 
-            if let Some(field) = &statement.field {
-                quote! { let #field = #expr; }
-            } else {
-                quote! { #expr; }
+            match (field_mut, &statement.field) {
+                (true, Some(field)) => quote! {
+                    let mut #field = #init;
+                },
+                (false, Some(field)) => quote! {
+                    let #field = #init;
+                },
+                _ => quote! {
+                    #init;
+                },
             }
         });
 
@@ -538,6 +566,27 @@ impl ir::Block {
                 }
             }
         };
+
+        let callback_setups = self
+            .statements
+            .iter()
+            .map(|statement| match &statement.expression {
+                ir::Expression::AttributeCallback(callback::Callback { ident }) => {
+                    if let Some(field) = &statement.field {
+                        quote! {
+                            {
+                                let __mounted = __mounted.clone();
+                                #field.bind(Box::new(move || {
+                                    __mounted.borrow_mut().#ident();
+                                }));
+                            }
+                        }
+                    } else {
+                        quote! {}
+                    }
+                }
+                _ => quote! {},
+            });
 
         match self.handle_kind {
             ir::HandleKind::Unique => quote! {
@@ -562,6 +611,8 @@ impl ir::Block {
                             }
                         )
                     );
+
+                    #(#callback_setups)*
                 }
             }
         }
@@ -602,7 +653,7 @@ impl ir::Statement {
                     }
                 }
             }
-            ir::Expression::AttributeCallback => quote! {},
+            ir::Expression::AttributeCallback(_) => quote! {},
             ir::Expression::Text(expr) => {
                 let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
                 let test = self.param_deps.update_test_tokens();
@@ -802,7 +853,7 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
-            Self::Callback => quote! { H::Callback },
+            Self::Callback => quote! { std::rc::Rc<H::Callback> },
             Self::Param(param) => match &param.ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(ty) => {

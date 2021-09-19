@@ -2,6 +2,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 
+mod callback;
 mod codegen;
 mod component;
 mod component_ast;

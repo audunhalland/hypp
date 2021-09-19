@@ -1,7 +1,16 @@
+use syn::spanned::Spanned;
+
+use crate::callback;
 use crate::flow;
 use crate::ir;
 use crate::param;
 use crate::template_ast;
+
+#[derive(Debug)]
+pub enum LoweringError {
+    InvalidCallback(proc_macro2::Span),
+    InvalidAttribute(proc_macro2::Span),
+}
 
 // Minimum size of programs to directly skip when
 // generating patch code.
@@ -9,7 +18,10 @@ use crate::template_ast;
 // to a DOM node within the component, in order to directly skip to it.
 const SKIP_PROGRAM_THRESHOLD: usize = 0;
 
-pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir::Block {
+pub fn lower_root_node(
+    root: template_ast::Node,
+    params: &[param::Param],
+) -> Result<ir::Block, LoweringError> {
     let mut root_builder = BlockBuilder::default();
 
     let mut ctx = Context {
@@ -21,7 +33,7 @@ pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir:
 
     let scope = flow::FlowScope::from_params(params);
 
-    root_builder.lower_ast(root, &scope, &mut ctx);
+    root_builder.lower_ast(root, &scope, &mut ctx)?;
 
     for param in params {
         root_builder.struct_fields.push(ir::StructField {
@@ -30,7 +42,7 @@ pub fn lower_root_node(root: template_ast::Node, params: &[param::Param]) -> ir:
         });
     }
 
-    root_builder.to_block(&mut ctx)
+    Ok(root_builder.to_block(&mut ctx))
 }
 
 /// Context used for the whole template
@@ -153,20 +165,24 @@ impl BlockBuilder {
         node: template_ast::Node,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) {
+    ) -> Result<(), LoweringError> {
         match node {
-            template_ast::Node::Element(element) => self.lower_element(element, scope, ctx),
+            template_ast::Node::Element(element) => self.lower_element(element, scope, ctx)?,
             template_ast::Node::Fragment(nodes) => {
                 for node in nodes {
-                    self.lower_ast(node, scope, ctx);
+                    self.lower_ast(node, scope, ctx)?;
                 }
             }
-            template_ast::Node::Text(text) => self.lower_text_const(text, ctx),
-            template_ast::Node::TextExpr(expr) => self.lower_text_expr(expr, scope, ctx),
-            template_ast::Node::Component(component) => self.lower_component(component, scope, ctx),
-            template_ast::Node::Match(the_match) => self.lower_match(the_match, scope, ctx),
+            template_ast::Node::Text(text) => self.lower_text_const(text, ctx)?,
+            template_ast::Node::TextExpr(expr) => self.lower_text_expr(expr, scope, ctx)?,
+            template_ast::Node::Component(component) => {
+                self.lower_component(component, scope, ctx)?
+            }
+            template_ast::Node::Match(the_match) => self.lower_match(the_match, scope, ctx)?,
             template_ast::Node::For(_the_for) => {}
         }
+
+        Ok(())
     }
 
     fn lower_element<'p>(
@@ -174,26 +190,32 @@ impl BlockBuilder {
         element: template_ast::Element,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) {
+    ) -> Result<(), LoweringError> {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
         self.push_dom_opcode(ir::DomOpCode::EnterElement(tag_name.clone()), ctx);
 
         for attr in element.attrs {
-            self.lower_attr(attr, ctx);
+            self.lower_attr(attr, ctx)?;
         }
 
         ctx.current_dom_depth += 1;
 
         for child in element.children {
-            self.lower_ast(child, scope, ctx);
+            self.lower_ast(child, scope, ctx)?;
         }
 
         self.push_dom_opcode(ir::DomOpCode::ExitElement, ctx);
         ctx.current_dom_depth -= 1;
+
+        Ok(())
     }
 
-    fn lower_attr<'p>(&mut self, attr: template_ast::Attr, ctx: &mut Context) {
+    fn lower_attr<'p>(
+        &mut self,
+        attr: template_ast::Attr,
+        ctx: &mut Context,
+    ) -> Result<(), LoweringError> {
         let attr_name = syn::LitStr::new(&attr.ident.to_string(), attr.ident.span());
 
         match attr.value {
@@ -201,6 +223,7 @@ impl BlockBuilder {
                 let attr_value = syn::LitStr::new("true", attr.ident.span());
                 self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
                 self.push_dom_opcode(ir::DomOpCode::AttrTextValue(attr_value), ctx);
+                Ok(())
             }
             template_ast::AttrValue::Literal(lit) => {
                 let value_lit = match lit {
@@ -210,8 +233,9 @@ impl BlockBuilder {
                 };
                 self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
                 self.push_dom_opcode(ir::DomOpCode::AttrTextValue(value_lit), ctx);
+                Ok(())
             }
-            template_ast::AttrValue::Expr(_expr) => match attr_name.value().as_ref() {
+            template_ast::AttrValue::Expr(expr) => match attr_name.value().as_ref() {
                 // Hack: need some better way to do this.. :)
                 "on_click" => {
                     // First push the attribute name into const program:
@@ -228,26 +252,33 @@ impl BlockBuilder {
                     // When callbacks are involved, we need a shared handle
                     self.handle_kind = ir::HandleKind::Shared;
 
+                    let callback = callback::parse_callback(expr)
+                        .map_err(|syn_err| LoweringError::InvalidCallback(syn_err.span()))?;
+
                     // Break the DOM program to produce a callback here:
                     self.push_statement(
                         ir::Statement {
                             field: Some(callback_field),
                             dom_depth: ir::DomDepth(ctx.current_dom_depth),
                             param_deps: ir::ParamDeps::Const,
-                            expression: ir::Expression::AttributeCallback,
+                            expression: ir::Expression::AttributeCallback(callback),
                         },
                         ctx,
                     );
+                    Ok(())
                 }
-                _ => {
-                    panic!("TODO: proper error handling for non on_click attribute :P");
-                }
+                _ => Err(LoweringError::InvalidAttribute(expr.span())),
             },
         }
     }
 
-    fn lower_text_const(&mut self, text: template_ast::Text, ctx: &mut Context) {
+    fn lower_text_const(
+        &mut self,
+        text: template_ast::Text,
+        ctx: &mut Context,
+    ) -> Result<(), LoweringError> {
         self.push_dom_opcode(ir::DomOpCode::Text(text.0), ctx);
+        Ok(())
     }
 
     fn lower_text_expr<'p>(
@@ -255,7 +286,7 @@ impl BlockBuilder {
         expr: syn::Expr,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) {
+    ) -> Result<(), LoweringError> {
         let node_field = ctx.next_field_id();
 
         self.struct_fields.push(ir::StructField {
@@ -275,6 +306,8 @@ impl BlockBuilder {
             },
             ctx,
         );
+
+        Ok(())
     }
 
     fn lower_component<'p>(
@@ -282,7 +315,7 @@ impl BlockBuilder {
         component: template_ast::Component,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) {
+    ) -> Result<(), LoweringError> {
         let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
@@ -317,6 +350,8 @@ impl BlockBuilder {
             },
             ctx,
         );
+
+        Ok(())
     }
 
     fn lower_match<'p>(
@@ -324,7 +359,7 @@ impl BlockBuilder {
         the_match: template_ast::Match,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) {
+    ) -> Result<(), LoweringError> {
         let expr = the_match.expr;
         let field = ctx.next_field_id();
         let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
@@ -341,16 +376,16 @@ impl BlockBuilder {
 
                 // Compile the arm
                 let mut arm_builder = BlockBuilder::default();
-                arm_builder.lower_ast(arm.node, &arm_scope, ctx);
+                arm_builder.lower_ast(arm.node, &arm_scope, ctx)?;
 
-                ir::Arm {
+                Ok(ir::Arm {
                     enum_variant_ident: quote::format_ident!("V{}", index),
                     mount_fn_ident: quote::format_ident!("mount_v{}", index),
                     pattern: arm.pat,
                     block: arm_builder.to_block(ctx),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Param deps for the whole match expression
         let mut param_deps = scope.lookup_params_deps_for_expr(&expr);
@@ -377,5 +412,7 @@ impl BlockBuilder {
             field,
             ty: enum_type,
         });
+
+        Ok(())
     }
 }

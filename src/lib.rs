@@ -40,9 +40,9 @@ pub trait Hypp: Sized {
 }
 
 pub trait Callback {
-    fn bind(&mut self, function: Box<dyn Fn()>);
+    fn bind(&self, function: Box<dyn Fn()>);
 
-    fn release(&mut self);
+    fn release(&self);
 }
 
 ///
@@ -147,44 +147,6 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
 
 pub type PhantomProp<'p> = PhantomData<&'p ()>;
 pub type PhantomField<A> = PhantomData<A>;
-
-/*
-    CALLBACK HANDLING:
-
-            let __f2 = __vm.const_exec_element(&STUFF_PRG1)?;
-            let mut on_click = __vm.attribute_value_callback()?;
-            let __f0 = match prop1 {
-                true => {
-                    let __f1 = __vm.const_exec_element(&STUFF_PRG0)?;
-                    StuffEnum0::V0 {
-                        __f1,
-                        __phantom: std::marker::PhantomData,
-                    }
-                }
-                false => StuffEnum0::V1 {
-                    __phantom: std::marker::PhantomData,
-                },
-            };
-            let __f3 = __vm.const_exec_element(&STUFF_PRG2)?;
-            let __self = std::rc::Rc::new(std::cell::RefCell::new(Self {
-                __f2,
-                __f0,
-                prop1,
-                prop2: prop2.to_owned(),
-                state,
-                __f3,
-                __phantom: std::marker::PhantomData,
-            }));
-
-            {
-                let __self = __self.clone();
-                on_click.bind(Box::new(move || {
-                    __self.borrow_mut().handle_click();
-                }));
-            }
-
-            Ok(handle::Shared::new(__self))
-*/
 
 #[allow(unused_imports)]
 mod debugging {

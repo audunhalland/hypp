@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::callback;
 use crate::param;
 use crate::template_ast;
 
@@ -136,7 +137,7 @@ pub enum Expression {
     /// A constant DOM program
     ConstDom(ConstDomProgram),
 
-    AttributeCallback,
+    AttributeCallback(callback::Callback),
 
     /// Something that should evaluate to text at runtime
     Text(syn::Expr),
