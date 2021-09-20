@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::{AsNode, ConstOpCode, DomVM, Hypp};
+use super::{AsNode, ConstOpCode, Cursor, Hypp};
 
 use wasm_bindgen::JsCast;
 
@@ -139,7 +139,7 @@ impl WebBuilder {
     }
 }
 
-impl<'doc> DomVM<'doc, WebHypp> for WebBuilder {
+impl Cursor<WebHypp> for WebBuilder {
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Element, Error> {
         let mut result = Err(Error::NoProgram);
 

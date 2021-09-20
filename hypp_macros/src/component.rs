@@ -105,14 +105,14 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         }
 
         impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
-            pub fn mount(#fn_props_destructuring, __vm: &mut dyn ::hypp::DomVM<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+            pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
                 #(#fn_stmts)*
                 #mount
                 Ok(#handle_path::new(__mounted))
             }
 
             #[allow(unused_variables)]
-            fn patch(&mut self, __updates: &[bool], __vm: &mut dyn ::hypp::DomVM<H>) {
+            fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #self_props_bindings
 
                 #(#fn_stmts)*
@@ -129,13 +129,17 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn set_props(&mut self, #fn_props_destructuring, __vm: &mut dyn ::hypp::DomVM<H>) {
+            fn set_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #props_updater
 
-                self.patch(&__updates, __vm);
+                self.patch(&__updates, __cursor);
             }
 
-            fn unmount(&mut self, __vm: &mut dyn ::hypp::DomVM<H>) {
+            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
+                unimplemented!()
+            }
+
+            fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #unmount_stmts
             }
         }
@@ -424,7 +428,7 @@ fn create_shim_updater_trampoline(
             cb(&mut shim);
 
             // FIXME: The only thing missing now, is the call to self.patch().
-            // But then we need to instantiate a DomVM builder positioned at the first DOM node.
+            // But then we need to instantiate a Cursor builder positioned at the first DOM node.
         }
     }
 }

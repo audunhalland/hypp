@@ -260,7 +260,7 @@ fn generate_variant_enum(
         }
 
         impl<H: ::hypp::Hypp + 'static> #enum_ident<H> {
-            pub fn unmount(&mut self, __vm: &mut dyn ::hypp::DomVM<H>) {
+            pub fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 match self {
                     #(#unmount_arms)*
                 }
@@ -289,7 +289,7 @@ pub fn gen_unmount(
                         ir::DomOpCode::EnterElement(tag_name) => {
                             if dom_depth == 0 {
                                 stmts.push(quote! {
-                                    __vm.remove_element(#tag_name).unwrap();
+                                    __cursor.remove_element(#tag_name).unwrap();
                                 });
                             }
                             dom_depth += 1;
@@ -297,7 +297,7 @@ pub fn gen_unmount(
                         ir::DomOpCode::Text(_) => {
                             if dom_depth == 0 {
                                 stmts.push(quote! {
-                                    __vm.remove_text().unwrap();
+                                    __cursor.remove_text().unwrap();
                                 });
                             }
                         }
@@ -317,7 +317,7 @@ pub fn gen_unmount(
             ir::Expression::Text { .. } => {
                 if dom_depth == 0 {
                     stmts.push(quote! {
-                        __vm.remove_text().unwrap();
+                        __cursor.remove_text().unwrap();
                     });
                 }
             }
@@ -325,7 +325,7 @@ pub fn gen_unmount(
                 if dom_depth == 0 {
                     let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
-                        #field_ref.borrow_mut().unmount(__vm);
+                        #field_ref.borrow_mut().unmount(__cursor);
                     });
                 }
             }
@@ -333,7 +333,7 @@ pub fn gen_unmount(
                 if dom_depth == 0 {
                     let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
-                        #field_ref.unmount(__vm);
+                        #field_ref.unmount(__cursor);
                     });
                 }
             }
@@ -453,11 +453,11 @@ impl ir::Block {
                         init: match program.last_node_opcode() {
                             Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
                                 quote! {
-                                    __vm.const_exec_element(&#program_ident) #err_handler
+                                    __cursor.const_exec_element(&#program_ident) #err_handler
                                 }
                             }
                             Some(ir::DomOpCode::Text(_)) => quote! {
-                                __vm.const_exec_text(&#program_ident) #err_handler
+                                __cursor.const_exec_text(&#program_ident) #err_handler
                             },
                             _ => panic!(),
                         },
@@ -466,13 +466,13 @@ impl ir::Block {
                 ir::Expression::AttributeCallback(_) => FieldInit {
                     field_mut: false,
                     init: quote! {
-                        ::std::rc::Rc::new(__vm.attribute_value_callback() #err_handler)
+                        ::std::rc::Rc::new(__cursor.attribute_value_callback() #err_handler)
                     },
                 },
                 ir::Expression::Text(expr) => FieldInit {
                     field_mut: true,
                     init: quote! {
-                        __vm.text(#expr.as_ref()) #err_handler
+                        __cursor.text(#expr.as_ref()) #err_handler
                     },
                 },
                 ir::Expression::Component { path, props, .. } => {
@@ -500,7 +500,7 @@ impl ir::Block {
                                 #(#prop_list)*
                                 __phantom: ::std::marker::PhantomData
                             },
-                            __vm
+                            __cursor
                         ) #err_handler
                     };
 
@@ -679,10 +679,10 @@ impl ir::Statement {
 
                     match program.last_node_opcode() {
                         Some(ir::DomOpCode::EnterElement(_)) => quote! {
-                            __vm.advance_to_first_child_of(&#field_ref);
+                            __cursor.advance_to_first_child_of(&#field_ref);
                         },
                         Some(ir::DomOpCode::ExitElement | ir::DomOpCode::Text(_)) => quote! {
-                            __vm.advance_to_next_sibling_of(#field_ref.as_node());
+                            __cursor.advance_to_next_sibling_of(#field_ref.as_node());
                         },
                         _ => panic!(),
                     }
@@ -690,7 +690,7 @@ impl ir::Statement {
                     let program_ident = program.get_ident(root_idents);
 
                     quote! {
-                        __vm.skip_const_program(&#program_ident);
+                        __cursor.skip_const_program(&#program_ident);
                     }
                 }
             }
@@ -703,7 +703,7 @@ impl ir::Statement {
                     if #test {
                         H::set_text(&#field_ref, #expr.as_ref());
                     }
-                    __vm.advance_to_next_sibling_of(#field_ref.as_node());
+                    __cursor.advance_to_next_sibling_of(#field_ref.as_node());
                 }
             }
             ir::Expression::Component { path, props } => match &self.param_deps {
@@ -737,7 +737,7 @@ impl ir::Statement {
                                     #(#prop_list)*
                                     __phantom: ::std::marker::PhantomData,
                                 },
-                                __vm
+                                __cursor
                             );
                         }
                     }
@@ -857,7 +857,7 @@ fn gen_match_patch(
 
                 // Non-matching variant:
                 (#(#nonmatching_enum_patterns)|*, #pattern) => {
-                    #field_ref.unmount(__vm);
+                    #field_ref.unmount(__cursor);
                     #mount
 
                     #field_assign = __mounted;

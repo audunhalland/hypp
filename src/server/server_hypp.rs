@@ -1,7 +1,7 @@
 use crate::error::Error;
 
 use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
-use crate::{AsNode, Callback, ConstOpCode, DomVM, Hypp};
+use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp};
 
 impl AsNode<ServerHypp> for RcNode {
     #[inline]
@@ -115,7 +115,7 @@ impl ServerBuilder {
     }
 }
 
-impl<'doc> DomVM<'doc, ServerHypp> for ServerBuilder {
+impl Cursor<ServerHypp> for ServerBuilder {
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<RcNode, Error> {
         let mut result = Err(Error::NoProgram);
 

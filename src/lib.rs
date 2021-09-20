@@ -10,6 +10,7 @@
 pub mod error;
 pub mod handle;
 pub mod server;
+pub mod slot;
 pub mod state_ref;
 pub mod web;
 
@@ -77,12 +78,12 @@ pub enum ConstOpCode {
 }
 
 ///
-/// DomVM
+/// Cursor
 ///
 /// An abstract cursor at some DOM position, allowing users of the trait
 /// to do various operations to mutate it.
 ///
-pub trait DomVM<'doc, H: Hypp> {
+pub trait Cursor<H: Hypp> {
     /// Execute a series of opcodes.
     /// The last node opcode must produce an element.
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
@@ -128,16 +129,22 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     /// Set new props on the component instance, causing an immediate, synchronous
     /// DOM update if the component determines that anything changes.
     ///
-    /// The __vm cursor __must__ point to the component start.
-    /// After the patch is finished, the __vm cursor __must__
-    /// point to the position after the component.
+    /// The cursor must point at the component start before calling this method.
+    /// When the method returns, the cursor must point to the end of the component,
+    /// what direction to take is determined by H.
     ///
-    fn set_props(&mut self, props: Self::Props, __vm: &mut dyn DomVM<H>);
+    fn set_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
+
+    /// Move the cursor from the start to the end of the component,
+    /// according to the traversal direction in H.
+    /// The component should not update.
+    /// But it gets a possibility to store the new cursor position in case it needs to store it.
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>);
 
     /// Unmount the component, removing all its nodes
-    /// from under its mount point in the tree, using the DomVM.
-    /// The only purpose of this call is to clean up nodes in the DOM.
-    fn unmount(&mut self, __vm: &mut dyn DomVM<H>);
+    /// from under its mount point in the tree, using the cursor.
+    /// The only purpose of this call is to remove nodes in the DOM.
+    fn unmount(&mut self, cursor: &mut dyn Cursor<H>);
 }
 
 ///
