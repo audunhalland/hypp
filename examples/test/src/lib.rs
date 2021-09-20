@@ -27,13 +27,7 @@ hypp::component! {
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
     let hypp = hypp::web::WebHypp::new();
-    App::mount(
-        __AppProps {
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    )
-    .unwrap();
+    App::mount(__AppProps {}, &mut hypp.builder_at_body()).unwrap();
 
     Ok(())
 }

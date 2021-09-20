@@ -25,40 +25,21 @@ component! {
 #[wasm_bindgen_test]
 fn render_foo_web() {
     let hypp = hypp::web::WebHypp::new();
-    let _comp = Foo::mount(
-        __FooProps {
-            is_cool: true,
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    )
-    .unwrap();
+    let _comp = Foo::mount(__FooProps { is_cool: true }, &mut hypp.builder_at_body()).unwrap();
 }
 
 #[test]
 fn render_foo_server() {
     let hypp = hypp::server::ServerHypp::new();
-    let mut c = Foo::mount(
-        __FooProps {
-            is_cool: true,
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    )
-    .unwrap();
+    let mut c = Foo::mount(__FooProps { is_cool: true }, &mut hypp.builder_at_body()).unwrap();
 
     assert_eq!(
         hypp.render(),
         "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
     );
 
-    c.borrow_mut().pass_props(
-        __FooProps {
-            is_cool: false,
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    );
+    c.borrow_mut()
+        .pass_props(__FooProps { is_cool: false }, &mut hypp.builder_at_body());
 
     assert_eq!(
         &hypp.render(),
@@ -95,13 +76,7 @@ component! {
 #[test]
 fn render_baz_server() {
     let hypp = hypp::server::ServerHypp::new();
-    Baz::mount(
-        __BazProps {
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    )
-    .unwrap();
+    Baz::mount(__BazProps {}, &mut hypp.builder_at_body()).unwrap();
 
     assert_eq!(
         &hypp.render(),
@@ -131,7 +106,6 @@ fn render_conditional_server() {
         __ConditionalProps {
             hello: false,
             world: false,
-            __phantom: std::marker::PhantomData,
         },
         &mut hypp.builder_at_body(),
     )
@@ -143,7 +117,6 @@ fn render_conditional_server() {
         __ConditionalProps {
             hello: false,
             world: true,
-            __phantom: std::marker::PhantomData,
         },
         &mut hypp.builder_at_body(),
     );
@@ -155,7 +128,6 @@ fn render_conditional_server() {
         __ConditionalProps {
             hello: true,
             world: false,
-            __phantom: std::marker::PhantomData,
         },
         &mut hypp.builder_at_body(),
     );
@@ -169,7 +141,6 @@ fn render_conditional_server() {
         __ConditionalProps {
             hello: true,
             world: true,
-            __phantom: std::marker::PhantomData,
         },
         &mut hypp.builder_at_body(),
     );
@@ -226,10 +197,7 @@ fn render_iflet_server() {
 
     let hypp = hypp::server::ServerHypp::new();
     let mut c = IfLet::mount(
-        __IfLetProps {
-            opt_number: None,
-            __phantom: std::marker::PhantomData,
-        },
+        __IfLetProps { opt_number: None },
         &mut hypp.builder_at_body(),
     )
     .unwrap();
@@ -239,7 +207,6 @@ fn render_iflet_server() {
     c.borrow_mut().pass_props(
         __IfLetProps {
             opt_number: Some(42),
-            __phantom: std::marker::PhantomData,
         },
         &mut hypp.builder_at_body(),
     );
@@ -247,10 +214,7 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
     c.borrow_mut().pass_props(
-        __IfLetProps {
-            opt_number: None,
-            __phantom: std::marker::PhantomData,
-        },
+        __IfLetProps { opt_number: None },
         &mut hypp.builder_at_body(),
     );
 
@@ -287,10 +251,7 @@ fn render_fragment1() {
 
     let hypp = hypp::server::ServerHypp::new();
     let mut c = Fragment1::mount(
-        __Fragment1Props {
-            perhaps: true,
-            __phantom: std::marker::PhantomData,
-        },
+        __Fragment1Props { perhaps: true },
         &mut hypp.builder_at_body(),
     )
     .unwrap();
@@ -301,10 +262,7 @@ fn render_fragment1() {
     );
 
     c.borrow_mut().pass_props(
-        __Fragment1Props {
-            perhaps: false,
-            __phantom: std::marker::PhantomData,
-        },
+        __Fragment1Props { perhaps: false },
         &mut hypp.builder_at_body(),
     );
 
@@ -329,27 +287,16 @@ component! {
 #[test]
 fn render_recursive_server() {
     let hypp = hypp::server::ServerHypp::new();
-    let mut c = Recursive::mount(
-        __RecursiveProps {
-            depth: 3,
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    )
-    .unwrap();
+    let mut c =
+        Recursive::mount(__RecursiveProps { depth: 3 }, &mut hypp.builder_at_body()).unwrap();
 
     assert_eq!(
         hypp.render(),
         "<body><span>3<span>2<span>1</span></span></span></body>"
     );
 
-    c.borrow_mut().pass_props(
-        __RecursiveProps {
-            depth: 2,
-            __phantom: std::marker::PhantomData,
-        },
-        &mut hypp.builder_at_body(),
-    );
+    c.borrow_mut()
+        .pass_props(__RecursiveProps { depth: 2 }, &mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 

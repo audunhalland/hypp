@@ -42,7 +42,6 @@ impl Test {
                 foo: None,
                 bar: None,
                 baz: None,
-                __phantom: std::marker::PhantomData,
             },
             &mut hypp.builder_at_body(),
         )
@@ -68,7 +67,6 @@ impl Test {
                 foo: if foo { Some("foo") } else { None },
                 bar: if bar { Some("bar") } else { None },
                 baz: if baz { Some("baz") } else { None },
-                __phantom: std::marker::PhantomData,
             },
             &mut self.hypp.builder_at_body(),
         );

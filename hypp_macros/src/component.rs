@@ -20,6 +20,11 @@ struct Component {
     methods: Vec<syn::ItemFn>,
 }
 
+struct PublicPropsStruct {
+    tokens: TokenStream,
+    has_p_lifetime: bool,
+}
+
 pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
         dom_programs,
@@ -36,7 +41,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let component_ident = &root_idents.component_ident;
     let props_ident = &root_idents.public_props_ident;
 
-    let public_props_struct = create_public_props_struct(&prop_fields, &root_idents);
+    let PublicPropsStruct {
+        tokens: public_props_struct,
+        has_p_lifetime,
+    } = create_public_props_struct(&prop_fields, &root_idents);
     let owned_props_struct = create_owned_props_struct(&prop_fields, &root_idents);
     let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
     let self_props_bindings = create_self_props_bindings(&params);
@@ -48,6 +56,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     };
     let shim_updater_trampoline = if has_self_shim.0 {
         create_shim_updater_trampoline(&root_block.struct_fields, &root_idents, &params)
+    } else {
+        quote! {}
+    };
+
+    let public_props_generics = if has_p_lifetime {
+        quote! { <'p> }
     } else {
         quote! {}
     };
@@ -100,8 +114,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         #[allow(dead_code)]
         pub struct #component_ident<H: ::hypp::Hypp> {
             #(#struct_field_defs)*
-
-            __phantom: ::std::marker::PhantomData<H>,
         }
 
         impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
@@ -137,7 +149,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         }
 
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
-            type Props = #props_ident<'p>;
+            type Props = #props_ident #public_props_generics;
 
             fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #props_updater
@@ -199,37 +211,58 @@ fn analyze_ast(
 }
 
 /// Create the props `struct` that callees will use to instantiate the component
-fn create_public_props_struct(fields: &[ir::StructField], root_idents: &RootIdents) -> TokenStream {
+fn create_public_props_struct(
+    fields: &[ir::StructField],
+    root_idents: &RootIdents,
+) -> PublicPropsStruct {
     let props_ident = &root_idents.public_props_ident;
 
-    let fields = fields.iter().map(|field| {
-        let ident = &field.ident;
+    let mut has_p_lifetime = false;
 
-        let ty = match &field.ty {
-            ir::StructFieldType::Param(ty) => match &ty.ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => quote! { #ty },
-                    param::ParamLeafType::Ref(ty) => quote! { &'p #ty },
+    let fields = fields
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+
+            let ty = match &field.ty {
+                ir::StructFieldType::Param(ty) => match &ty.ty {
+                    param::ParamRootType::One(ty) => match ty {
+                        param::ParamLeafType::Owned(ty) => quote! { #ty },
+                        param::ParamLeafType::Ref(ty) => {
+                            has_p_lifetime = true;
+                            quote! { &'p #ty }
+                        }
+                    },
+                    param::ParamRootType::Option(ty) => match ty {
+                        param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
+                        param::ParamLeafType::Ref(ty) => {
+                            has_p_lifetime = true;
+                            quote! { Option<&'p #ty> }
+                        }
+                    },
                 },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
-                    param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
-                },
-            },
-            _ => quote! {},
-        };
+                _ => quote! {},
+            };
 
-        quote! {
-            pub #ident: #ty,
-        }
-    });
+            quote! {
+                pub #ident: #ty,
+            }
+        })
+        .collect::<Vec<_>>();
 
-    quote! {
-        pub struct #props_ident<'p> {
-            #(#fields)*
+    let generics = if has_p_lifetime {
+        quote! { <'p> }
+    } else {
+        quote! {}
+    };
 
-            pub __phantom: ::std::marker::PhantomData<&'p ()>
-        }
+    PublicPropsStruct {
+        tokens: quote! {
+            pub struct #props_ident #generics {
+                #(#fields)*
+            }
+        },
+        has_p_lifetime,
     }
 }
 

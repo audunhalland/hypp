@@ -220,8 +220,6 @@ fn generate_variant_enum(
         quote! {
             #ident {
                 #(#struct_field_defs)*
-
-                __phantom: ::std::marker::PhantomData<H>
             },
         }
     });
@@ -502,7 +500,6 @@ impl ir::Block {
                         #component_path::mount(
                             #props_path {
                                 #(#prop_list)*
-                                __phantom: ::std::marker::PhantomData
                             },
                             __cursor
                         ) #err_handler
@@ -638,8 +635,6 @@ impl ir::Block {
                 let __mounted = #constructor_path {
                     #(#struct_params)*
                     #owned_props
-
-                    __phantom: ::std::marker::PhantomData
                 };
             },
             ir::HandleKind::Shared => {
@@ -651,8 +646,6 @@ impl ir::Block {
                             #constructor_path {
                                 #(#struct_params)*
                                 #owned_props
-
-                                __phantom: ::std::marker::PhantomData
                             }
                         )
                     );
@@ -739,7 +732,6 @@ impl ir::Statement {
                             #field_ref.borrow_mut().pass_props(
                                 #props_path {
                                     #(#prop_list)*
-                                    __phantom: ::std::marker::PhantomData,
                                 },
                                 __cursor
                             );
