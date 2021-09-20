@@ -27,7 +27,8 @@ pub struct CodegenCtx {
 
 pub struct RootIdents {
     pub component_ident: syn::Ident,
-    pub props_ident: syn::Ident,
+    pub public_props_ident: syn::Ident,
+    pub owned_props_ident: syn::Ident,
     pub uppercase_prefix: String,
 }
 
@@ -39,14 +40,18 @@ pub enum ConstructorKind<'a> {
     },
 }
 
+pub struct OwnedProps<'p>(pub Option<&'p [ir::StructField]>);
+
 impl RootIdents {
     pub fn from_component_ident(component_ident: syn::Ident) -> Self {
-        let props_ident = quote::format_ident!("{}Props", component_ident);
-        let uppercase_prefix = component_ident.clone().to_string().to_uppercase();
+        let public_props_ident = quote::format_ident!("__{}Props", component_ident);
+        let owned_props_ident = quote::format_ident!("__{}OwnedProps", component_ident);
+        let uppercase_prefix = format!("__{}", component_ident.clone().to_string().to_uppercase());
 
         Self {
             component_ident,
-            props_ident,
+            public_props_ident,
+            owned_props_ident,
             uppercase_prefix,
         }
     }
@@ -61,6 +66,9 @@ impl quote::ToTokens for ir::FieldIdent {
             }
             Self::Param(ident) => {
                 tokens.extend(quote::quote! { #ident });
+            }
+            Self::Props => {
+                tokens.extend(quote::quote! { props });
             }
         }
     }
@@ -331,14 +339,14 @@ pub fn gen_unmount(
 
 impl ir::StructField {
     pub fn field_def_tokens(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
-        let field = &self.field;
+        let field = &self.ident;
         let ty = self.ty.to_tokens(root_idents, scope, WithGenerics(true));
 
         quote! { #field: #ty, }
     }
 
     pub fn struct_param_tokens(&self) -> TokenStream {
-        let field = &self.field;
+        let field = &self.ident;
 
         match &self.ty {
             ir::StructFieldType::Param(param) => match &param.kind {
@@ -366,12 +374,14 @@ impl ir::StructField {
                 },
             },
             ir::StructFieldType::Callback => quote! { #field: #field.clone(), },
-            _ => quote! {#field, },
+            // Handled separately:
+            ir::StructFieldType::Props => quote! {},
+            _ => quote! { #field, },
         }
     }
 
     pub fn mut_pattern_tokens(&self) -> TokenStream {
-        let field = &self.field;
+        let field = &self.ident;
 
         match &self.ty {
             // mutable types
@@ -383,6 +393,7 @@ impl ir::StructField {
             // immutable types
             ir::StructFieldType::DomElement
             | ir::StructFieldType::DomText
+            | ir::StructFieldType::Props
             | ir::StructFieldType::Callback => quote! {
                 ref #field,
             },
@@ -417,6 +428,7 @@ impl ir::Block {
         &self,
         constructor_kind: ConstructorKind<'_>,
         root_idents: &RootIdents,
+        owned_props: OwnedProps<'_>,
         ctx: CodegenCtx,
     ) -> TokenStream {
         // Mount is error-tolerant:
@@ -522,6 +534,7 @@ impl ir::Block {
                                     variant: enum_variant_ident,
                                 },
                                 &root_idents,
+                                OwnedProps(None),
                                 CodegenCtx {
                                     scope: Scope::Enum,
                                     ..ctx
@@ -575,6 +588,21 @@ impl ir::Block {
             }
         };
 
+        let owned_props = if let Some(struct_fields) = owned_props.0 {
+            let owned_props_ident = &root_idents.owned_props_ident;
+            let struct_params = struct_fields
+                .iter()
+                .map(ir::StructField::struct_param_tokens);
+
+            quote! {
+                props: #owned_props_ident {
+                    #(#struct_params)*
+                },
+            }
+        } else {
+            quote! {}
+        };
+
         let callback_setups = self
             .statements
             .iter()
@@ -602,6 +630,7 @@ impl ir::Block {
 
                 let __mounted = #constructor_path {
                     #(#struct_params)*
+                    #owned_props
 
                     __phantom: ::std::marker::PhantomData
                 };
@@ -614,6 +643,7 @@ impl ir::Block {
                         ::std::cell::RefCell::new(
                             #constructor_path {
                                 #(#struct_params)*
+                                #owned_props
 
                                 __phantom: ::std::marker::PhantomData
                             }
@@ -809,6 +839,7 @@ fn gen_match_patch(
                     variant: enum_variant_ident,
                 },
                 &root_idents,
+                OwnedProps(None),
                 CodegenCtx {
                     scope: Scope::Enum,
                     ..ctx
@@ -847,10 +878,10 @@ impl ir::ConstDomProgram {
     }
 }
 
-pub struct WithGenerics(bool);
+pub struct WithGenerics(pub bool);
 
 impl ir::StructFieldType {
-    fn to_tokens(
+    pub fn to_tokens(
         &self,
         root_idents: &RootIdents,
         scope: Scope,
@@ -864,6 +895,10 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
+            Self::Props => {
+                let ident = &root_idents.owned_props_ident;
+                quote! { #ident }
+            }
             Self::Callback => quote! { ::std::rc::Rc<H::Callback> },
             Self::Param(param) => match &param.ty {
                 param::ParamRootType::One(ty) => match ty {
@@ -896,7 +931,7 @@ impl ir::StructFieldType {
             }
             Self::Enum(enum_index) => {
                 let ident =
-                    quote::format_ident!("{}Enum{}", root_idents.component_ident, enum_index);
+                    quote::format_ident!("__{}Enum{}", root_idents.component_ident, enum_index);
                 quote! { #ident #generics }
             }
         }

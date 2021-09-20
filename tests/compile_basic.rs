@@ -26,7 +26,7 @@ component! {
 fn render_foo_web() {
     let hypp = hypp::web::WebHypp::new();
     let _comp = Foo::mount(
-        FooProps {
+        __FooProps {
             is_cool: true,
             __phantom: std::marker::PhantomData,
         },
@@ -39,7 +39,7 @@ fn render_foo_web() {
 fn render_foo_server() {
     let hypp = hypp::server::ServerHypp::new();
     let mut c = Foo::mount(
-        FooProps {
+        __FooProps {
             is_cool: true,
             __phantom: std::marker::PhantomData,
         },
@@ -53,7 +53,7 @@ fn render_foo_server() {
     );
 
     c.borrow_mut().set_props(
-        FooProps {
+        __FooProps {
             is_cool: false,
             __phantom: std::marker::PhantomData,
         },
@@ -96,7 +96,7 @@ component! {
 fn render_baz_server() {
     let hypp = hypp::server::ServerHypp::new();
     Baz::mount(
-        BazProps {
+        __BazProps {
             __phantom: std::marker::PhantomData,
         },
         &mut hypp.builder_at_body(),
@@ -128,7 +128,7 @@ component! {
 fn render_conditional_server() {
     let hypp = hypp::server::ServerHypp::new();
     let mut c = Conditional::mount(
-        ConditionalProps {
+        __ConditionalProps {
             hello: false,
             world: false,
             __phantom: std::marker::PhantomData,
@@ -140,7 +140,7 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.borrow_mut().set_props(
-        ConditionalProps {
+        __ConditionalProps {
             hello: false,
             world: true,
             __phantom: std::marker::PhantomData,
@@ -152,7 +152,7 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.borrow_mut().set_props(
-        ConditionalProps {
+        __ConditionalProps {
             hello: true,
             world: false,
             __phantom: std::marker::PhantomData,
@@ -166,7 +166,7 @@ fn render_conditional_server() {
     );
 
     c.borrow_mut().set_props(
-        ConditionalProps {
+        __ConditionalProps {
             hello: true,
             world: true,
             __phantom: std::marker::PhantomData,
@@ -226,7 +226,7 @@ fn render_iflet_server() {
 
     let hypp = hypp::server::ServerHypp::new();
     let mut c = IfLet::mount(
-        IfLetProps {
+        __IfLetProps {
             opt_number: None,
             __phantom: std::marker::PhantomData,
         },
@@ -237,7 +237,7 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article/></body>");
 
     c.borrow_mut().set_props(
-        IfLetProps {
+        __IfLetProps {
             opt_number: Some(42),
             __phantom: std::marker::PhantomData,
         },
@@ -247,7 +247,7 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
     c.borrow_mut().set_props(
-        IfLetProps {
+        __IfLetProps {
             opt_number: None,
             __phantom: std::marker::PhantomData,
         },
@@ -287,7 +287,7 @@ fn render_fragment1() {
 
     let hypp = hypp::server::ServerHypp::new();
     let mut c = Fragment1::mount(
-        Fragment1Props {
+        __Fragment1Props {
             perhaps: true,
             __phantom: std::marker::PhantomData,
         },
@@ -301,7 +301,7 @@ fn render_fragment1() {
     );
 
     c.borrow_mut().set_props(
-        Fragment1Props {
+        __Fragment1Props {
             perhaps: false,
             __phantom: std::marker::PhantomData,
         },
@@ -330,7 +330,7 @@ component! {
 fn render_recursive_server() {
     let hypp = hypp::server::ServerHypp::new();
     let mut c = Recursive::mount(
-        RecursiveProps {
+        __RecursiveProps {
             depth: 3,
             __phantom: std::marker::PhantomData,
         },
@@ -344,7 +344,7 @@ fn render_recursive_server() {
     );
 
     c.borrow_mut().set_props(
-        RecursiveProps {
+        __RecursiveProps {
             depth: 2,
             __phantom: std::marker::PhantomData,
         },
@@ -400,7 +400,7 @@ component! {
 }
 
 // Experimentation with new surface syntax
-component_dbg! {
+component! {
     Toggle(prop1: bool, prop2: &str) {
         toggled: bool,
     }

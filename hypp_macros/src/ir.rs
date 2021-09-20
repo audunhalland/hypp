@@ -28,9 +28,10 @@ pub enum NodeType {
     Text,
 }
 
-/// A node reference that needs to be stored within the component
+/// Something which is destined to be stored somewhere within the component struct,
+/// directly or indirectly
 pub struct StructField {
-    pub field: FieldIdent,
+    pub ident: FieldIdent,
     pub ty: StructFieldType,
 }
 
@@ -38,6 +39,7 @@ pub struct StructField {
 pub enum FieldIdent {
     Id(u16),
     Param(syn::Ident),
+    Props,
 }
 
 /// Type of a struct field
@@ -45,6 +47,7 @@ pub enum FieldIdent {
 pub enum StructFieldType {
     DomElement,
     DomText,
+    Props,
     Callback,
     Param(param::Param),
     Component(ComponentPath),
@@ -69,7 +72,7 @@ impl ComponentPath {
     pub fn props_path(&self) -> syn::Path {
         let mut props_path = self.type_path.path.clone();
         if let Some(last_props_path_segment) = props_path.segments.last_mut() {
-            last_props_path_segment.ident = quote::format_ident!("{}Props", self.ident());
+            last_props_path_segment.ident = quote::format_ident!("__{}Props", self.ident());
             last_props_path_segment.arguments = syn::PathArguments::None;
         }
         props_path

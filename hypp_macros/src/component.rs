@@ -11,7 +11,7 @@ use crate::codegen::*;
 struct Component {
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
-    props_struct: TokenStream,
+    prop_fields: Vec<ir::StructField>,
     root_block: ir::Block,
     variant_enums: Vec<TokenStream>,
     fn_props_destructuring: syn::FnArg,
@@ -25,7 +25,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
         dom_programs,
         root_idents,
-        props_struct,
+        prop_fields,
         root_block,
         variant_enums,
         fn_props_destructuring,
@@ -36,7 +36,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     } = analyze_ast(ast);
 
     let component_ident = &root_idents.component_ident;
-    let props_ident = &root_idents.props_ident;
+    let props_ident = &root_idents.public_props_ident;
+
+    let public_props_struct = create_public_props_struct(&prop_fields, &root_idents);
+    let owned_props_struct = create_owned_props_struct(&prop_fields, &root_idents);
 
     let struct_field_defs = root_block
         .struct_fields
@@ -46,6 +49,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let mount = root_block.gen_mount(
         ConstructorKind::Component,
         &root_idents,
+        OwnedProps(Some(&prop_fields)),
         CodegenCtx {
             lifecycle: Lifecycle::Mount,
             scope: Scope::Component,
@@ -74,7 +78,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let handle_path = root_block.handle_kind.handle_path();
 
     quote! {
-        #props_struct
+        #public_props_struct
+        #owned_props_struct
 
         #(#dom_programs)*
 
@@ -135,7 +140,15 @@ fn analyze_ast(
 ) -> Component {
     let root_idents = RootIdents::from_component_ident(ident);
 
-    let props_struct = create_props_struct(&params, &root_idents);
+    let prop_fields = params
+        .iter()
+        .filter(|param| param.is_prop())
+        .map(|param| ir::StructField {
+            ident: ir::FieldIdent::Param(param.ident.clone()),
+            ty: ir::StructFieldType::Param(param.clone()),
+        })
+        .collect::<Vec<_>>();
+
     let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
     let self_props_bindings = create_self_props_bindings(&params);
     let props_updater = create_props_updater(&params);
@@ -153,7 +166,7 @@ fn analyze_ast(
         dom_programs,
         variant_enums,
         root_idents,
-        props_struct,
+        prop_fields,
         root_block,
         fn_props_destructuring,
         self_props_bindings,
@@ -163,14 +176,15 @@ fn analyze_ast(
     }
 }
 
-fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
-    let props_ident = &root_idents.props_ident;
+/// Create the props `struct` that callees will use to instantiate the component
+fn create_public_props_struct(fields: &[ir::StructField], root_idents: &RootIdents) -> TokenStream {
+    let props_ident = &root_idents.public_props_ident;
 
-    let fields = params.iter().filter_map(|param| match &param.kind {
-        param::ParamKind::Prop => {
-            let ident = &param.ident;
+    let fields = fields.iter().map(|field| {
+        let ident = &field.ident;
 
-            let ty = match &param.ty {
+        let ty = match &field.ty {
+            ir::StructFieldType::Param(ty) => match &ty.ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(ty) => quote! { #ty },
                     param::ParamLeafType::Ref(ty) => quote! { &'p #ty },
@@ -179,13 +193,13 @@ fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> Tok
                     param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
                     param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
                 },
-            };
+            },
+            _ => quote! {},
+        };
 
-            Some(quote! {
-                pub #ident: #ty,
-            })
+        quote! {
+            pub #ident: #ty,
         }
-        param::ParamKind::State => None,
     });
 
     quote! {
@@ -197,8 +211,30 @@ fn create_props_struct(params: &[param::Param], root_idents: &RootIdents) -> Tok
     }
 }
 
+/// Create the props `struct` that the component uses to store the props internally
+fn create_owned_props_struct(fields: &[ir::StructField], root_idents: &RootIdents) -> TokenStream {
+    let props_ident = &root_idents.owned_props_ident;
+
+    let fields = fields.iter().map(|field| {
+        let ident = &field.ident;
+        let ty = field
+            .ty
+            .to_tokens(root_idents, Scope::Component, WithGenerics(true));
+
+        quote! {
+            pub #ident: #ty,
+        }
+    });
+
+    quote! {
+        pub struct #props_ident {
+            #(#fields)*
+        }
+    }
+}
+
 fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
-    let props_ident = &root_idents.props_ident;
+    let props_ident = &root_idents.public_props_ident;
 
     let fields = params.iter().filter_map(|param| match &param.kind {
         param::ParamKind::Prop => {
@@ -223,21 +259,29 @@ fn create_self_props_bindings(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
+        let substruct = if param.is_prop() {
+            quote! { .props }
+        } else {
+            quote! {}
+        };
+
         match &param.ty {
             param::ParamRootType::One(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { let #ident = self.#ident; },
+                param::ParamLeafType::Owned(_) => quote! { let #ident = self #substruct.#ident; },
                 param::ParamLeafType::Ref(_) => {
                     // Remember, when storing a _reference_ prop inside self,
                     // we use the `<T as ToOwned>::Owned` type to store it..
                     // so we can just take the reference to that again!
                     quote! {
-                        let #ident = &self.#ident;
+                        let #ident = &self #substruct.#ident;
                     }
                 }
             },
             param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { let #ident = self.#ident; },
-                param::ParamLeafType::Ref(_) => quote! { let #ident = self.#ident.as_deref(); },
+                param::ParamLeafType::Owned(_) => quote! { let #ident = self #substruct.#ident; },
+                param::ParamLeafType::Ref(_) => {
+                    quote! { let #ident = self #substruct.#ident.as_deref(); }
+                }
             },
         }
     });
@@ -261,24 +305,24 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
         let ident = &param.ident;
 
         let self_prop_as_ref = match &param.ty {
-            param::ParamRootType::One(_) => quote! { self.#ident },
+            param::ParamRootType::One(_) => quote! { self.props.#ident },
             param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { self.#ident },
-                param::ParamLeafType::Ref(_) => quote! {self.#ident.as_deref() },
+                param::ParamLeafType::Owned(_) => quote! { self.props.#ident },
+                param::ParamLeafType::Ref(_) => quote! {self.props.#ident.as_deref() },
             },
         };
 
         let write = match &param.ty {
             param::ParamRootType::One(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { self.#ident = #ident; },
+                param::ParamLeafType::Owned(_) => quote! { self.props.#ident = #ident; },
                 param::ParamLeafType::Ref(_) => quote! {
-                    self.#ident = #ident.to_owned();
+                    self.props.#ident = #ident.to_owned();
                 },
             },
             param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { self.#ident = #ident; },
+                param::ParamLeafType::Owned(_) => quote! { self.props.#ident = #ident; },
                 param::ParamLeafType::Ref(_) => quote! {
-                    self.#ident = #ident.map(|val| val.to_owned());
+                    self.props.#ident = #ident.map(|val| val.to_owned());
                 },
             },
         };

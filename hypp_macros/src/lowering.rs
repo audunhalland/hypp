@@ -36,11 +36,22 @@ pub fn lower_root_node(
     root_builder.lower_ast(root, &scope, &mut ctx)?;
 
     for param in params {
-        root_builder.struct_fields.push(ir::StructField {
-            field: ir::FieldIdent::Param(param.ident.clone()),
-            ty: ir::StructFieldType::Param(param.clone()),
-        });
+        // State fields are stored directly and independently. Prop fields are not..
+        if param.is_state() {
+            root_builder.struct_fields.push(ir::StructField {
+                ident: ir::FieldIdent::Param(param.ident.clone()),
+                ty: ir::StructFieldType::Param(param.clone()),
+            });
+        }
     }
+
+    // All the props are stored in "owned props" struct.
+    // This is to allow immutable access to props in mutable contexts
+    // like callbacks.
+    root_builder.struct_fields.push(ir::StructField {
+        ident: ir::FieldIdent::Props,
+        ty: ir::StructFieldType::Props,
+    });
 
     Ok(root_builder.to_block(&mut ctx))
 }
@@ -135,7 +146,7 @@ impl BlockBuilder {
             let field = ctx.next_field_id();
             if let Some(program_ty) = program_ty {
                 self.struct_fields.push(ir::StructField {
-                    field: field.clone(),
+                    ident: field.clone(),
                     ty: program_ty,
                 });
                 Some(field)
@@ -245,7 +256,7 @@ impl BlockBuilder {
                     let callback_field = ctx.next_field_id();
 
                     self.struct_fields.push(ir::StructField {
-                        field: callback_field.clone(),
+                        ident: callback_field.clone(),
                         ty: ir::StructFieldType::Callback,
                     });
 
@@ -290,7 +301,7 @@ impl BlockBuilder {
         let node_field = ctx.next_field_id();
 
         self.struct_fields.push(ir::StructField {
-            field: node_field.clone(),
+            ident: node_field.clone(),
             ty: ir::StructFieldType::DomText,
         });
 
@@ -321,7 +332,7 @@ impl BlockBuilder {
         let component_path = ir::ComponentPath::new(component.type_path);
 
         self.struct_fields.push(ir::StructField {
-            field: field.clone(),
+            ident: field.clone(),
             ty: ir::StructFieldType::Component(component_path.clone()),
         });
 
@@ -409,7 +420,7 @@ impl BlockBuilder {
         );
 
         self.struct_fields.push(ir::StructField {
-            field,
+            ident: field,
             ty: enum_type,
         });
 
