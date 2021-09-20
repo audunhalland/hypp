@@ -10,7 +10,6 @@
 pub mod error;
 pub mod handle;
 pub mod server;
-pub mod slot;
 pub mod state_ref;
 pub mod web;
 

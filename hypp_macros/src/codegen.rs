@@ -259,8 +259,12 @@ fn generate_variant_enum(
             #(#variant_defs)*
         }
 
-        impl<H: ::hypp::Hypp + 'static> #enum_ident<H> {
-            pub fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
+        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #enum_ident<H> {
+            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                unimplemented!()
+            }
+
+            fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 match self {
                     #(#unmount_arms)*
                 }
