@@ -52,7 +52,7 @@ fn render_foo_server() {
         "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
     );
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __FooProps {
             is_cool: false,
             __phantom: std::marker::PhantomData,
@@ -139,7 +139,7 @@ fn render_conditional_server() {
 
     assert_eq!(hypp.render(), "<body><div/></body>");
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __ConditionalProps {
             hello: false,
             world: true,
@@ -151,7 +151,7 @@ fn render_conditional_server() {
     // No change:
     assert_eq!(hypp.render(), "<body><div/></body>");
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __ConditionalProps {
             hello: true,
             world: false,
@@ -165,7 +165,7 @@ fn render_conditional_server() {
         "<body><div><span>Hello</span><span>Universe</span></div></body>"
     );
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __ConditionalProps {
             hello: true,
             world: true,
@@ -236,7 +236,7 @@ fn render_iflet_server() {
 
     assert_eq!(hypp.render(), "<body><article/></body>");
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __IfLetProps {
             opt_number: Some(42),
             __phantom: std::marker::PhantomData,
@@ -246,7 +246,7 @@ fn render_iflet_server() {
 
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __IfLetProps {
             opt_number: None,
             __phantom: std::marker::PhantomData,
@@ -300,7 +300,7 @@ fn render_fragment1() {
         "<body><div>first</div><span>second</span><p>third</p></body>"
     );
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __Fragment1Props {
             perhaps: false,
             __phantom: std::marker::PhantomData,
@@ -343,7 +343,7 @@ fn render_recursive_server() {
         "<body><span>3<span>2<span>1</span></span></span></body>"
     );
 
-    c.borrow_mut().set_props(
+    c.borrow_mut().pass_props(
         __RecursiveProps {
             depth: 2,
             __phantom: std::marker::PhantomData,
@@ -400,7 +400,7 @@ component! {
 }
 
 // Experimentation with new surface syntax
-component_dbg! {
+component! {
     Toggle(prop1: bool, prop2: &str) {
         toggled: bool,
     }

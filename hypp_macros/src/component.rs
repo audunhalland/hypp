@@ -129,7 +129,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
-            fn set_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
+            fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #props_updater
 
                 self.patch(&__updates, __cursor);

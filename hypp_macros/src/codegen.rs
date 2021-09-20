@@ -732,13 +732,17 @@ impl ir::Statement {
 
                     quote! {
                         if #test {
-                            #field_ref.borrow_mut().set_props(
+                            #field_ref.borrow_mut().pass_props(
                                 #props_path {
                                     #(#prop_list)*
                                     __phantom: ::std::marker::PhantomData,
                                 },
                                 __cursor
                             );
+                        } else {
+                            // Nothing has changed, but the cursor must pass
+                            // over the component. This should be very cheap.
+                            #field_ref.borrow_mut().pass_over(__cursor);
                         }
                     }
                 }

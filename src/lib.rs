@@ -134,7 +134,12 @@ pub trait Cursor<H: Hypp> {
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
-/// The component trait
+/// The component trait.
+///
+/// The term 'pass' is used when there's a cursor method parameter,
+/// and that method implementation must 'pass' the cursor over
+/// the component's owned DOM.
+///
 pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     /// The type of properties this component recieves
     type Props: 'p;
@@ -147,7 +152,7 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     /// When the method returns, the cursor must point to the end of the component,
     /// what direction to take is determined by H.
     ///
-    fn set_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
+    fn pass_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
 
     /// Move the cursor from the start to the end of the component,
     /// according to the traversal direction in H.
