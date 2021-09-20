@@ -29,6 +29,7 @@ pub struct RootIdents {
     pub component_ident: syn::Ident,
     pub public_props_ident: syn::Ident,
     pub owned_props_ident: syn::Ident,
+    pub self_shim_ident: syn::Ident,
     pub uppercase_prefix: String,
 }
 
@@ -40,18 +41,25 @@ pub enum ConstructorKind<'a> {
     },
 }
 
+/// A "self shim" is used when the client needs access to the component
+/// internals (e.g. callback functions). Not every component needs that.
+#[derive(Clone, Copy)]
+pub struct HasSelfShim(pub bool);
+
 pub struct OwnedProps<'p>(pub Option<&'p [ir::StructField]>);
 
 impl RootIdents {
     pub fn from_component_ident(component_ident: syn::Ident) -> Self {
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
         let owned_props_ident = quote::format_ident!("__{}OwnedProps", component_ident);
+        let self_shim_ident = quote::format_ident!("__{}Shim", component_ident);
         let uppercase_prefix = format!("__{}", component_ident.clone().to_string().to_uppercase());
 
         Self {
             component_ident,
             public_props_ident,
             owned_props_ident,
+            self_shim_ident,
             uppercase_prefix,
         }
     }
@@ -339,63 +347,56 @@ pub fn gen_unmount(
 
 impl ir::StructField {
     pub fn field_def_tokens(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
-        let field = &self.ident;
+        let ident = &self.ident;
         let ty = self.ty.to_tokens(root_idents, scope, WithGenerics(true));
 
-        quote! { #field: #ty, }
+        quote! { #ident: #ty, }
     }
 
     pub fn struct_param_tokens(&self) -> TokenStream {
-        let field = &self.ident;
+        let ident = &self.ident;
 
         match &self.ty {
             ir::StructFieldType::Param(param) => match &param.kind {
+                // State variable types must implement default:
+                param::ParamKind::State => quote! { #ident: Default::default(), },
+                // Convert from generally borrowed props:
                 param::ParamKind::Prop => match &param.ty {
                     param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { #field, },
-                        param::ParamLeafType::Ref(_) => quote! { #field: #field.to_owned(), },
+                        param::ParamLeafType::Owned(_) => quote! { #ident, },
+                        param::ParamLeafType::Ref(_) => quote! { #ident: #ident.to_owned(), },
                     },
                     param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { #field, },
-
+                        param::ParamLeafType::Owned(_) => quote! { #ident, },
                         param::ParamLeafType::Ref(_) => {
-                            quote! { #field: #field.map(|val| val.to_owned()), }
+                            quote! { #ident: #ident.map(|val| val.to_owned()), }
                         }
                     },
                 },
-                param::ParamKind::State => match &param.ty {
-                    param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(ty) => quote! { #field: #ty::default(), },
-                        param::ParamLeafType::Ref(ty) => quote! { #field: #ty::default(), },
-                    },
-                    param::ParamRootType::Option(_) => quote! {
-                        #field: Option::default(),
-                    },
-                },
             },
-            ir::StructFieldType::Callback => quote! { #field: #field.clone(), },
+            ir::StructFieldType::Callback => quote! { #ident: #ident.clone(), },
             // Handled separately:
             ir::StructFieldType::Props => quote! {},
-            _ => quote! { #field, },
+            _ => quote! { #ident, },
         }
     }
 
     pub fn mut_pattern_tokens(&self) -> TokenStream {
-        let field = &self.ident;
+        let ident = &self.ident;
 
         match &self.ty {
             // mutable types
             ir::StructFieldType::Param(_)
             | ir::StructFieldType::Component(_)
             | ir::StructFieldType::Enum(_) => quote! {
-                ref mut #field,
+                ref mut #ident,
             },
             // immutable types
             ir::StructFieldType::DomElement
             | ir::StructFieldType::DomText
             | ir::StructFieldType::Props
             | ir::StructFieldType::Callback => quote! {
-                ref #field,
+                ref #ident,
             },
         }
     }
@@ -866,8 +867,6 @@ fn gen_match_patch(
     quote! {
         match (#mut_field_ref, #expr) {
             #(#arm_pairs)*
-
-            _ => {}
         }
     }
 }

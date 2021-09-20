@@ -33,8 +33,6 @@ pub fn lower_root_node(
 
     let scope = flow::FlowScope::from_params(params);
 
-    root_builder.lower_ast(root, &scope, &mut ctx)?;
-
     for param in params {
         // State fields are stored directly and independently. Prop fields are not..
         if param.is_state() {
@@ -52,6 +50,8 @@ pub fn lower_root_node(
         ident: ir::FieldIdent::Props,
         ty: ir::StructFieldType::Props,
     });
+
+    root_builder.lower_ast(root, &scope, &mut ctx)?;
 
     Ok(root_builder.to_block(&mut ctx))
 }
@@ -391,7 +391,6 @@ impl BlockBuilder {
 
                 Ok(ir::Arm {
                     enum_variant_ident: quote::format_ident!("V{}", index),
-                    mount_fn_ident: quote::format_ident!("mount_v{}", index),
                     pattern: arm.pat,
                     block: arm_builder.to_block(ctx),
                 })

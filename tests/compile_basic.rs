@@ -400,7 +400,7 @@ component! {
 }
 
 // Experimentation with new surface syntax
-component! {
+component_dbg! {
     Toggle(prop1: bool, prop2: &str) {
         toggled: bool,
     }

@@ -11,13 +11,12 @@ use crate::codegen::*;
 struct Component {
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
+    params: Vec<param::Param>,
     prop_fields: Vec<ir::StructField>,
     root_block: ir::Block,
     variant_enums: Vec<TokenStream>,
-    fn_props_destructuring: syn::FnArg,
-    self_props_bindings: TokenStream,
-    props_updater: TokenStream,
     fn_stmts: Vec<syn::Stmt>,
+    has_self_shim: HasSelfShim,
     methods: Vec<syn::ItemFn>,
 }
 
@@ -25,13 +24,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
         dom_programs,
         root_idents,
+        params,
         prop_fields,
         root_block,
         variant_enums,
-        fn_props_destructuring,
-        self_props_bindings,
-        props_updater,
         fn_stmts,
+        has_self_shim,
         methods,
     } = analyze_ast(ast);
 
@@ -40,6 +38,14 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let public_props_struct = create_public_props_struct(&prop_fields, &root_idents);
     let owned_props_struct = create_owned_props_struct(&prop_fields, &root_idents);
+    let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
+    let self_props_bindings = create_self_props_bindings(&params);
+    let props_updater = create_props_updater(&params);
+    let self_shim = if has_self_shim.0 {
+        create_self_shim(&root_block.struct_fields, &root_idents)
+    } else {
+        quote! {}
+    };
 
     let struct_field_defs = root_block
         .struct_fields
@@ -80,6 +86,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     quote! {
         #public_props_struct
         #owned_props_struct
+        #self_shim
 
         #(#dom_programs)*
 
@@ -138,6 +145,17 @@ fn analyze_ast(
         template,
     }: component_ast::Component,
 ) -> Component {
+    let root_block =
+        lowering::lower_root_node(template, &params).expect("Compile error: Lowering problem");
+
+    // Current heuristic for determining if we need self shim: component is stored
+    // with a shared handle:
+    let has_self_shim = match root_block.handle_kind {
+        ir::HandleKind::Shared => HasSelfShim(true),
+        ir::HandleKind::Unique => HasSelfShim(false),
+    };
+
+    // Root idents which are used as prefixes for every global ident generated:
     let root_idents = RootIdents::from_component_ident(ident);
 
     let prop_fields = params
@@ -149,13 +167,6 @@ fn analyze_ast(
         })
         .collect::<Vec<_>>();
 
-    let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
-    let self_props_bindings = create_self_props_bindings(&params);
-    let props_updater = create_props_updater(&params);
-
-    let root_block =
-        lowering::lower_root_node(template, &params).expect("Compile error: Lowering problem");
-
     let mut dom_programs = vec![];
     collect_dom_programs(&root_block.statements, &root_idents, &mut dom_programs);
 
@@ -164,14 +175,13 @@ fn analyze_ast(
 
     Component {
         dom_programs,
-        variant_enums,
         root_idents,
+        params,
         prop_fields,
         root_block,
-        fn_props_destructuring,
-        self_props_bindings,
-        props_updater,
+        variant_enums,
         fn_stmts: vec![],
+        has_self_shim,
         methods,
     }
 }
@@ -340,5 +350,41 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
         let mut __updates: [bool; #n_props] = [false; #n_props];
 
         #(#checks)*
+    }
+}
+
+fn create_self_shim(struct_fields: &[ir::StructField], root_idents: &RootIdents) -> TokenStream {
+    let shim_ident = &root_idents.self_shim_ident;
+    let owned_props_ident = &root_idents.owned_props_ident;
+
+    let state_fields = struct_fields
+        .iter()
+        .filter_map(|struct_field| match &struct_field.ty {
+            ir::StructFieldType::Param(param) => {
+                if param.is_state() {
+                    Some(struct_field)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .map(|struct_field| {
+            let ident = &struct_field.ident;
+            let inner_ty =
+                struct_field
+                    .ty
+                    .to_tokens(&root_idents, Scope::Component, WithGenerics(true));
+
+            quote! {
+                #ident: ::hypp::state_ref::StateRef<'c, #inner_ty>,
+            }
+        });
+
+    quote! {
+        struct #shim_ident<'c> {
+            props: &'c #owned_props_ident,
+            #(#state_fields)*
+        }
     }
 }
