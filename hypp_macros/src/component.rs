@@ -126,6 +126,16 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             type Handle = #handle_path<Self>;
         }
 
+        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #component_ident<H> {
+            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                unimplemented!()
+            }
+
+            fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
+                #unmount_stmts
+            }
+        }
+
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
             type Props = #props_ident<'p>;
 
@@ -133,14 +143,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #props_updater
 
                 self.patch(&__updates, __cursor);
-            }
-
-            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
-                unimplemented!()
-            }
-
-            fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
-                #unmount_stmts
             }
         }
     }

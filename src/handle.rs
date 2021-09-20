@@ -117,7 +117,7 @@ impl<T> Handle<T> for Shared<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Component, Cursor, Hypp};
+    use crate::{Component, Cursor, Hypp, Span};
 
     struct LolProps<'p> {
         _prop: &'p str,
@@ -135,12 +135,17 @@ mod test {
         type Handle = Unique<Self>;
     }
 
-    impl<'c, 'p, H: Hypp> Component<'p, H> for CompA {
+    impl<H: Hypp> Span<H> for CompA {
+        fn pass_over(&mut self, _: &mut dyn Cursor<H>) -> bool {
+            false
+        }
+        fn unmount(&mut self, _vm: &mut dyn Cursor<H>) {}
+    }
+
+    impl<'p, H: Hypp> Component<'p, H> for CompA {
         type Props = LolProps<'p>;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut dyn Cursor<H>) {}
-        fn pass_over(&mut self, _: &mut dyn Cursor<H>) {}
-        fn unmount(&mut self, _vm: &mut dyn Cursor<H>) {}
     }
 
     struct CompB {
@@ -159,12 +164,17 @@ mod test {
         type Handle = Shared<Self>;
     }
 
+    impl<H: Hypp> Span<H> for CompB {
+        fn pass_over(&mut self, _: &mut dyn Cursor<H>) -> bool {
+            false
+        }
+        fn unmount(&mut self, _vm: &mut dyn Cursor<H>) {}
+    }
+
     impl<'p, H: Hypp> Component<'p, H> for CompB {
         type Props = LolProps<'p>;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut dyn Cursor<H>) {}
-        fn pass_over(&mut self, _: &mut dyn Cursor<H>) {}
-        fn unmount(&mut self, _vm: &mut dyn Cursor<H>) {}
     }
 
     #[test]

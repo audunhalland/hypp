@@ -134,13 +134,31 @@ pub trait Cursor<H: Hypp> {
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
+/// Something that spans nodes in a DOM-like tree.
+pub trait Span<H: Hypp> {
+    /// Make the cursor _pass over_ the this span,
+    /// i.e. jump directly from the beginning to the end,
+    /// without doing any modifications to the cursor.
+    ///
+    /// The method must return whether it was able to pass anything.
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool;
+
+    ///
+    /// Unmount this span, which must make it zero sized,
+    /// e.g. contain no nodes. All the nodes that where within
+    /// the span have to be removed from the tree.
+    /// The location of the cursor must be unchanged when the method returns.
+    ///
+    fn unmount(&mut self, cursor: &mut dyn Cursor<H>);
+}
+
 /// The component trait.
 ///
 /// The term 'pass' is used when there's a cursor method parameter,
 /// and that method implementation must 'pass' the cursor over
 /// the component's owned DOM.
 ///
-pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
+pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
     /// The type of properties this component recieves
     type Props: 'p;
 
@@ -153,17 +171,6 @@ pub trait Component<'p, H: Hypp>: Sized + handle::ToHandle {
     /// what direction to take is determined by H.
     ///
     fn pass_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
-
-    /// Move the cursor from the start to the end of the component,
-    /// according to the traversal direction in H.
-    /// The component should not update.
-    /// But it gets a possibility to store the new cursor position in case it needs to store it.
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>);
-
-    /// Unmount the component, removing all its nodes
-    /// from under its mount point in the tree, using the cursor.
-    /// The only purpose of this call is to remove nodes in the DOM.
-    fn unmount(&mut self, cursor: &mut dyn Cursor<H>);
 }
 
 ///

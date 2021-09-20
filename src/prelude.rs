@@ -2,6 +2,7 @@ pub use crate::AsNode;
 pub use crate::Callback;
 pub use crate::Component;
 pub use crate::Cursor;
+pub use crate::Span;
 
 pub use crate::handle::Handle;
 pub use crate::handle::ToHandle;
