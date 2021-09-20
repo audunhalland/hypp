@@ -679,10 +679,10 @@ impl ir::Statement {
 
                     match program.last_node_opcode() {
                         Some(ir::DomOpCode::EnterElement(_)) => quote! {
-                            __cursor.advance_to_first_child_of(&#field_ref);
+                            __cursor.move_to_children_of(&#field_ref);
                         },
                         Some(ir::DomOpCode::ExitElement | ir::DomOpCode::Text(_)) => quote! {
-                            __cursor.advance_to_next_sibling_of(#field_ref.as_node());
+                            __cursor.move_to_following_sibling_of(#field_ref.as_node());
                         },
                         _ => panic!(),
                     }
@@ -703,7 +703,7 @@ impl ir::Statement {
                     if #test {
                         H::set_text(&#field_ref, #expr.as_ref());
                     }
-                    __cursor.advance_to_next_sibling_of(#field_ref.as_node());
+                    __cursor.move_to_following_sibling_of(#field_ref.as_node());
                 }
             }
             ir::Expression::Component { path, props } => match &self.param_deps {

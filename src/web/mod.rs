@@ -62,6 +62,10 @@ impl Hypp for WebHypp {
     fn set_text(node: &Self::Text, text: &str) {
         node.set_data(text);
     }
+
+    fn traversal_direction() -> crate::TraversalDirection {
+        crate::TraversalDirection::LastToFirst
+    }
 }
 
 pub struct WebBuilder {
@@ -243,12 +247,12 @@ impl Cursor<WebHypp> for WebBuilder {
         child.try_into_text()
     }
 
-    fn advance_to_first_child_of(&mut self, element: &web_sys::Element) {
+    fn move_to_children_of(&mut self, element: &web_sys::Element) {
         self.element = element.clone();
         self.next_child = element.first_child();
     }
 
-    fn advance_to_next_sibling_of(&mut self, node: &web_sys::Node) {
+    fn move_to_following_sibling_of(&mut self, node: &web_sys::Node) {
         self.element = node.parent_node().unwrap().try_into_element().unwrap();
         self.next_child = node.next_sibling();
     }

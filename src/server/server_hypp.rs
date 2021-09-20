@@ -24,7 +24,8 @@ impl ServerHypp {
     pub fn builder_at_body(&self) -> ServerBuilder {
         ServerBuilder {
             element: self.body.clone(),
-            next_child: self.body.first_child(),
+            // Start at the _end_ of the child list:
+            next_child: None,
             loaded_attribute_name: None,
         }
     }
@@ -44,6 +45,10 @@ impl Hypp for ServerHypp {
     fn set_text(node: &Self::Text, text: &str) {
         node.set_text(text);
     }
+
+    fn traversal_direction() -> crate::TraversalDirection {
+        crate::TraversalDirection::LastToFirst
+    }
 }
 
 impl Callback for () {
@@ -59,12 +64,20 @@ pub struct ServerBuilder {
 }
 
 impl ServerBuilder {
+    fn current_child(&self) -> Option<RcNode> {
+        match &self.next_child {
+            Some(next_child) => next_child.prev_sibling(),
+            None => self.element.last_child(),
+        }
+    }
+
     fn enter_element(&mut self, tag_name: &'static str) -> RcNode {
         let element = Node::create_element(tag_name);
         self.element
             .insert_before(element.clone(), self.next_child.clone());
 
         self.element = element.clone();
+        // Start at "last child" (the new element has no children)
         self.next_child = None;
 
         element
@@ -75,6 +88,9 @@ impl ServerBuilder {
         self.element
             .insert_before(node.clone(), self.next_child.clone());
 
+        // The next child is the newly created node
+        self.next_child = Some(node.clone());
+
         node
     }
 
@@ -84,7 +100,8 @@ impl ServerBuilder {
             .parent()
             .expect("Failed to exit: no parent element");
 
-        self.next_child = self.element.next_sibling();
+        // The next child is the element just exited
+        self.next_child = Some(self.element.clone());
 
         std::mem::replace(&mut self.element, parent_element)
     }
@@ -172,13 +189,8 @@ impl Cursor<ServerHypp> for ServerBuilder {
     }
 
     fn remove_element(&mut self, tag_name: &'static str) -> Result<RcNode, Error> {
-        let child = self
-            .next_child
-            .take()
-            .expect("Expected an element to remove");
+        let child = self.current_child().expect("Expected an element to remove");
         child.assert_is_element_with_tag_name(tag_name);
-
-        self.next_child = child.next_sibling();
 
         self.element.remove_child(child.clone());
 
@@ -186,23 +198,22 @@ impl Cursor<ServerHypp> for ServerBuilder {
     }
 
     fn remove_text(&mut self) -> Result<RcNode, Error> {
-        let child = self.next_child.take().expect("Expected a node to remove");
-
-        self.next_child = child.next_sibling();
-
+        let child = self.current_child().expect("Expected an element to remove");
         self.element.remove_child(child.clone());
 
         Ok(child)
     }
 
-    fn advance_to_first_child_of(&mut self, element: &RcNode) {
+    fn move_to_children_of(&mut self, element: &RcNode) {
         self.element = element.clone();
-        self.next_child = element.first_child();
+        // Start at the end of the child list:
+        self.next_child = None;
     }
 
-    fn advance_to_next_sibling_of(&mut self, node: &RcNode) {
+    fn move_to_following_sibling_of(&mut self, node: &RcNode) {
         self.element = node.parent().unwrap();
-        self.next_child = node.next_sibling();
+        // The next child is the node itself (so the cursor points before that node)
+        self.next_child = Some(node.clone());
     }
 
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {

@@ -19,6 +19,11 @@ pub mod prelude;
 pub use error::Error;
 pub use hypp_macros::component;
 
+pub enum TraversalDirection {
+    FirstToLast,
+    LastToFirst,
+}
+
 ///
 /// Main abstraction for hypp (as of writing)
 ///
@@ -32,6 +37,8 @@ pub trait Hypp: Sized {
     type Callback: Callback;
 
     fn set_text(node: &Self::Text, text: &str);
+
+    fn traversal_direction() -> TraversalDirection;
 }
 
 ///
@@ -83,6 +90,12 @@ pub enum ConstOpCode {
 /// An abstract cursor at some DOM position, allowing users of the trait
 /// to do various operations to mutate it.
 ///
+/// The cursor has a specific traversal direction for a Hypp implementation.
+///
+/// For web DOMs, the traversal direction of children, should be last to first.
+/// This is because the basic call to add a child is `Element::insert_before(element, next)`,
+/// and `next` will then be item that item that has been most recently produced.
+///
 pub trait Cursor<H: Hypp> {
     /// Execute a series of opcodes.
     /// The last node opcode must produce an element.
@@ -101,11 +114,12 @@ pub trait Cursor<H: Hypp> {
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
 
-    /// Advance cursor directly to a location
-    fn advance_to_first_child_of(&mut self, element: &H::Element);
+    /// Advance cursor directly to a location.
+    /// This sets up the cursor to traverse the element's child list.
+    fn move_to_children_of(&mut self, element: &H::Element);
 
-    /// Advance cursor directly to a location
-    fn advance_to_next_sibling_of(&mut self, node: &H::Node);
+    /// Advance cursor directly to a location in a child list.
+    fn move_to_following_sibling_of(&mut self, node: &H::Node);
 
     /// Remove the element at the current cursor position.
     /// The element's name must match the tag name passed.
