@@ -614,7 +614,9 @@ impl ir::Block {
                             {
                                 let __mounted = __mounted.clone();
                                 #field.bind(Box::new(move || {
-                                    __mounted.borrow_mut().#ident();
+                                    __mounted.borrow_mut().shim_updater_trampoline(|shim| {
+                                        shim.#ident();
+                                    })
                                 }));
                             }
                         }

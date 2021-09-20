@@ -39,12 +39,14 @@ impl<'p> FlowScope<'p> {
         scope
     }
 
+    /*
     pub fn lookup_param_deps_for_ident(&self, ident: &syn::Ident) -> ir::ParamDeps {
         match self.lookup_deps(ident) {
             None => ir::ParamDeps::Const,
             Some(deps) => deps_to_param_deps(deps),
         }
     }
+    */
 
     pub fn lookup_params_deps_for_expr(&self, expr: &syn::Expr) -> ir::ParamDeps {
         // expr should not introduce new variables
@@ -128,11 +130,11 @@ fn analyze_statement<'p>(stmt: &syn::Stmt, scope: &mut FlowScope<'p>) {
         syn::Stmt::Item(_) => {
             // not analyzing items
         }
-        syn::Stmt::Expr(expr) => {
+        syn::Stmt::Expr(_expr) => {
             panic!("SICJ")
             // collect_expr_deps(expr, collect, None)?;
         }
-        syn::Stmt::Semi(semi, _) => {
+        syn::Stmt::Semi(_semi, _) => {
             panic!("SICJ2")
             // collect_expr_deps(semi, collect, None)?;
         }

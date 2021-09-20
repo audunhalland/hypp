@@ -414,7 +414,7 @@ component_dbg! {
     }
 
     fn handle_click(&mut self) {
-        self.toggled = !self.toggled;
+        *self.toggled = !*self.toggled;
     }
 
     <div>

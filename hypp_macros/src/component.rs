@@ -42,7 +42,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let self_props_bindings = create_self_props_bindings(&params);
     let props_updater = create_props_updater(&params);
     let self_shim = if has_self_shim.0 {
-        create_self_shim(&root_block.struct_fields, &root_idents)
+        create_self_shim(&root_block.struct_fields, &root_idents, methods)
+    } else {
+        quote! {}
+    };
+    let shim_updater_trampoline = if has_self_shim.0 {
+        create_shim_updater_trampoline(&root_block.struct_fields, &root_idents, &params)
     } else {
         quote! {}
     };
@@ -114,7 +119,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #(#patch_stmts)*
             }
 
-            #(#methods)*
+            #shim_updater_trampoline
         }
 
         impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
@@ -302,13 +307,7 @@ fn create_self_props_bindings(params: &[param::Param]) -> TokenStream {
 }
 
 fn create_props_updater(params: &[param::Param]) -> TokenStream {
-    let n_props = params
-        .iter()
-        .filter(|param| match &param.kind {
-            param::ParamKind::Prop => true,
-            _ => false,
-        })
-        .count();
+    let n_params = params.iter().count();
 
     let checks = params.iter().filter(|param| param.is_prop()).map(|param| {
         let id = param.id as usize;
@@ -347,44 +346,85 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
 
     quote! {
         // TODO: use bitvec?
-        let mut __updates: [bool; #n_props] = [false; #n_props];
+        let mut __updates: [bool; #n_params] = [false; #n_params];
 
         #(#checks)*
     }
 }
 
-fn create_self_shim(struct_fields: &[ir::StructField], root_idents: &RootIdents) -> TokenStream {
+fn create_self_shim(
+    struct_fields: &[ir::StructField],
+    root_idents: &RootIdents,
+    methods: Vec<syn::ItemFn>,
+) -> TokenStream {
     let shim_ident = &root_idents.self_shim_ident;
     let owned_props_ident = &root_idents.owned_props_ident;
 
     let state_fields = struct_fields
         .iter()
         .filter_map(|struct_field| match &struct_field.ty {
-            ir::StructFieldType::Param(param) => {
-                if param.is_state() {
-                    Some(struct_field)
-                } else {
-                    None
-                }
+            ir::StructFieldType::Param(param) if param.is_state() => {
+                let ident = &struct_field.ident;
+                let inner_ty =
+                    struct_field
+                        .ty
+                        .to_tokens(&root_idents, Scope::Component, WithGenerics(true));
+
+                Some(quote! {
+                    #ident: ::hypp::state_ref::StateRef<'c, #inner_ty>,
+                })
             }
             _ => None,
-        })
-        .map(|struct_field| {
-            let ident = &struct_field.ident;
-            let inner_ty =
-                struct_field
-                    .ty
-                    .to_tokens(&root_idents, Scope::Component, WithGenerics(true));
-
-            quote! {
-                #ident: ::hypp::state_ref::StateRef<'c, #inner_ty>,
-            }
         });
 
     quote! {
         struct #shim_ident<'c> {
             props: &'c #owned_props_ident,
             #(#state_fields)*
+        }
+
+        impl<'c> #shim_ident<'c> {
+            #(#methods)*
+        }
+    }
+}
+
+fn create_shim_updater_trampoline(
+    struct_fields: &[ir::StructField],
+    root_idents: &RootIdents,
+    params: &[param::Param],
+) -> TokenStream {
+    let n_params = params.iter().count();
+    let shim_ident = &root_idents.self_shim_ident;
+
+    let state_fields = struct_fields
+        .iter()
+        .filter_map(|struct_field| match &struct_field.ty {
+            ir::StructFieldType::Param(param) if param.is_state() => {
+                let ident = &struct_field.ident;
+                let id = param.id as usize;
+
+                Some(quote! {
+                    #ident: ::hypp::state_ref::StateRef::new(&mut self.#ident, &mut __updates[#id]),
+                })
+            }
+            _ => None,
+        });
+
+    quote! {
+        fn shim_updater_trampoline(&mut self, cb: impl Fn(&mut #shim_ident)) {
+            let mut __updates: [bool; #n_params] = [false; #n_params];
+
+            let mut shim = #shim_ident {
+                props: &self.props,
+
+                #(#state_fields)*
+            };
+
+            cb(&mut shim);
+
+            // FIXME: The only thing missing now, is the call to self.patch().
+            // But then we need to instantiate a DomVM builder positioned at the first DOM node.
         }
     }
 }
