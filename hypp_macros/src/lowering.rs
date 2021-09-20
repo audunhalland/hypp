@@ -12,6 +12,15 @@ pub enum LoweringError {
     InvalidAttribute(proc_macro2::Span),
 }
 
+// Which direction lowering will lower children,
+// affecting the generated code.
+// It will be constant for a specific implementation of Hypp.
+#[allow(unused)]
+pub enum TraversalDirection {
+    FirstToLast,
+    LastToFirst,
+}
+
 // Minimum size of programs to directly skip when
 // generating patch code.
 // For longer programs, it may be worth it to store a reference
@@ -20,6 +29,7 @@ const SKIP_PROGRAM_THRESHOLD: usize = 0;
 
 pub fn lower_root_node(
     root: template_ast::Node,
+    direction: TraversalDirection,
     params: &[param::Param],
 ) -> Result<ir::Block, LoweringError> {
     let mut root_builder = BlockBuilder::default();
@@ -29,6 +39,7 @@ pub fn lower_root_node(
         field_count: 0,
         enum_count: 0,
         current_dom_depth: 0,
+        direction,
     };
 
     let scope = flow::FlowScope::from_params(params);
@@ -63,6 +74,8 @@ pub struct Context {
     enum_count: u16,
 
     current_dom_depth: u16,
+
+    direction: TraversalDirection,
 }
 
 impl Context {
@@ -179,11 +192,18 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         match node {
             template_ast::Node::Element(element) => self.lower_element(element, scope, ctx)?,
-            template_ast::Node::Fragment(nodes) => {
-                for node in nodes {
-                    self.lower_ast(node, scope, ctx)?;
+            template_ast::Node::Fragment(nodes) => match ctx.direction {
+                TraversalDirection::FirstToLast => {
+                    for node in nodes {
+                        self.lower_ast(node, scope, ctx)?;
+                    }
                 }
-            }
+                TraversalDirection::LastToFirst => {
+                    for node in nodes.into_iter().rev() {
+                        self.lower_ast(node, scope, ctx)?;
+                    }
+                }
+            },
             template_ast::Node::Text(text) => self.lower_text_const(text, ctx)?,
             template_ast::Node::TextExpr(expr) => self.lower_text_expr(expr, scope, ctx)?,
             template_ast::Node::Component(component) => {
@@ -212,8 +232,17 @@ impl BlockBuilder {
 
         ctx.current_dom_depth += 1;
 
-        for child in element.children {
-            self.lower_ast(child, scope, ctx)?;
+        match ctx.direction {
+            TraversalDirection::FirstToLast => {
+                for child in element.children {
+                    self.lower_ast(child, scope, ctx)?;
+                }
+            }
+            TraversalDirection::LastToFirst => {
+                for child in element.children.into_iter().rev() {
+                    self.lower_ast(child, scope, ctx)?;
+                }
+            }
         }
 
         self.push_dom_opcode(ir::DomOpCode::ExitElement, ctx);

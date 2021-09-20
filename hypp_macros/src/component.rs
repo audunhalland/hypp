@@ -155,7 +155,8 @@ fn analyze_ast(
     }: component_ast::Component,
 ) -> Component {
     let root_block =
-        lowering::lower_root_node(template, &params).expect("Compile error: Lowering problem");
+        lowering::lower_root_node(template, lowering::TraversalDirection::LastToFirst, &params)
+            .expect("Compile error: Lowering problem");
 
     // Current heuristic for determining if we need self shim: component is stored
     // with a shared handle:
