@@ -220,7 +220,7 @@ fn render_iflet_server() {
 
     assert_eq!(hypp.render(), "<body><article/></body>");
 
-    c.borrow().erase(&mut hypp.builder_at_body());
+    c.borrow_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }

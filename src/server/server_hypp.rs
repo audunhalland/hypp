@@ -1,6 +1,7 @@
 use crate::error::Error;
 
 use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
+use crate::span::{AsSpan, SpanAdapter};
 use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp, Span};
 
 impl AsNode<ServerHypp> for RcNode {
@@ -51,17 +52,25 @@ impl Hypp for ServerHypp {
     }
 }
 
-impl Span<ServerHypp> for RcNode {
+impl AsSpan for RcNode {
+    type Target = Self;
+
+    fn as_span<'a>(&'a self) -> SpanAdapter<'a, Self> {
+        SpanAdapter(self)
+    }
+}
+
+impl<'a> Span<ServerHypp> for SpanAdapter<'a, RcNode> {
     fn is_anchored(&self) -> bool {
         true
     }
 
-    fn pass_over(&self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
-        cursor.move_to_following_sibling_of(&self);
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+        cursor.move_to_following_sibling_of(&self.0);
         true
     }
 
-    fn erase(&self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
         cursor.remove_node().unwrap();
         true
     }

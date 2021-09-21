@@ -30,9 +30,9 @@ pub enum TraversalDirection {
 /// We abstract over the type of DOM we are targeting.
 ///
 pub trait Hypp: Sized {
-    type Node: Clone + Span<Self>;
-    type Element: Clone + Span<Self> + AsNode<Self>;
-    type Text: Clone + Span<Self> + AsNode<Self>;
+    type Node: Clone + span::AsSpan;
+    type Element: Clone + span::AsSpan + AsNode<Self>;
+    type Text: Clone + span::AsSpan + AsNode<Self>;
 
     type Callback: Callback;
 
@@ -173,7 +173,7 @@ pub trait Span<H: Hypp> {
     /// This method is reserved for the specific pass methods below.
     /// It exists so that a Span impl can implement pass generically,
     /// if it constists only of sub spans.
-    fn pass(&self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
+    fn pass(&mut self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
         false
     }
 
@@ -183,7 +183,7 @@ pub trait Span<H: Hypp> {
     /// The direction of the pass must in accordance with Hypp implementation.
     ///
     /// The method must return whether it was able to pass anything.
-    fn pass_over(&self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::PassOver)
     }
 
@@ -193,7 +193,7 @@ pub trait Span<H: Hypp> {
     /// the span have to be removed from the tree.
     /// The location of the cursor must be unchanged when the method returns.
     ///
-    fn erase(&self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::Erase)
     }
 }

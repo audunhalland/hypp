@@ -144,7 +144,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 unimplemented!()
             }
 
-            fn pass(&self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 #span_pass
             }
         }

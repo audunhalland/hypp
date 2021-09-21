@@ -118,6 +118,19 @@ impl<'f> quote::ToTokens for MutFieldRef<'f> {
 
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { &mut self.#field },
+            Scope::DynamicSpan => quote! { #field },
+        });
+    }
+}
+
+pub struct MutFieldPat<'f>(&'f ir::FieldIdent, CodegenCtx);
+
+impl<'f> quote::ToTokens for MutFieldPat<'f> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let field = &self.0;
+
+        tokens.extend(match self.1.scope {
+            Scope::Component => quote! { &mut self.#field },
             // Field has already been marked as a `ref mut` in the pattern binding:
             Scope::DynamicSpan => quote! { &#field },
         });
@@ -264,28 +277,6 @@ fn generate_dynamic_span_enum(
         }
     });
 
-    let unmount_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
-        let field_defs = block
-            .struct_fields
-            .iter()
-            .map(ir::StructField::struct_param_tokens);
-
-        let unmount_stmts = gen_unmount(
-            &block.statements,
-            dom_depth,
-            CodegenCtx {
-                lifecycle: Lifecycle::Unmount,
-                scope: Scope::DynamicSpan,
-            },
-        );
-
-        quote! {
-            Self::#variant { #(#field_defs)* .. } => {
-                #unmount_stmts
-            },
-        }
-    });
-
     quote! {
         enum #dynamic_span_ident<H: ::hypp::Hypp> {
             #(#variant_defs)*
@@ -297,7 +288,7 @@ fn generate_dynamic_span_enum(
                 false
             }
 
-            fn pass(&self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 match self {
                     #(#span_pass_arms)*
                 }
@@ -328,7 +319,7 @@ pub fn gen_span_pass(
                         ir::DomOpCode::EnterElement(_) => {
                             if dom_depth == 0 {
                                 sub_spans.push(quote! {
-                                    &#program_ident[#index]
+                                    &mut #program_ident[#index].as_span()
                                 });
                             }
                             dom_depth += 1;
@@ -336,7 +327,7 @@ pub fn gen_span_pass(
                         ir::DomOpCode::Text(_) => {
                             if dom_depth == 0 {
                                 sub_spans.push(quote! {
-                                    &#program_ident[#index]
+                                    &mut #program_ident[#index].as_span()
                                 });
                             }
                         }
@@ -351,7 +342,7 @@ pub fn gen_span_pass(
             ir::Expression::Text { .. } => {
                 if dom_depth == 0 {
                     sub_spans.push(quote! {
-                        &::hypp::span::TEXT_SPAN
+                        &mut ::hypp::span::SingleTextSpan
                     });
                 }
             }
@@ -359,15 +350,15 @@ pub fn gen_span_pass(
                 if dom_depth == 0 {
                     let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
                     sub_spans.push(quote! {
-                        #field_expr.borrow()
+                        #field_expr.borrow_mut()
                     });
                 }
             }
             ir::Expression::Match { .. } => {
                 if dom_depth == 0 {
-                    let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
+                    let mut_field_ref = MutFieldRef(&statement.field.as_ref().unwrap(), ctx);
                     sub_spans.push(quote! {
-                        #field_ref
+                        #mut_field_ref
                     });
                 }
             }
@@ -376,86 +367,10 @@ pub fn gen_span_pass(
 
     quote! {
         ::hypp::span::pass(
-            &[#(#sub_spans),*],
+            &mut [#(#sub_spans),*],
             __cursor,
             op
         )
-    }
-}
-
-///
-/// Generate the rust program required to appropriately unmount
-///
-pub fn gen_unmount(
-    statements: &[ir::Statement],
-    base_dom_depth: ir::DomDepth,
-    ctx: CodegenCtx,
-) -> TokenStream {
-    let mut stmts: Vec<TokenStream> = vec![];
-
-    for statement in statements {
-        let mut dom_depth = statement.dom_depth.0 - base_dom_depth.0;
-
-        match &statement.expression {
-            ir::Expression::ConstDom(ir::ConstDomProgram { opcodes, .. }) => {
-                for opcode in opcodes {
-                    match opcode {
-                        ir::DomOpCode::EnterElement(tag_name) => {
-                            if dom_depth == 0 {
-                                stmts.push(quote! {
-                                    __cursor.remove_element(#tag_name).unwrap();
-                                });
-                            }
-                            dom_depth += 1;
-                        }
-                        ir::DomOpCode::Text(_) => {
-                            if dom_depth == 0 {
-                                stmts.push(quote! {
-                                    __cursor.remove_text().unwrap();
-                                });
-                            }
-                        }
-                        ir::DomOpCode::ExitElement => {
-                            dom_depth -= 1;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            ir::Expression::AttributeCallback(_) => {
-                let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
-                stmts.push(quote! {
-                    #field_expr.release();
-                });
-            }
-            ir::Expression::Text { .. } => {
-                if dom_depth == 0 {
-                    stmts.push(quote! {
-                        __cursor.remove_text().unwrap();
-                    });
-                }
-            }
-            ir::Expression::Component { .. } => {
-                if dom_depth == 0 {
-                    let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
-                    stmts.push(quote! {
-                        #field_expr.borrow().erase(__cursor);
-                    });
-                }
-            }
-            ir::Expression::Match { .. } => {
-                if dom_depth == 0 {
-                    let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
-                    stmts.push(quote! {
-                        #field_expr.erase(__cursor);
-                    });
-                }
-            }
-        }
-    }
-
-    quote! {
-        #(#stmts)*
     }
 }
 
@@ -899,7 +814,7 @@ fn gen_match_patch(
     let field = statement.field.as_ref().unwrap();
     let field_expr = FieldExpr(field, ctx);
     let field_assign = FieldAssign(field, ctx);
-    let mut_field_ref = MutFieldRef(field, ctx);
+    let mut_field_pat = MutFieldPat(field, ctx);
 
     let patterns_without_variables: Vec<_> = arms
         .iter()
@@ -981,7 +896,7 @@ fn gen_match_patch(
     );
 
     quote! {
-        match (#mut_field_ref, #expr) {
+        match (#mut_field_pat, #expr) {
             #(#arm_pairs)*
         }
     }

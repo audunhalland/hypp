@@ -1,6 +1,7 @@
 use crate::error::Error;
 
 use super::{AsNode, ConstOpCode, Cursor, Hypp, Span};
+use crate::span::{AsSpan, SpanAdapter};
 
 use wasm_bindgen::JsCast;
 
@@ -68,49 +69,41 @@ impl Hypp for WebHypp {
     }
 }
 
-impl Span<WebHypp> for web_sys::Node {
-    fn is_anchored(&self) -> bool {
-        true
-    }
+impl AsSpan for web_sys::Node {
+    type Target = web_sys::Node;
 
-    fn pass_over(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
-        cursor.move_to_following_sibling_of(&self);
-        true
-    }
-
-    fn erase(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
-        cursor.remove_node().unwrap();
-        true
+    fn as_span<'a>(&'a self) -> SpanAdapter<'a, web_sys::Node> {
+        SpanAdapter(self)
     }
 }
 
-impl Span<WebHypp> for web_sys::Element {
-    fn is_anchored(&self) -> bool {
-        true
-    }
+impl AsSpan for web_sys::Element {
+    type Target = web_sys::Node;
 
-    fn pass_over(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
-        cursor.move_to_following_sibling_of(&self);
-        true
-    }
-
-    fn erase(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
-        cursor.remove_node().unwrap();
-        true
+    fn as_span<'a>(&'a self) -> SpanAdapter<'a, web_sys::Node> {
+        SpanAdapter(self)
     }
 }
 
-impl Span<WebHypp> for web_sys::Text {
+impl AsSpan for web_sys::Text {
+    type Target = web_sys::Node;
+
+    fn as_span<'a>(&'a self) -> SpanAdapter<'a, web_sys::Node> {
+        SpanAdapter(self)
+    }
+}
+
+impl<'a> Span<WebHypp> for SpanAdapter<'a, web_sys::Node> {
     fn is_anchored(&self) -> bool {
         true
     }
 
-    fn pass_over(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
-        cursor.move_to_following_sibling_of(&self);
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+        cursor.move_to_following_sibling_of(&self.0);
         true
     }
 
-    fn erase(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.remove_node().unwrap();
         true
     }

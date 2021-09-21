@@ -1,11 +1,19 @@
 use crate::{ConstOpCode, Cursor, Hypp, Span, SpanOp};
 
+pub trait AsSpan: Sized {
+    type Target;
+
+    fn as_span<'a>(&'a self) -> SpanAdapter<'a, Self::Target>;
+}
+
 pub struct SingleTextSpan;
 
-pub static TEXT_SPAN: SingleTextSpan = SingleTextSpan;
-
 #[tracing::instrument(skip(spans, cursor), fields(len = spans.len()))]
-pub fn pass<H: Hypp>(spans: &[&dyn Span<H>], cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+pub fn pass<H: Hypp>(
+    spans: &mut [&mut dyn Span<H>],
+    cursor: &mut dyn Cursor<H>,
+    op: SpanOp,
+) -> bool {
     match op {
         SpanOp::PassOver => {
             let mut result = false;
@@ -28,22 +36,33 @@ pub fn pass<H: Hypp>(spans: &[&dyn Span<H>], cursor: &mut dyn Cursor<H>, op: Spa
     }
 }
 
-impl ConstOpCode {
+#[derive(Debug)]
+pub struct SpanAdapter<'a, T>(pub &'a T);
+
+impl AsSpan for ConstOpCode {
+    type Target = Self;
+
+    fn as_span<'a>(&'a self) -> SpanAdapter<'a, Self> {
+        SpanAdapter(self)
+    }
+}
+
+impl<'c> SpanAdapter<'c, ConstOpCode> {
     fn is_node(&self) -> bool {
-        match self {
+        match &self.0 {
             ConstOpCode::EnterElement(_) | ConstOpCode::ExitElement | ConstOpCode::Text(_) => true,
             _ => false,
         }
     }
 }
 
-impl<H: Hypp> Span<H> for ConstOpCode {
+impl<'a, H: Hypp> Span<H> for SpanAdapter<'a, ConstOpCode> {
     fn is_anchored(&self) -> bool {
         self.is_node()
     }
 
     #[tracing::instrument(skip(cursor))]
-    fn pass_over(&self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         if self.is_node() {
             cursor.move_to_following_sibling().unwrap();
             true
@@ -53,7 +72,7 @@ impl<H: Hypp> Span<H> for ConstOpCode {
     }
 
     #[tracing::instrument(skip(cursor))]
-    fn erase(&self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         if self.is_node() {
             cursor.remove_node().unwrap();
             true
@@ -69,13 +88,13 @@ impl<H: Hypp> Span<H> for SingleTextSpan {
     }
 
     #[tracing::instrument(skip(self, cursor))]
-    fn pass_over(&self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         cursor.move_to_following_sibling().unwrap();
         true
     }
 
     #[tracing::instrument(skip(self, cursor))]
-    fn erase(&self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         cursor.remove_node().unwrap();
         true
     }

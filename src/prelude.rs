@@ -7,4 +7,6 @@ pub use crate::Span;
 pub use crate::handle::Handle;
 pub use crate::handle::ToHandle;
 
+pub use crate::span::AsSpan;
+
 pub use hypp_macros::*;
