@@ -15,11 +15,14 @@ hypp::component! {
     }
 
     <button on_click={Self::handle_click}>
+        /*
         if toggled {
             "Toggled"
         } else {
             "Not toggled"
         }
+        */
+        "Unsure"
     </button>
 }
 
