@@ -190,8 +190,11 @@ pub trait Span<H: Hypp> {
     ///
     /// Delete this span, which must make it zero sized,
     /// e.g. contain no nodes. All the nodes that where within
-    /// the span have to be removed from the tree.
+    /// the span must be removed from the tree.
     /// The location of the cursor must be unchanged when the method returns.
+    ///
+    /// This method is also the opportunity for components to unnest allocated
+    /// resources leading to circular references.
     ///
     fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::Erase)
@@ -217,12 +220,6 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
     /// what direction to take is determined by H.
     ///
     fn pass_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
-
-    ///
-    /// Must be called before dropping a component.
-    /// Used to unnest circular references, etc.
-    ///
-    fn cleanup(&mut self);
 }
 
 ///

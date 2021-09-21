@@ -173,7 +173,6 @@ mod test {
         type Props = LolProps<'p>;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut dyn Cursor<H>) {}
-        fn cleanup(&mut self) {}
     }
 
     struct CompB {
@@ -202,7 +201,6 @@ mod test {
         type Props = LolProps<'p>;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut dyn Cursor<H>) {}
-        fn cleanup(&mut self) {}
     }
 
     #[test]

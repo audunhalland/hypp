@@ -91,8 +91,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         )
     });
 
-    let span_pass = gen_span_pass(
-        &root_block.statements,
+    let span_pass = root_block.gen_span_pass(
         ir::DomDepth(0),
         &root_idents,
         CodegenCtx {
@@ -100,6 +99,19 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             scope: Scope::Component,
         },
     );
+
+    let fn_span_erase = root_block
+        .gen_span_erase(CodegenCtx {
+            function: Function::Erase,
+            scope: Scope::Component,
+        })
+        .map(|stmts| {
+            quote! {
+                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                    #stmts
+                }
+            }
+        });
 
     let handle_path = root_block.handle_kind.handle_path();
 
@@ -147,6 +159,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 #span_pass
             }
+
+            #fn_span_erase
         }
 
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
@@ -156,10 +170,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #props_updater
 
                 self.patch(&__updates, __cursor);
-            }
-
-            fn cleanup(&mut self) {
-                unimplemented!("Must clean all references and call cleanup on all components");
             }
         }
     }

@@ -11,6 +11,7 @@ pub enum Function {
     Mount,
     Patch,
     SpanPass,
+    Erase,
 }
 
 #[derive(Copy, Clone)]
@@ -260,8 +261,7 @@ fn generate_dynamic_span_enum(
             .iter()
             .map(ir::StructField::mut_pattern_tokens);
 
-        let span_pass = gen_span_pass(
-            &block.statements,
+        let span_pass = block.gen_span_pass(
             dom_depth,
             root_idents,
             CodegenCtx {
@@ -276,6 +276,47 @@ fn generate_dynamic_span_enum(
             },
         }
     });
+
+    struct ActuallyDoesErase(bool);
+
+    let span_erase_arms = arms
+        .iter()
+        .map(|ir::Arm { variant, block, .. }| {
+            let pat_fields = block
+                .struct_fields
+                .iter()
+                .map(ir::StructField::mut_pattern_tokens);
+
+            let span_pass = block.gen_span_erase(CodegenCtx {
+                function: Function::SpanPass,
+                scope: Scope::DynamicSpan,
+            });
+
+            (
+                ActuallyDoesErase(span_pass.is_some()),
+                quote! {
+                    Self::#variant { #(#pat_fields)* .. } => {
+                        #span_pass
+                    },
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let span_erase_fn = if span_erase_arms
+        .iter()
+        .any(|(actually_does_erase, _)| actually_does_erase.0)
+    {
+        let arms = span_erase_arms.iter().map(|(_, arm)| arm);
+        quote! {
+            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                #(#arms)*
+                self.pass(__cursor, ::hypp::SpanOp::Erase)
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     quote! {
         enum #dynamic_span_ident<H: ::hypp::Hypp> {
@@ -293,84 +334,9 @@ fn generate_dynamic_span_enum(
                     #(#span_pass_arms)*
                 }
             }
+
+            #span_erase_fn
         }
-    }
-}
-
-///
-/// Generate code for the Span::pass method
-///
-pub fn gen_span_pass(
-    statements: &[ir::Statement],
-    base_dom_depth: ir::DomDepth,
-    root_idents: &RootIdents,
-    ctx: CodegenCtx,
-) -> TokenStream {
-    let mut sub_spans: Vec<TokenStream> = vec![];
-
-    for statement in statements {
-        let mut dom_depth = statement.dom_depth.0 - base_dom_depth.0;
-
-        match &statement.expression {
-            ir::Expression::ConstDom(program) => {
-                let program_ident = program.get_ident(root_idents);
-                for (index, opcode) in program.opcodes.iter().enumerate() {
-                    match opcode {
-                        ir::DomOpCode::EnterElement(_) => {
-                            if dom_depth == 0 {
-                                sub_spans.push(quote! {
-                                    &mut #program_ident[#index].as_span()
-                                });
-                            }
-                            dom_depth += 1;
-                        }
-                        ir::DomOpCode::Text(_) => {
-                            if dom_depth == 0 {
-                                sub_spans.push(quote! {
-                                    &mut #program_ident[#index].as_span()
-                                });
-                            }
-                        }
-                        ir::DomOpCode::ExitElement => {
-                            dom_depth -= 1;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            ir::Expression::AttributeCallback(_) => {}
-            ir::Expression::Text { .. } => {
-                if dom_depth == 0 {
-                    sub_spans.push(quote! {
-                        &mut ::hypp::span::SingleTextSpan
-                    });
-                }
-            }
-            ir::Expression::Component { .. } => {
-                if dom_depth == 0 {
-                    let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
-                    sub_spans.push(quote! {
-                        #field_expr.borrow_mut()
-                    });
-                }
-            }
-            ir::Expression::Match { .. } => {
-                if dom_depth == 0 {
-                    let mut_field_ref = MutFieldRef(&statement.field.as_ref().unwrap(), ctx);
-                    sub_spans.push(quote! {
-                        #mut_field_ref
-                    });
-                }
-            }
-        }
-    }
-
-    quote! {
-        ::hypp::span::pass(
-            &mut [#(#sub_spans),*],
-            __cursor,
-            op
-        )
     }
 }
 
@@ -465,7 +431,7 @@ impl ir::Block {
         // Mount is error-tolerant:
         let err_handler = match &ctx.function {
             Function::Mount => quote! { ? },
-            Function::Patch | Function::SpanPass => quote! { .unwrap() },
+            _ => quote! { .unwrap() },
         };
 
         let cb_collector_local = match self.handle_kind {
@@ -711,6 +677,118 @@ impl ir::Block {
                     #shared_ref_statements
                 }
             }
+        }
+    }
+
+    ///
+    /// Generate code for the Span::pass method
+    ///
+    pub fn gen_span_pass(
+        &self,
+        base_dom_depth: ir::DomDepth,
+        root_idents: &RootIdents,
+        ctx: CodegenCtx,
+    ) -> TokenStream {
+        let mut sub_spans: Vec<TokenStream> = vec![];
+
+        for statement in &self.statements {
+            let mut dom_depth = statement.dom_depth.0 - base_dom_depth.0;
+
+            match &statement.expression {
+                ir::Expression::ConstDom(program) => {
+                    let program_ident = program.get_ident(root_idents);
+                    for (index, opcode) in program.opcodes.iter().enumerate() {
+                        match opcode {
+                            ir::DomOpCode::EnterElement(_) => {
+                                if dom_depth == 0 {
+                                    sub_spans.push(quote! {
+                                        &mut #program_ident[#index].as_span()
+                                    });
+                                }
+                                dom_depth += 1;
+                            }
+                            ir::DomOpCode::Text(_) => {
+                                if dom_depth == 0 {
+                                    sub_spans.push(quote! {
+                                        &mut #program_ident[#index].as_span()
+                                    });
+                                }
+                            }
+                            ir::DomOpCode::ExitElement => {
+                                dom_depth -= 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                ir::Expression::AttributeCallback(_) => {}
+                ir::Expression::Text { .. } => {
+                    if dom_depth == 0 {
+                        sub_spans.push(quote! {
+                            &mut ::hypp::span::SingleTextSpan
+                        });
+                    }
+                }
+                ir::Expression::Component { .. } => {
+                    if dom_depth == 0 {
+                        let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
+                        sub_spans.push(quote! {
+                            #field_expr.borrow_mut()
+                        });
+                    }
+                }
+                ir::Expression::Match { .. } => {
+                    if dom_depth == 0 {
+                        let mut_field_ref = MutFieldRef(&statement.field.as_ref().unwrap(), ctx);
+                        sub_spans.push(quote! {
+                            #mut_field_ref
+                        });
+                    }
+                }
+            }
+        }
+
+        quote! {
+            ::hypp::span::pass(
+                &mut [#(#sub_spans),*],
+                __cursor,
+                op
+            )
+        }
+    }
+
+    ///
+    /// Generate code for the Span::erase method.
+    /// Will return None if no specializion for Erase is needed.
+    /// (i.e. nothing needs to be released)
+    ///
+    pub fn gen_span_erase(&self, ctx: CodegenCtx) -> Option<TokenStream> {
+        let stmts = self
+            .statements
+            .iter()
+            .filter_map(|statement| match &statement.expression {
+                ir::Expression::AttributeCallback(_) => {
+                    let field_expr = FieldExpr(statement.field.as_ref().unwrap(), ctx);
+
+                    Some(quote! {
+                        #field_expr.borrow_mut().release();
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        match self.handle_kind {
+            ir::HandleKind::Unique if stmts.is_empty() => None,
+            ir::HandleKind::Unique => Some(quote! {
+                #(#stmts)*
+                self.pass(__cursor, ::hypp::SpanOp::Erase)
+            }),
+            ir::HandleKind::Shared => Some(quote! {
+                self.__weak_self = None;
+                #(#stmts)*
+                self.pass(__cursor, ::hypp::SpanOp::Erase)
+            }),
         }
     }
 }
