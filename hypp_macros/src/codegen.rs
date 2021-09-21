@@ -83,6 +83,20 @@ impl quote::ToTokens for ir::FieldIdent {
 }
 
 /// A field we want to reference (read)
+pub struct FieldExpr<'f>(&'f ir::FieldIdent, CodegenCtx);
+
+impl<'f> quote::ToTokens for FieldExpr<'f> {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let field = &self.0;
+
+        tokens.extend(match self.1.scope {
+            Scope::Component => quote! { self.#field },
+            Scope::DynamicSpan => quote! { #field },
+        });
+    }
+}
+
+/// A field we want to pass directly to a function as a reference
 pub struct FieldRef<'f>(&'f ir::FieldIdent, CodegenCtx);
 
 impl<'f> quote::ToTokens for FieldRef<'f> {
@@ -90,7 +104,7 @@ impl<'f> quote::ToTokens for FieldRef<'f> {
         let field = &self.0;
 
         tokens.extend(match self.1.scope {
-            Scope::Component => quote! { self.#field },
+            Scope::Component => quote! { &self.#field },
             Scope::DynamicSpan => quote! { #field },
         });
     }
@@ -227,6 +241,29 @@ fn generate_dynamic_span_enum(
         }
     });
 
+    let span_pass_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
+        let field_defs = block
+            .struct_fields
+            .iter()
+            .map(ir::StructField::struct_param_tokens);
+
+        let span_pass = gen_span_pass(
+            &block.statements,
+            dom_depth,
+            root_idents,
+            CodegenCtx {
+                lifecycle: Lifecycle::Unmount,
+                scope: Scope::DynamicSpan,
+            },
+        );
+
+        quote! {
+            Self::#variant { #(#field_defs)* .. } => {
+                #span_pass
+            },
+        }
+    });
+
     let unmount_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
         let field_defs = block
             .struct_fields
@@ -260,20 +297,89 @@ fn generate_dynamic_span_enum(
                 false
             }
 
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
-                false
-            }
-
-            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                unimplemented!()
-            }
-
-            fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
+            fn pass(&self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 match self {
-                    #(#unmount_arms)*
+                    #(#span_pass_arms)*
                 }
             }
         }
+    }
+}
+
+///
+/// Generate code for the Span::pass method
+///
+pub fn gen_span_pass(
+    statements: &[ir::Statement],
+    base_dom_depth: ir::DomDepth,
+    root_idents: &RootIdents,
+    ctx: CodegenCtx,
+) -> TokenStream {
+    let mut sub_spans: Vec<TokenStream> = vec![];
+
+    for statement in statements {
+        let mut dom_depth = statement.dom_depth.0 - base_dom_depth.0;
+
+        match &statement.expression {
+            ir::Expression::ConstDom(program) => {
+                let program_ident = program.get_ident(root_idents);
+                for (index, opcode) in program.opcodes.iter().enumerate() {
+                    match opcode {
+                        ir::DomOpCode::EnterElement(_) => {
+                            if dom_depth == 0 {
+                                sub_spans.push(quote! {
+                                    &#program_ident[#index]
+                                });
+                            }
+                            dom_depth += 1;
+                        }
+                        ir::DomOpCode::Text(_) => {
+                            if dom_depth == 0 {
+                                sub_spans.push(quote! {
+                                    &#program_ident[#index]
+                                });
+                            }
+                        }
+                        ir::DomOpCode::ExitElement => {
+                            dom_depth -= 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            ir::Expression::AttributeCallback(_) => {}
+            ir::Expression::Text { .. } => {
+                if dom_depth == 0 {
+                    sub_spans.push(quote! {
+                        &::hypp::span::TEXT_SPAN
+                    });
+                }
+            }
+            ir::Expression::Component { .. } => {
+                if dom_depth == 0 {
+                    let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
+                    sub_spans.push(quote! {
+                        #field_expr.borrow()
+                    });
+                }
+            }
+            ir::Expression::Match { .. } => {
+                if dom_depth == 0 {
+                    let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
+                    sub_spans.push(quote! {
+                        #field_ref
+                    });
+                }
+            }
+        }
+    }
+
+    quote! {
+        ::hypp::span::pass(
+            &[#(#sub_spans),*],
+            __cursor,
+            op
+        )
     }
 }
 
@@ -317,9 +423,9 @@ pub fn gen_unmount(
                 }
             }
             ir::Expression::AttributeCallback(_) => {
-                let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
+                let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
                 stmts.push(quote! {
-                    #field_ref.release();
+                    #field_expr.release();
                 });
             }
             ir::Expression::Text { .. } => {
@@ -331,17 +437,17 @@ pub fn gen_unmount(
             }
             ir::Expression::Component { .. } => {
                 if dom_depth == 0 {
-                    let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
+                    let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
-                        #field_ref.borrow_mut().unmount(__cursor);
+                        #field_expr.borrow().erase(__cursor);
                     });
                 }
             }
             ir::Expression::Match { .. } => {
                 if dom_depth == 0 {
-                    let field_ref = FieldRef(&statement.field.as_ref().unwrap(), ctx);
+                    let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
                     stmts.push(quote! {
-                        #field_ref.unmount(__cursor);
+                        #field_expr.erase(__cursor);
                     });
                 }
             }
@@ -682,14 +788,14 @@ impl ir::Statement {
                 if let Some(field) = &self.field {
                     // OPTIMIZATION: Can advance the cursor directly!
 
-                    let field_ref = FieldRef(field, ctx);
+                    let field_expr = FieldExpr(field, ctx);
 
                     match program.last_node_opcode() {
                         Some(ir::DomOpCode::EnterElement(_)) => quote! {
-                            __cursor.move_to_children_of(&#field_ref);
+                            __cursor.move_to_children_of(&#field_expr);
                         },
                         Some(ir::DomOpCode::ExitElement | ir::DomOpCode::Text(_)) => quote! {
-                            __cursor.move_to_following_sibling_of(#field_ref.as_node());
+                            __cursor.move_to_following_sibling_of(#field_expr.as_node());
                         },
                         _ => panic!(),
                     }
@@ -703,14 +809,14 @@ impl ir::Statement {
             }
             ir::Expression::AttributeCallback(_) => quote! {},
             ir::Expression::Text(expr) => {
-                let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
+                let field_expr = FieldExpr(self.field.as_ref().unwrap(), ctx);
                 let test = self.param_deps.update_test_tokens();
 
                 quote! {
                     if #test {
-                        H::set_text(&#field_ref, #expr.as_ref());
+                        H::set_text(&#field_expr, #expr.as_ref());
                     }
-                    __cursor.move_to_following_sibling_of(#field_ref.as_node());
+                    __cursor.move_to_following_sibling_of(#field_expr.as_node());
                 }
             }
             ir::Expression::Component { path, props } => match &self.param_deps {
@@ -734,12 +840,12 @@ impl ir::Statement {
                     });
                     let props_path = path.props_path();
 
-                    let field_ref = FieldRef(self.field.as_ref().unwrap(), ctx);
+                    let field_expr = FieldExpr(self.field.as_ref().unwrap(), ctx);
                     let test = self.param_deps.update_test_tokens();
 
                     quote! {
                         if #test {
-                            #field_ref.borrow_mut().pass_props(
+                            #field_expr.borrow_mut().pass_props(
                                 #props_path {
                                     #(#prop_list)*
                                 },
@@ -748,7 +854,7 @@ impl ir::Statement {
                         } else {
                             // Nothing has changed, but the cursor must pass
                             // over the component. This should be very cheap.
-                            #field_ref.borrow_mut().pass_over(__cursor);
+                            #field_expr.borrow_mut().pass_over(__cursor);
                         }
                     }
                 }
@@ -791,7 +897,7 @@ fn gen_match_patch(
     let dynamic_span_ident =
         dynamic_span_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
     let field = statement.field.as_ref().unwrap();
-    let field_ref = FieldRef(field, ctx);
+    let field_expr = FieldExpr(field, ctx);
     let field_assign = FieldAssign(field, ctx);
     let mut_field_ref = MutFieldRef(field, ctx);
 
@@ -865,7 +971,7 @@ fn gen_match_patch(
 
                 // Non-matching variant:
                 (#(#nonmatching_patterns)|*, #pattern) => {
-                    #field_ref.unmount(__cursor);
+                    #field_expr.erase(__cursor);
                     #mount
 
                     #field_assign = __mounted;

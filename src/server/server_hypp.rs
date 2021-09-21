@@ -56,13 +56,14 @@ impl Span<ServerHypp> for RcNode {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+    fn pass_over(&self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
         cursor.move_to_following_sibling_of(&self);
         true
     }
 
-    fn unmount(&mut self, cursor: &mut dyn Cursor<ServerHypp>) {
-        cursor.remove_node();
+    fn erase(&self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+        cursor.remove_node().unwrap();
+        true
     }
 }
 
@@ -230,6 +231,15 @@ impl Cursor<ServerHypp> for ServerBuilder {
         self.element = element.clone();
         // Start at the end of the child list:
         self.next_child = None;
+    }
+
+    fn move_to_following_sibling(&mut self) -> Result<(), Error> {
+        if let Some(child) = self.next_child.take() {
+            self.next_child = child.prev_sibling();
+            Ok(())
+        } else {
+            Err(Error::Move)
+        }
     }
 
     fn move_to_following_sibling_of(&mut self, node: &RcNode) {

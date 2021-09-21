@@ -91,9 +91,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         )
     });
 
-    let unmount_stmts = gen_unmount(
+    let span_pass = gen_span_pass(
         &root_block.statements,
         ir::DomDepth(0),
+        &root_idents,
         CodegenCtx {
             lifecycle: Lifecycle::Unmount,
             scope: Scope::Component,
@@ -143,12 +144,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 unimplemented!()
             }
 
-            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                unimplemented!()
-            }
-
-            fn unmount(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) {
-                #unmount_stmts
+            fn pass(&self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                #span_pass
             }
         }
 
@@ -159,6 +156,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #props_updater
 
                 self.patch(&__updates, __cursor);
+            }
+
+            fn cleanup(&mut self) {
+                unimplemented!("Must clean all references and call cleanup on all components");
             }
         }
     }

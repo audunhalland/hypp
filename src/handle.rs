@@ -44,7 +44,7 @@ pub trait Handle<T>: Sized {
 }
 
 /// A unique (non-shared) handle.
-pub struct Unique<C>(C);
+pub struct Unique<T>(T);
 
 impl<T> Unique<T> {
     pub fn new(val: T) -> Self {
@@ -53,7 +53,7 @@ impl<T> Unique<T> {
 }
 
 impl<T> Handle<T> for Unique<T> {
-    type Boxed = Unique<Box<T>>;
+    type Boxed = UniqueBoxed<T>;
 
     type Ref<'a>
     where
@@ -66,7 +66,35 @@ impl<T> Handle<T> for Unique<T> {
     = &'a mut T;
 
     fn into_boxed(self) -> Self::Boxed {
-        Unique::new(Box::new(self.0))
+        UniqueBoxed(Box::new(self.0))
+    }
+
+    fn borrow<'a>(&'a self) -> &'a T {
+        &self.0
+    }
+
+    fn borrow_mut<'a>(&'a mut self) -> &'a mut T {
+        &mut self.0
+    }
+}
+
+pub struct UniqueBoxed<C>(Box<C>);
+
+impl<T> Handle<T> for UniqueBoxed<T> {
+    type Boxed = Self;
+
+    type Ref<'a>
+    where
+        Self: 'a,
+    = &'a T;
+
+    type RefMut<'a>
+    where
+        Self: 'a,
+    = &'a mut T;
+
+    fn into_boxed(self) -> Self::Boxed {
+        self
     }
 
     fn borrow<'a>(&'a self) -> &'a T {
@@ -145,6 +173,7 @@ mod test {
         type Props = LolProps<'p>;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut dyn Cursor<H>) {}
+        fn cleanup(&mut self) {}
     }
 
     struct CompB {
@@ -173,6 +202,7 @@ mod test {
         type Props = LolProps<'p>;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut dyn Cursor<H>) {}
+        fn cleanup(&mut self) {}
     }
 
     #[test]

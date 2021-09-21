@@ -10,7 +10,7 @@
 pub mod error;
 pub mod handle;
 pub mod server;
-pub mod span_util;
+pub mod span;
 pub mod state_ref;
 pub mod web;
 
@@ -118,6 +118,8 @@ pub trait Cursor<H: Hypp> {
     /// This sets up the cursor to traverse the element's child list.
     fn move_to_children_of(&mut self, element: &H::Element);
 
+    fn move_to_following_sibling(&mut self) -> Result<(), Error>;
+
     /// Advance cursor directly to a location in a child list.
     fn move_to_following_sibling_of(&mut self, node: &H::Node);
 
@@ -139,7 +141,7 @@ pub trait Cursor<H: Hypp> {
 
 pub enum SpanOp {
     PassOver,
-    Unmount,
+    Erase,
 }
 
 /// Something that spans nodes in a DOM-like tree.
@@ -169,7 +171,7 @@ pub trait Span<H: Hypp> {
     /// This method is reserved for the specific pass methods below.
     /// It exists so that a Span impl can implement pass generically,
     /// if it constists only of sub spans.
-    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+    fn pass(&self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
         false
     }
 
@@ -179,18 +181,18 @@ pub trait Span<H: Hypp> {
     /// The direction of the pass must in accordance with Hypp implementation.
     ///
     /// The method must return whether it was able to pass anything.
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::PassOver)
     }
 
     ///
-    /// Unmount this span, which must make it zero sized,
+    /// Delete this span, which must make it zero sized,
     /// e.g. contain no nodes. All the nodes that where within
     /// the span have to be removed from the tree.
     /// The location of the cursor must be unchanged when the method returns.
     ///
-    fn unmount(&mut self, cursor: &mut dyn Cursor<H>) {
-        self.pass(cursor, SpanOp::Unmount);
+    fn erase(&self, cursor: &mut dyn Cursor<H>) -> bool {
+        self.pass(cursor, SpanOp::Erase)
     }
 }
 
@@ -213,6 +215,12 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
     /// what direction to take is determined by H.
     ///
     fn pass_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
+
+    ///
+    /// Must be called before dropping a component.
+    /// Used to unnest circular references, etc.
+    ///
+    fn cleanup(&mut self);
 }
 
 ///

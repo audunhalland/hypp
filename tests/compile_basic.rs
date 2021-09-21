@@ -150,7 +150,7 @@ fn render_conditional_server() {
         "<body><div><span>Hello</span><a>World</a></div></body>"
     );
 
-    c.borrow_mut().unmount(&mut hypp.builder_at_body());
+    c.borrow_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -220,7 +220,7 @@ fn render_iflet_server() {
 
     assert_eq!(hypp.render(), "<body><article/></body>");
 
-    c.borrow_mut().unmount(&mut hypp.builder_at_body());
+    c.borrow().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -235,7 +235,7 @@ component! {
     </article>
 }
 
-component! {
+component_dbg! {
     Fragment1(perhaps: bool) {}
 
     <div>"first"</div>
@@ -268,7 +268,7 @@ fn render_fragment1() {
 
     assert_eq!(hypp.render(), "<body><div>first</div><p>third</p></body>");
 
-    c.borrow_mut().unmount(&mut hypp.builder_at_body());
+    c.borrow_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -300,7 +300,7 @@ fn render_recursive_server() {
 
     assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 
-    c.borrow_mut().unmount(&mut hypp.builder_at_body());
+    c.borrow_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }

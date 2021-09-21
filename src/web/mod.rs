@@ -73,13 +73,14 @@ impl Span<WebHypp> for web_sys::Node {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+    fn pass_over(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.move_to_following_sibling_of(&self);
         true
     }
 
-    fn unmount(&mut self, cursor: &mut dyn Cursor<WebHypp>) {
+    fn erase(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.remove_node().unwrap();
+        true
     }
 }
 
@@ -88,13 +89,14 @@ impl Span<WebHypp> for web_sys::Element {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+    fn pass_over(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.move_to_following_sibling_of(&self);
         true
     }
 
-    fn unmount(&mut self, cursor: &mut dyn Cursor<WebHypp>) {
+    fn erase(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.remove_node().unwrap();
+        true
     }
 }
 
@@ -103,13 +105,14 @@ impl Span<WebHypp> for web_sys::Text {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+    fn pass_over(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.move_to_following_sibling_of(&self);
         true
     }
 
-    fn unmount(&mut self, cursor: &mut dyn Cursor<WebHypp>) {
+    fn erase(&self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.remove_node().unwrap();
+        true
     }
 }
 
@@ -308,9 +311,18 @@ impl Cursor<WebHypp> for WebBuilder {
         self.next_child = element.first_child();
     }
 
+    fn move_to_following_sibling(&mut self) -> Result<(), Error> {
+        if let Some(child) = self.next_child.take() {
+            self.next_child = child.previous_sibling();
+            Ok(())
+        } else {
+            Err(Error::Move)
+        }
+    }
+
     fn move_to_following_sibling_of(&mut self, node: &web_sys::Node) {
         self.element = node.parent_node().unwrap().try_into_element().unwrap();
-        self.next_child = node.next_sibling();
+        self.next_child = Some(node.clone());
     }
 
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {
