@@ -140,6 +140,7 @@ pub trait Cursor<H: Hypp> {
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum SpanOp {
     PassOver,
     Erase,

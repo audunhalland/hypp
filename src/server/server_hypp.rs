@@ -234,12 +234,8 @@ impl Cursor<ServerHypp> for ServerBuilder {
     }
 
     fn move_to_following_sibling(&mut self) -> Result<(), Error> {
-        if let Some(child) = self.next_child.take() {
-            self.next_child = child.prev_sibling();
-            Ok(())
-        } else {
-            Err(Error::Move)
-        }
+        self.next_child = Some(self.current_child().expect("Moved past the first childa"));
+        Ok(())
     }
 
     fn move_to_following_sibling_of(&mut self, node: &RcNode) {

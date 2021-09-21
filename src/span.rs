@@ -5,7 +5,8 @@ pub struct SingleTextSpan;
 pub static TEXT_SPAN: SingleTextSpan = SingleTextSpan;
 
 pub fn pass<H: Hypp>(spans: &[&dyn Span<H>], cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
-    match op {
+    println!("enter {:?} pass for {} spans", op, spans.len());
+    let result = match op {
         SpanOp::PassOver => {
             let mut result = false;
             for span in spans {
@@ -24,7 +25,9 @@ pub fn pass<H: Hypp>(spans: &[&dyn Span<H>], cursor: &mut dyn Cursor<H>, op: Spa
             }
             result
         }
-    }
+    };
+    println!("exit  {:?} pass", op);
+    result
 }
 
 impl ConstOpCode {
@@ -51,6 +54,7 @@ impl<H: Hypp> Span<H> for ConstOpCode {
     }
 
     fn erase(&self, cursor: &mut dyn Cursor<H>) -> bool {
+        println!("Erase {:?}", self);
         if self.is_node() {
             cursor.remove_node().unwrap();
             true
@@ -66,11 +70,13 @@ impl<H: Hypp> Span<H> for SingleTextSpan {
     }
 
     fn pass_over(&self, cursor: &mut dyn Cursor<H>) -> bool {
+        println!("SingleTextSpan::pass_over");
         cursor.move_to_following_sibling().unwrap();
         true
     }
 
     fn erase(&self, cursor: &mut dyn Cursor<H>) -> bool {
+        println!("SingleTextSpan::erase");
         cursor.remove_node().unwrap();
         true
     }

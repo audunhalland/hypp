@@ -34,50 +34,58 @@ struct Test {
     comp: <ComponentBeforeConditional<hypp::server::ServerHypp> as ToHandle>::Handle,
 }
 
+fn props_from(props: (u8, u8, u8)) -> __ComponentBeforeConditionalProps<'static> {
+    let foo = props.0 > 0;
+    let bar = props.1 > 0;
+    let baz = props.2 > 0;
+
+    __ComponentBeforeConditionalProps {
+        foo: if foo { Some("foo") } else { None },
+        bar: if bar { Some("bar") } else { None },
+        baz: if baz { Some("baz") } else { None },
+    }
+}
+
 impl Test {
-    fn new() -> Self {
+    fn new(props: (u8, u8, u8)) -> Self {
         let hypp = hypp::server::ServerHypp::new();
-        let comp = ComponentBeforeConditional::mount(
-            __ComponentBeforeConditionalProps {
-                foo: None,
-                bar: None,
-                baz: None,
-            },
-            &mut hypp.builder_at_body(),
-        )
-        .unwrap();
+        let comp =
+            ComponentBeforeConditional::mount(props_from(props), &mut hypp.builder_at_body())
+                .unwrap();
 
         Self { hypp, comp }
     }
 
     fn verify(&mut self, props: (u8, u8, u8)) {
+        self.comp
+            .borrow_mut()
+            .pass_props(props_from(props), &mut self.hypp.builder_at_body());
+
+        self.verify_render(props);
+    }
+
+    fn verify_render(&self, props: (u8, u8, u8)) {
         let foo = props.0 > 0;
         let bar = props.1 > 0;
         let baz = props.2 > 0;
 
-        let expected = format!(
-            "<body>{}{}{}</body>",
-            if foo { "foo" } else { "" },
-            if bar { "bar" } else { "" },
-            if baz { "baz" } else { "" },
-        );
-
-        self.comp.borrow_mut().pass_props(
-            __ComponentBeforeConditionalProps {
-                foo: if foo { Some("foo") } else { None },
-                bar: if bar { Some("bar") } else { None },
-                baz: if baz { Some("baz") } else { None },
-            },
-            &mut self.hypp.builder_at_body(),
-        );
-
+        let expected = if !foo && !bar && !baz {
+            "<body/>".to_string()
+        } else {
+            format!(
+                "<body>{}{}{}</body>",
+                if foo { "foo" } else { "" },
+                if bar { "bar" } else { "" },
+                if baz { "baz" } else { "" },
+            )
+        };
         assert_eq!(self.hypp.render(), expected);
     }
 }
 
 #[test]
 fn stress_test_sequential_conditionals() {
-    let mut test = Test::new();
+    let mut test = Test::new((0, 0, 0));
 
     // basics 1: turning on and off in isolation
     test.verify((0, 0, 0));
