@@ -109,6 +109,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             quote! {
                 fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                     #stmts
+                    self.pass(__cursor, ::hypp::SpanOp::Erase)
                 }
             }
         });
@@ -471,6 +472,22 @@ fn create_shim_support(
         });
 
     quote! {
+        fn bind_callbacks(
+            &self,
+            callbacks: Vec<(
+                ::hypp::SharedCallback<H>,
+                &'static dyn Fn(&mut #shim_ident<'_>),
+            )>
+        ) {
+            let zelf = self.__weak_self.as_ref().and_then(|weak| weak.upgrade()).unwrap();
+            for (callback, method) in callbacks.into_iter() {
+                let zelf = zelf.clone();
+                callback.borrow_mut().bind(Box::new(move || {
+                    zelf.borrow_mut().shim_updater_trampoline(method)
+                }))
+            }
+        }
+
         fn shim_updater_trampoline(&mut self, cb: impl Fn(&mut #shim_ident)) {
             let mut __updates: [bool; #n_params] = [false; #n_params];
 

@@ -310,7 +310,9 @@ fn generate_dynamic_span_enum(
         let arms = span_erase_arms.iter().map(|(_, arm)| arm);
         quote! {
             fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                #(#arms)*
+                match self {
+                    #(#arms)*
+                }
                 self.pass(__cursor, ::hypp::SpanOp::Erase)
             }
         }
@@ -635,14 +637,8 @@ impl ir::Block {
         let shared_ref_statements = match self.handle_kind {
             ir::HandleKind::Shared => {
                 quote! {
-                    for (callback, method) in __cb_collector.into_iter() {
-                        let __mounted = __mounted.clone();
-                        callback.borrow_mut().bind(Box::new(move || {
-                            __mounted.borrow_mut().shim_updater_trampoline(method)
-                        }))
-                    }
-
                     __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
+                    __mounted.borrow().bind_callbacks(__cb_collector);
                 }
             }
             ir::HandleKind::Unique => quote! {},
@@ -782,12 +778,10 @@ impl ir::Block {
             ir::HandleKind::Unique if stmts.is_empty() => None,
             ir::HandleKind::Unique => Some(quote! {
                 #(#stmts)*
-                self.pass(__cursor, ::hypp::SpanOp::Erase)
             }),
             ir::HandleKind::Shared => Some(quote! {
                 self.__weak_self = None;
                 #(#stmts)*
-                self.pass(__cursor, ::hypp::SpanOp::Erase)
             }),
         }
     }
