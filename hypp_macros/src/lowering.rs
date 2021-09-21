@@ -37,7 +37,7 @@ pub fn lower_root_node(
     let mut ctx = Context {
         dom_program_count: 0,
         field_count: 0,
-        enum_count: 0,
+        dynamic_span_count: 0,
         current_dom_depth: 0,
         direction,
     };
@@ -71,7 +71,7 @@ pub fn lower_root_node(
 pub struct Context {
     dom_program_count: u16,
     field_count: u16,
-    enum_count: u16,
+    dynamic_span_count: u16,
 
     current_dom_depth: u16,
 
@@ -91,9 +91,9 @@ impl Context {
         ir::FieldIdent::Id(index)
     }
 
-    fn next_enum_index(&mut self) -> u16 {
-        let index = self.enum_count;
-        self.enum_count += 1;
+    fn next_dynamic_span_index(&mut self) -> u16 {
+        let index = self.dynamic_span_count;
+        self.dynamic_span_count += 1;
         index
     }
 }
@@ -402,7 +402,7 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         let expr = the_match.expr;
         let field = ctx.next_field_id();
-        let enum_type = ir::StructFieldType::Enum(ctx.next_enum_index());
+        let dynamic_span_type = ir::StructFieldType::DynamicSpan(ctx.next_dynamic_span_index());
 
         let arms: Vec<_> = the_match
             .arms
@@ -419,7 +419,7 @@ impl BlockBuilder {
                 arm_builder.lower_ast(arm.node, &arm_scope, ctx)?;
 
                 Ok(ir::Arm {
-                    enum_variant_ident: quote::format_ident!("V{}", index),
+                    variant: quote::format_ident!("V{}", index),
                     pattern: arm.pat,
                     block: arm_builder.to_block(ctx),
                 })
@@ -439,7 +439,7 @@ impl BlockBuilder {
                 dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps,
                 expression: ir::Expression::Match {
-                    enum_type: enum_type.clone(),
+                    dynamic_span_type: dynamic_span_type.clone(),
                     expr,
                     arms,
                 },
@@ -449,7 +449,7 @@ impl BlockBuilder {
 
         self.struct_fields.push(ir::StructField {
             ident: field,
-            ty: enum_type,
+            ty: dynamic_span_type,
         });
 
         Ok(())

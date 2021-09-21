@@ -51,7 +51,7 @@ pub enum StructFieldType {
     Callback,
     Param(param::Param),
     Component(ComponentPath),
-    Enum(u16),
+    DynamicSpan(u16),
 }
 
 // A type path representing another component
@@ -153,7 +153,7 @@ pub enum Expression {
 
     /// A match expression (something which is conditional)
     Match {
-        enum_type: StructFieldType,
+        dynamic_span_type: StructFieldType,
         expr: syn::Expr,
         arms: Vec<Arm>,
     },
@@ -197,7 +197,7 @@ pub enum DomOpCode {
 /// An arm of a conditional
 pub struct Arm {
     /// The ident of the enum variant to instantiate
-    pub enum_variant_ident: syn::Ident,
+    pub variant: syn::Ident,
     /// The value match pattern matching this arm
     pub pattern: syn::Pat,
     /// The code 'block' to execute

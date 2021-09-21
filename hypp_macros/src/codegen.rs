@@ -16,7 +16,7 @@ pub enum Lifecycle {
 #[derive(Copy, Clone)]
 pub enum Scope {
     Component,
-    Enum,
+    DynamicSpan,
 }
 
 #[derive(Clone, Copy)]
@@ -35,8 +35,8 @@ pub struct RootIdents {
 
 pub enum ConstructorKind<'a> {
     Component,
-    Enum {
-        enum_type: &'a ir::StructFieldType,
+    DynamicSpan {
+        dynamic_span_type: &'a ir::StructFieldType,
         variant: &'a syn::Ident,
     },
 }
@@ -91,7 +91,7 @@ impl<'f> quote::ToTokens for FieldRef<'f> {
 
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { self.#field },
-            Scope::Enum => quote! { #field },
+            Scope::DynamicSpan => quote! { #field },
         });
     }
 }
@@ -105,7 +105,7 @@ impl<'f> quote::ToTokens for MutFieldRef<'f> {
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { &mut self.#field },
             // Field has already been marked as a `ref mut` in the pattern binding:
-            Scope::Enum => quote! { &#field },
+            Scope::DynamicSpan => quote! { &#field },
         });
     }
 }
@@ -119,7 +119,7 @@ impl<'f> quote::ToTokens for FieldAssign<'f> {
 
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { self.#field },
-            Scope::Enum => quote! { *#field },
+            Scope::DynamicSpan => quote! { *#field },
         });
     }
 }
@@ -176,7 +176,7 @@ pub fn generate_dom_program(
     }
 }
 
-pub fn collect_variant_enums(
+pub fn collect_dynamic_span_enums(
     statements: &[ir::Statement],
     root_idents: &RootIdents,
     output: &mut Vec<TokenStream>,
@@ -184,16 +184,18 @@ pub fn collect_variant_enums(
     for statement in statements {
         match &statement.expression {
             ir::Expression::Match {
-                enum_type, arms, ..
+                dynamic_span_type,
+                arms,
+                ..
             } => {
-                output.push(generate_variant_enum(
-                    enum_type,
+                output.push(generate_dynamic_span_enum(
+                    dynamic_span_type,
                     arms,
                     statement.dom_depth,
                     root_idents,
                 ));
                 for arm in arms {
-                    collect_variant_enums(&arm.block.statements, root_idents, output);
+                    collect_dynamic_span_enums(&arm.block.statements, root_idents, output);
                 }
             }
             _ => {}
@@ -201,63 +203,67 @@ pub fn collect_variant_enums(
     }
 }
 
-fn generate_variant_enum(
-    enum_type: &ir::StructFieldType,
+fn generate_dynamic_span_enum(
+    dynamic_span_type: &ir::StructFieldType,
     arms: &[ir::Arm],
     dom_depth: ir::DomDepth,
     root_idents: &RootIdents,
 ) -> TokenStream {
-    let enum_ident = enum_type.to_tokens(root_idents, Scope::Enum, WithGenerics(false));
+    let dynamic_span_ident =
+        dynamic_span_type.to_tokens(root_idents, Scope::DynamicSpan, WithGenerics(false));
 
     let variant_defs = arms.iter().map(|arm| {
-        let ident = &arm.enum_variant_ident;
+        let variant = &arm.variant;
         let struct_field_defs = arm
             .block
             .struct_fields
             .iter()
-            .map(|field| field.field_def_tokens(root_idents, Scope::Enum));
+            .map(|field| field.field_def_tokens(root_idents, Scope::DynamicSpan));
 
         quote! {
-            #ident {
+            #variant {
                 #(#struct_field_defs)*
             },
         }
     });
 
-    let unmount_arms = arms.iter().map(
-        |ir::Arm {
-             enum_variant_ident,
-             block,
-             ..
-         }| {
-            let field_defs = block
-                .struct_fields
-                .iter()
-                .map(ir::StructField::struct_param_tokens);
+    let unmount_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
+        let field_defs = block
+            .struct_fields
+            .iter()
+            .map(ir::StructField::struct_param_tokens);
 
-            let unmount_stmts = gen_unmount(
-                &block.statements,
-                dom_depth,
-                CodegenCtx {
-                    lifecycle: Lifecycle::Unmount,
-                    scope: Scope::Enum,
-                },
-            );
+        let unmount_stmts = gen_unmount(
+            &block.statements,
+            dom_depth,
+            CodegenCtx {
+                lifecycle: Lifecycle::Unmount,
+                scope: Scope::DynamicSpan,
+            },
+        );
 
-            quote! {
-                Self::#enum_variant_ident { #(#field_defs)* .. } => {
-                    #unmount_stmts
-                },
-            }
-        },
-    );
+        quote! {
+            Self::#variant { #(#field_defs)* .. } => {
+                #unmount_stmts
+            },
+        }
+    });
 
     quote! {
-        enum #enum_ident<H: ::hypp::Hypp> {
+        enum #dynamic_span_ident<H: ::hypp::Hypp> {
             #(#variant_defs)*
         }
 
-        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #enum_ident<H> {
+        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #dynamic_span_ident<H> {
+            fn is_anchored(&self) -> bool {
+                // not anchored, by definition
+                false
+            }
+
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                false
+            }
+
             fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 unimplemented!()
             }
@@ -390,7 +396,7 @@ impl ir::StructField {
             // mutable types
             ir::StructFieldType::Param(_)
             | ir::StructFieldType::Component(_)
-            | ir::StructFieldType::Enum(_) => quote! {
+            | ir::StructFieldType::DynamicSpan(_) => quote! {
                 ref mut #ident,
             },
             // immutable types
@@ -511,34 +517,34 @@ impl ir::Block {
                             Scope::Component => mount_expr,
                             // If inside an enum, the component is _conditional_,
                             // and might be used for recursion:
-                            Scope::Enum => {
+                            Scope::DynamicSpan => {
                                 quote! { #mount_expr.into_boxed() }
                             }
                         },
                     }
                 }
                 ir::Expression::Match {
-                    enum_type,
+                    dynamic_span_type,
                     expr,
                     arms,
                     ..
                 } => {
                     let arms = arms.iter().map(
                         |ir::Arm {
-                             enum_variant_ident,
+                             variant,
                              pattern,
                              block,
                              ..
                          }| {
                             let mount = block.gen_mount(
-                                ConstructorKind::Enum {
-                                    enum_type,
-                                    variant: enum_variant_ident,
+                                ConstructorKind::DynamicSpan {
+                                    dynamic_span_type,
+                                    variant,
                                 },
                                 &root_idents,
                                 OwnedProps(None),
                                 CodegenCtx {
-                                    scope: Scope::Enum,
+                                    scope: Scope::DynamicSpan,
                                     ..ctx
                                 },
                             );
@@ -581,11 +587,15 @@ impl ir::Block {
 
         let constructor_path = match constructor_kind {
             ConstructorKind::Component => quote! { Self },
-            ConstructorKind::Enum { enum_type, variant } => {
-                let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+            ConstructorKind::DynamicSpan {
+                dynamic_span_type,
+                variant,
+            } => {
+                let dynamic_span_ident =
+                    dynamic_span_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
 
                 quote! {
-                    #enum_ident::#variant
+                    #dynamic_span_ident::#variant
                 }
             }
         };
@@ -744,12 +754,12 @@ impl ir::Statement {
                 }
             },
             ir::Expression::Match {
-                enum_type,
+                dynamic_span_type,
                 expr,
                 arms,
             } => match &self.param_deps {
                 ir::ParamDeps::Const => quote! {},
-                _ => gen_match_patch(self, enum_type, expr, arms, root_idents, ctx),
+                _ => gen_match_patch(self, dynamic_span_type, expr, arms, root_idents, ctx),
             },
         }
     }
@@ -772,13 +782,14 @@ impl ir::Statement {
 /// generated from `if let Some(stuff) = stuff`.
 fn gen_match_patch(
     statement: &ir::Statement,
-    enum_type: &ir::StructFieldType,
+    dynamic_span_type: &ir::StructFieldType,
     expr: &syn::Expr,
     arms: &[ir::Arm],
     root_idents: &RootIdents,
     ctx: CodegenCtx,
 ) -> TokenStream {
-    let enum_ident = enum_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+    let dynamic_span_ident =
+        dynamic_span_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
     let field = statement.field.as_ref().unwrap();
     let field_ref = FieldRef(field, ctx);
     let field_assign = FieldAssign(field, ctx);
@@ -786,15 +797,11 @@ fn gen_match_patch(
 
     let patterns_without_variables: Vec<_> = arms
         .iter()
-        .map(
-            |ir::Arm {
-                 enum_variant_ident, ..
-             }| {
-                quote! {
-                    #enum_ident::#enum_variant_ident { .. }
-                }
-            },
-        )
+        .map(|ir::Arm { variant, .. }| {
+            quote! {
+                #dynamic_span_ident::#variant { .. }
+            }
+        })
         .collect();
 
     // make "arm pairs" for every variant, a pair consists of one match and one mismatch.
@@ -802,7 +809,7 @@ fn gen_match_patch(
         |(
             arm_index,
             ir::Arm {
-                enum_variant_ident,
+                variant,
                 pattern,
                 block,
                 ..
@@ -817,46 +824,47 @@ fn gen_match_patch(
                 statement.gen_patch(
                     root_idents,
                     CodegenCtx {
-                        scope: Scope::Enum,
+                        scope: Scope::DynamicSpan,
                         ..ctx
                     },
                 )
             });
 
-            let nonmatching_enum_patterns = patterns_without_variables
-                .iter()
-                .enumerate()
-                .filter_map(
-                    |(i, pattern)| {
-                        if i == arm_index {
-                            None
-                        } else {
-                            Some(pattern)
-                        }
-                    },
-                );
+            let nonmatching_patterns =
+                patterns_without_variables
+                    .iter()
+                    .enumerate()
+                    .filter_map(
+                        |(i, pattern)| {
+                            if i == arm_index {
+                                None
+                            } else {
+                                Some(pattern)
+                            }
+                        },
+                    );
 
             let mount = block.gen_mount(
-                ConstructorKind::Enum {
-                    enum_type,
-                    variant: enum_variant_ident,
+                ConstructorKind::DynamicSpan {
+                    dynamic_span_type,
+                    variant,
                 },
                 &root_idents,
                 OwnedProps(None),
                 CodegenCtx {
-                    scope: Scope::Enum,
+                    scope: Scope::DynamicSpan,
                     ..ctx
                 },
             );
 
             quote! {
                 // Matching variant:
-                (#enum_ident::#enum_variant_ident { #(#fields)* .. }, #pattern) => {
+                (#dynamic_span_ident::#variant { #(#fields)* .. }, #pattern) => {
                     #(#patch_stmts)*
                 },
 
                 // Non-matching variant:
-                (#(#nonmatching_enum_patterns)|*, #pattern) => {
+                (#(#nonmatching_patterns)|*, #pattern) => {
                     #field_ref.unmount(__cursor);
                     #mount
 
@@ -922,17 +930,17 @@ impl ir::StructFieldType {
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
-                    Scope::Enum => quote! {
-                        <<#type_path #generics as ::hypp::handle::ToHandle>::Handle as ::hypp::handle::Handle<#type_path #generics>>::Boxed
-                    },
                     Scope::Component => {
                         quote! { <#type_path #generics as ::hypp::handle::ToHandle>::Handle }
                     }
+                    Scope::DynamicSpan => quote! {
+                        <<#type_path #generics as ::hypp::handle::ToHandle>::Handle as ::hypp::handle::Handle<#type_path #generics>>::Boxed
+                    },
                 }
             }
-            Self::Enum(enum_index) => {
+            Self::DynamicSpan(span_index) => {
                 let ident =
-                    quote::format_ident!("__{}Enum{}", root_idents.component_ident, enum_index);
+                    quote::format_ident!("__{}Span{}", root_idents.component_ident, span_index);
                 quote! { #ident #generics }
             }
         }

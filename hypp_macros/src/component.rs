@@ -14,7 +14,7 @@ struct Component {
     params: Vec<param::Param>,
     prop_fields: Vec<ir::StructField>,
     root_block: ir::Block,
-    variant_enums: Vec<TokenStream>,
+    dynamic_span_enums: Vec<TokenStream>,
     fn_stmts: Vec<syn::Stmt>,
     has_self_shim: HasSelfShim,
     methods: Vec<syn::ItemFn>,
@@ -32,7 +32,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         params,
         prop_fields,
         root_block,
-        variant_enums,
+        dynamic_span_enums,
         fn_stmts,
         has_self_shim,
         methods,
@@ -109,7 +109,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         #(#dom_programs)*
 
-        #(#variant_enums)*
+        #(#dynamic_span_enums)*
 
         #[allow(dead_code)]
         pub struct #component_ident<H: ::hypp::Hypp> {
@@ -139,6 +139,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         }
 
         impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #component_ident<H> {
+            fn is_anchored(&self) -> bool {
+                unimplemented!()
+            }
+
             fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 unimplemented!()
             }
@@ -194,8 +198,12 @@ fn analyze_ast(
     let mut dom_programs = vec![];
     collect_dom_programs(&root_block.statements, &root_idents, &mut dom_programs);
 
-    let mut variant_enums = vec![];
-    collect_variant_enums(&root_block.statements, &root_idents, &mut variant_enums);
+    let mut dynamic_span_enums = vec![];
+    collect_dynamic_span_enums(
+        &root_block.statements,
+        &root_idents,
+        &mut dynamic_span_enums,
+    );
 
     Component {
         dom_programs,
@@ -203,7 +211,7 @@ fn analyze_ast(
         params,
         prop_fields,
         root_block,
-        variant_enums,
+        dynamic_span_enums,
         fn_stmts: vec![],
         has_self_shim,
         methods,
