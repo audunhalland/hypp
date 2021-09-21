@@ -136,10 +136,9 @@ mod test {
     }
 
     impl<H: Hypp> Span<H> for CompA {
-        fn pass_over(&mut self, _: &mut dyn Cursor<H>) -> bool {
-            false
+        fn is_anchored(&self) -> bool {
+            true
         }
-        fn unmount(&mut self, _vm: &mut dyn Cursor<H>) {}
     }
 
     impl<'p, H: Hypp> Component<'p, H> for CompA {
@@ -165,10 +164,9 @@ mod test {
     }
 
     impl<H: Hypp> Span<H> for CompB {
-        fn pass_over(&mut self, _: &mut dyn Cursor<H>) -> bool {
-            false
+        fn is_anchored(&self) -> bool {
+            true
         }
-        fn unmount(&mut self, _vm: &mut dyn Cursor<H>) {}
     }
 
     impl<'p, H: Hypp> Component<'p, H> for CompB {

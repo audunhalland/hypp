@@ -10,6 +10,7 @@
 pub mod error;
 pub mod handle;
 pub mod server;
+pub mod span_util;
 pub mod state_ref;
 pub mod web;
 
@@ -29,9 +30,9 @@ pub enum TraversalDirection {
 /// We abstract over the type of DOM we are targeting.
 ///
 pub trait Hypp: Sized {
-    type Node: Clone;
-    type Element: Clone + AsNode<Self>;
-    type Text: Clone + AsNode<Self>;
+    type Node: Clone + Span<Self>;
+    type Element: Clone + Span<Self> + AsNode<Self>;
+    type Text: Clone + Span<Self> + AsNode<Self>;
 
     type Callback: Callback;
 
@@ -120,6 +121,9 @@ pub trait Cursor<H: Hypp> {
     /// Advance cursor directly to a location in a child list.
     fn move_to_following_sibling_of(&mut self, node: &H::Node);
 
+    /// Remove the node at the current cursor position.
+    fn remove_node(&mut self) -> Result<(), Error>;
+
     /// Remove the element at the current cursor position.
     /// The element's name must match the tag name passed.
     /// The cursor moves to point at the next sibling.
@@ -133,14 +137,51 @@ pub trait Cursor<H: Hypp> {
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
+pub enum SpanOp {
+    PassOver,
+    Unmount,
+}
+
 /// Something that spans nodes in a DOM-like tree.
+///
+/// A Span only considers siblings in a sibling list.
+///
+/// Between any two consecutive siblings, there is an empty span.
+///
+/// Example:
+/// <a>
+///   <b/>________
+///   <c/>       |
+///   <d>        | The span of elements `c` and `d`.
+///     <e/>     | This span has a length of 2.
+///   </d>_______|
+///   <e/>
+///   <f/>________ The empty span after `f` has a length of 0.
+///  </a>
 pub trait Span<H: Hypp> {
+    /// Whether the start of the span is anchored,
+    /// which means that it is associated with a constant node
+    /// that never changes.
+    fn is_anchored(&self) -> bool;
+
+    /// "Generic" pass, that can be implemented by passing
+    /// this span's sub spans.
+    /// This method is reserved for the specific pass methods below.
+    /// It exists so that a Span impl can implement pass generically,
+    /// if it constists only of sub spans.
+    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+        false
+    }
+
     /// Make the cursor _pass over_ the this span,
     /// i.e. jump directly from the beginning to the end,
     /// without doing any modifications to the cursor.
+    /// The direction of the pass must in accordance with Hypp implementation.
     ///
     /// The method must return whether it was able to pass anything.
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool;
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+        self.pass(cursor, SpanOp::PassOver)
+    }
 
     ///
     /// Unmount this span, which must make it zero sized,
@@ -148,7 +189,9 @@ pub trait Span<H: Hypp> {
     /// the span have to be removed from the tree.
     /// The location of the cursor must be unchanged when the method returns.
     ///
-    fn unmount(&mut self, cursor: &mut dyn Cursor<H>);
+    fn unmount(&mut self, cursor: &mut dyn Cursor<H>) {
+        self.pass(cursor, SpanOp::Unmount);
+    }
 }
 
 /// The component trait.

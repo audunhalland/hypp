@@ -1,7 +1,7 @@
 use crate::error::Error;
 
 use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
-use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp};
+use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp, Span};
 
 impl AsNode<ServerHypp> for RcNode {
     #[inline]
@@ -48,6 +48,21 @@ impl Hypp for ServerHypp {
 
     fn traversal_direction() -> crate::TraversalDirection {
         crate::TraversalDirection::LastToFirst
+    }
+}
+
+impl Span<ServerHypp> for RcNode {
+    fn is_anchored(&self) -> bool {
+        true
+    }
+
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+        cursor.move_to_following_sibling_of(&self);
+        true
+    }
+
+    fn unmount(&mut self, cursor: &mut dyn Cursor<ServerHypp>) {
+        cursor.remove_node();
     }
 }
 
@@ -186,6 +201,13 @@ impl Cursor<ServerHypp> for ServerBuilder {
 
     fn text(&mut self, text: &str) -> Result<RcNode, Error> {
         Ok(self.text(text))
+    }
+
+    fn remove_node(&mut self) -> Result<(), Error> {
+        let child = self.current_child().expect("Expected a node to remove");
+        self.element.remove_child(child);
+
+        Ok(())
     }
 
     fn remove_element(&mut self, tag_name: &'static str) -> Result<RcNode, Error> {

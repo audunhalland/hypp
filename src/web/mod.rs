@@ -1,6 +1,6 @@
 use crate::error::Error;
 
-use super::{AsNode, ConstOpCode, Cursor, Hypp};
+use super::{AsNode, ConstOpCode, Cursor, Hypp, Span};
 
 use wasm_bindgen::JsCast;
 
@@ -65,6 +65,51 @@ impl Hypp for WebHypp {
 
     fn traversal_direction() -> crate::TraversalDirection {
         crate::TraversalDirection::LastToFirst
+    }
+}
+
+impl Span<WebHypp> for web_sys::Node {
+    fn is_anchored(&self) -> bool {
+        true
+    }
+
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+        cursor.move_to_following_sibling_of(&self);
+        true
+    }
+
+    fn unmount(&mut self, cursor: &mut dyn Cursor<WebHypp>) {
+        cursor.remove_node().unwrap();
+    }
+}
+
+impl Span<WebHypp> for web_sys::Element {
+    fn is_anchored(&self) -> bool {
+        true
+    }
+
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+        cursor.move_to_following_sibling_of(&self);
+        true
+    }
+
+    fn unmount(&mut self, cursor: &mut dyn Cursor<WebHypp>) {
+        cursor.remove_node().unwrap();
+    }
+}
+
+impl Span<WebHypp> for web_sys::Text {
+    fn is_anchored(&self) -> bool {
+        true
+    }
+
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+        cursor.move_to_following_sibling_of(&self);
+        true
+    }
+
+    fn unmount(&mut self, cursor: &mut dyn Cursor<WebHypp>) {
+        cursor.remove_node().unwrap();
     }
 }
 
@@ -222,6 +267,17 @@ impl Cursor<WebHypp> for WebBuilder {
 
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
         Ok(self.text(text)?)
+    }
+
+    fn remove_node(&mut self) -> Result<(), Error> {
+        let child = self
+            .next_child
+            .take()
+            .expect("Expected an element to remove");
+
+        self.next_child = child.next_sibling();
+
+        Ok(())
     }
 
     fn remove_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
