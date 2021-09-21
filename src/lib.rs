@@ -230,25 +230,33 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
 ///
 /// Ownership structure:
 ///
-///  [Parent component]
-///    |
-///    v                           ****************
-///   [Rc] -----> [RefCell] -----> *THIS COMPONENT*
-///    ^                           *****|**********
-///    |                                |
-///    |                                v
-///    |                               [Rc] <------ [wasm closure] <-- [DOM node]
-///   [Fn] (method)                     |
-///    ^                                v
-///    |                             [RefCell]
-///    |                                |
-///    |                                v
-///  [Box] <----- [Option] <------- [Callback]
+/// ```text
+///
+///                       [rc::Weak] <---------------- [Option A]
+///                            |                           ^
+///                            |                           |
+///                            v                       ****************
+/// [Parent component]--> [Rc] -----> [RefCell] -----> *THIS COMPONENT*
+///                        ^                           ****************
+///                        |                               |
+///                        |                               v
+///                        |                              [Rc] <------ [wasm closure] <-- [DOM node]
+///                       [Fn] (method)                    |
+///                        ^                               v
+///                        |                            [RefCell]
+///                        |                               |
+///                        |                               v
+///                      [Box] <----- [Option B] <----- [Callback]
+/// ```
 ///
 ///
-/// When a component is unmounted, it must release() all its callbacks.
-/// releasing the callback means setting the `Option` within `Callback` to `None`,
-/// so that the Fn no longer owns the component.
+/// [Option A] is used when setting up a new callback during patch.
+/// [Option B] is used within an existing callback.
+///
+/// When a component is unmounted, it must release() all its circular
+/// references.
+/// Releasing the references involves setting those `Option` values in the
+/// diagram to None.
 ///
 pub trait Callback {
     fn bind(&mut self, function: Box<dyn Fn()>);

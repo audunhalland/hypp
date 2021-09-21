@@ -69,6 +69,10 @@ pub fn lower_root_node(
 
     if ctx.callback_count > 0 {
         root_block.handle_kind = ir::HandleKind::Shared;
+        root_block.struct_fields.push(ir::StructField {
+            ident: ir::FieldIdent::Param(quote::format_ident!("__weak_self")),
+            ty: ir::StructFieldType::WeakSelf,
+        })
     }
 
     Ok(root_block)

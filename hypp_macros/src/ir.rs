@@ -48,6 +48,7 @@ pub enum StructFieldType {
     DomElement,
     DomText,
     Props,
+    WeakSelf,
     Callback,
     Param(param::Param),
     Component(ComponentPath),

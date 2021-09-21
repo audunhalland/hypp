@@ -424,6 +424,7 @@ impl ir::StructField {
             ir::StructFieldType::DomElement
             | ir::StructFieldType::DomText
             | ir::StructFieldType::Props
+            | ir::StructFieldType::WeakSelf
             | ir::StructFieldType::Callback => quote! {
                 ref #ident,
             },
@@ -664,7 +665,8 @@ impl ir::Block {
                     _ => quote! {},
                 });
 
-        let callback_binder = match self.handle_kind {
+        // Things we have to do after the constructor
+        let shared_ref_statements = match self.handle_kind {
             ir::HandleKind::Shared => {
                 quote! {
                     for (callback, method) in __cb_collector.into_iter() {
@@ -673,6 +675,8 @@ impl ir::Block {
                             __mounted.borrow_mut().shim_updater_trampoline(method)
                         }))
                     }
+
+                    __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
                 }
             }
             ir::HandleKind::Unique => quote! {},
@@ -694,6 +698,7 @@ impl ir::Block {
                     #(#field_inits)*
                     #(#callback_collectors)*
 
+                    let __weak_self = None;
                     let __mounted = ::std::rc::Rc::new(
                         ::std::cell::RefCell::new(
                             #constructor_path {
@@ -703,7 +708,7 @@ impl ir::Block {
                         )
                     );
 
-                    #callback_binder
+                    #shared_ref_statements
                 }
             }
         }
@@ -950,6 +955,11 @@ impl ir::StructFieldType {
             Self::Props => {
                 let ident = &root_idents.owned_props_ident;
                 quote! { #ident }
+            }
+            Self::WeakSelf => {
+                quote! {
+                    Option<::std::rc::Weak<::std::cell::RefCell<Self>>>
+                }
             }
             Self::Callback => quote! { ::hypp::SharedCallback<H> },
             Self::Param(param) => match &param.ty {
