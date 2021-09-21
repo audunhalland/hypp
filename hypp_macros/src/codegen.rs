@@ -7,10 +7,10 @@ use crate::param;
 use crate::template_ast;
 
 #[derive(Copy, Clone)]
-pub enum Lifecycle {
+pub enum Function {
     Mount,
     Patch,
-    Unmount,
+    SpanPass,
 }
 
 #[derive(Copy, Clone)]
@@ -21,7 +21,7 @@ pub enum Scope {
 
 #[derive(Clone, Copy)]
 pub struct CodegenCtx {
-    pub lifecycle: Lifecycle,
+    pub function: Function,
     pub scope: Scope,
 }
 
@@ -255,23 +255,23 @@ fn generate_dynamic_span_enum(
     });
 
     let span_pass_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
-        let field_defs = block
+        let pat_fields = block
             .struct_fields
             .iter()
-            .map(ir::StructField::struct_param_tokens);
+            .map(ir::StructField::mut_pattern_tokens);
 
         let span_pass = gen_span_pass(
             &block.statements,
             dom_depth,
             root_idents,
             CodegenCtx {
-                lifecycle: Lifecycle::Unmount,
+                function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             },
         );
 
         quote! {
-            Self::#variant { #(#field_defs)* .. } => {
+            Self::#variant { #(#pat_fields)* .. } => {
                 #span_pass
             },
         }
@@ -382,6 +382,7 @@ impl ir::StructField {
         quote! { #ident: #ty, }
     }
 
+    // Tokens for initializing a specific field in a struct
     pub fn struct_param_tokens(&self) -> TokenStream {
         let ident = &self.ident;
 
@@ -403,7 +404,6 @@ impl ir::StructField {
                     },
                 },
             },
-            ir::StructFieldType::Callback => quote! { #ident: #ident.clone(), },
             // Handled separately:
             ir::StructFieldType::Props => quote! {},
             _ => quote! { #ident, },
@@ -462,9 +462,19 @@ impl ir::Block {
         ctx: CodegenCtx,
     ) -> TokenStream {
         // Mount is error-tolerant:
-        let err_handler = match &ctx.lifecycle {
-            Lifecycle::Mount => quote! { ? },
-            Lifecycle::Patch | Lifecycle::Unmount => quote! { .unwrap() },
+        let err_handler = match &ctx.function {
+            Function::Mount => quote! { ? },
+            Function::Patch | Function::SpanPass => quote! { .unwrap() },
+        };
+
+        let cb_collector_local = match self.handle_kind {
+            ir::HandleKind::Shared => {
+                let self_shim_ident = &root_idents.self_shim_ident;
+                quote! {
+                    let mut __cb_collector: Vec<(::hypp::SharedCallback<H>, &'static dyn Fn(&mut #self_shim_ident<'_>))> = vec![];
+                }
+            }
+            ir::HandleKind::Unique => quote! {},
         };
 
         struct FieldInit {
@@ -636,32 +646,42 @@ impl ir::Block {
             quote! {}
         };
 
-        let callback_setups = self
-            .statements
-            .iter()
-            .map(|statement| match &statement.expression {
-                ir::Expression::AttributeCallback(callback::Callback { ident }) => {
-                    if let Some(field) = &statement.field {
-                        quote! {
-                            {
-                                let __mounted = __mounted.clone();
-                                #field.borrow_mut().bind(Box::new(move || {
-                                    __mounted.borrow_mut().shim_updater_trampoline(|shim| {
-                                        shim.#ident();
-                                    })
+        let callback_collectors =
+            self.statements
+                .iter()
+                .map(|statement| match &statement.expression {
+                    ir::Expression::AttributeCallback(callback::Callback { ident }) => {
+                        if let Some(field) = &statement.field {
+                            quote! {
+                                __cb_collector.push((#field.clone(), &|shim| {
+                                    shim.#ident();
                                 }));
                             }
+                        } else {
+                            quote! {}
                         }
-                    } else {
-                        quote! {}
+                    }
+                    _ => quote! {},
+                });
+
+        let callback_binder = match self.handle_kind {
+            ir::HandleKind::Shared => {
+                quote! {
+                    for (callback, method) in __cb_collector.into_iter() {
+                        let __mounted = __mounted.clone();
+                        callback.borrow_mut().bind(Box::new(move || {
+                            __mounted.borrow_mut().shim_updater_trampoline(method)
+                        }))
                     }
                 }
-                _ => quote! {},
-            });
+            }
+            ir::HandleKind::Unique => quote! {},
+        };
 
         match self.handle_kind {
             ir::HandleKind::Unique => quote! {
                 #(#field_inits)*
+                #(#callback_collectors)*
 
                 let __mounted = #constructor_path {
                     #(#struct_params)*
@@ -670,7 +690,9 @@ impl ir::Block {
             },
             ir::HandleKind::Shared => {
                 quote! {
+                    #cb_collector_local
                     #(#field_inits)*
+                    #(#callback_collectors)*
 
                     let __mounted = ::std::rc::Rc::new(
                         ::std::cell::RefCell::new(
@@ -681,7 +703,7 @@ impl ir::Block {
                         )
                     );
 
-                    #(#callback_setups)*
+                    #callback_binder
                 }
             }
         }

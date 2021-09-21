@@ -38,6 +38,7 @@ pub fn lower_root_node(
         dom_program_count: 0,
         field_count: 0,
         dynamic_span_count: 0,
+        callback_count: 0,
         current_dom_depth: 0,
         direction,
     };
@@ -64,7 +65,13 @@ pub fn lower_root_node(
 
     root_builder.lower_ast(root, &scope, &mut ctx)?;
 
-    Ok(root_builder.to_block(&mut ctx))
+    let mut root_block = root_builder.to_block(&mut ctx);
+
+    if ctx.callback_count > 0 {
+        root_block.handle_kind = ir::HandleKind::Shared;
+    }
+
+    Ok(root_block)
 }
 
 /// Context used for the whole template
@@ -72,6 +79,7 @@ pub struct Context {
     dom_program_count: u16,
     field_count: u16,
     dynamic_span_count: u16,
+    callback_count: u16,
 
     current_dom_depth: u16,
 
@@ -106,8 +114,6 @@ struct BlockBuilder {
     // Param deps for the whole block
     param_deps: ir::ParamDeps,
 
-    handle_kind: ir::HandleKind,
-
     current_dom_program_depth: u16,
     current_dom_opcodes: Vec<ir::DomOpCode>,
 }
@@ -117,7 +123,7 @@ impl BlockBuilder {
         self.flush_dom_program(ctx);
 
         ir::Block {
-            handle_kind: self.handle_kind,
+            handle_kind: ir::HandleKind::Unique,
             struct_fields: self.struct_fields,
             statements: self.statements,
             param_deps: self.param_deps,
@@ -278,6 +284,8 @@ impl BlockBuilder {
             template_ast::AttrValue::Expr(expr) => match attr_name.value().as_ref() {
                 // Hack: need some better way to do this.. :)
                 "on_click" => {
+                    ctx.callback_count += 1;
+
                     // First push the attribute name into const program:
                     self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
 
@@ -288,9 +296,6 @@ impl BlockBuilder {
                         ident: callback_field.clone(),
                         ty: ir::StructFieldType::Callback,
                     });
-
-                    // When callbacks are involved, we need a shared handle
-                    self.handle_kind = ir::HandleKind::Shared;
 
                     let callback = callback::parse_callback(expr)
                         .map_err(|syn_err| LoweringError::InvalidCallback(syn_err.span()))?;

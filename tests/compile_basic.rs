@@ -347,7 +347,7 @@ component! {
 }
 
 // Experimentation with new surface syntax
-component_dbg! {
+component! {
     Toggle(prop1: bool, prop2: &str) {
         toggled: bool,
     }
@@ -368,8 +368,10 @@ component_dbg! {
     </div>
 }
 
+// Still doesn't work, because we have to create+setup
+// callbacks in `fn patch` o_O
 /*
-component_dbg! {
+component! {
     ConditionalCallback(show_button: bool) {
         toggled: bool,
     }

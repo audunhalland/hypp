@@ -54,8 +54,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     } else {
         quote! {}
     };
-    let shim_updater_trampoline = if has_self_shim.0 {
-        create_shim_updater_trampoline(&root_block.struct_fields, &root_idents, &params)
+    let shim_support = if has_self_shim.0 {
+        create_shim_support(&root_block.struct_fields, &root_idents, &params)
     } else {
         quote! {}
     };
@@ -76,7 +76,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         &root_idents,
         OwnedProps(Some(&prop_fields)),
         CodegenCtx {
-            lifecycle: Lifecycle::Mount,
+            function: Function::Mount,
             scope: Scope::Component,
         },
     );
@@ -85,7 +85,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         statement.gen_patch(
             &root_idents,
             CodegenCtx {
-                lifecycle: Lifecycle::Patch,
+                function: Function::Patch,
                 scope: Scope::Component,
             },
         )
@@ -96,7 +96,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         ir::DomDepth(0),
         &root_idents,
         CodegenCtx {
-            lifecycle: Lifecycle::Unmount,
+            function: Function::SpanPass,
             scope: Scope::Component,
         },
     );
@@ -132,7 +132,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #(#patch_stmts)*
             }
 
-            #shim_updater_trampoline
+            #shim_support
         }
 
         impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
@@ -438,7 +438,7 @@ fn create_self_shim(
     }
 }
 
-fn create_shim_updater_trampoline(
+fn create_shim_support(
     struct_fields: &[ir::StructField],
     root_idents: &RootIdents,
     params: &[param::Param],
