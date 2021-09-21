@@ -1,7 +1,9 @@
 use crate::error::Error;
-
-use super::{AsNode, ConstOpCode, Cursor, Hypp, Span};
 use crate::span::{AsSpan, SpanAdapter};
+use crate::{AsNode, ConstOpCode, Cursor, Hypp, Span};
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use wasm_bindgen::JsCast;
 
@@ -243,17 +245,17 @@ impl Cursor<WebHypp> for WebBuilder {
         result
     }
 
-    fn attribute_value_callback(&mut self) -> Result<callback::WebCallback, Error> {
+    fn attribute_value_callback(&mut self) -> Result<Rc<RefCell<callback::WebCallback>>, Error> {
         let attribute_name = self
             .loaded_attribute_name
             .expect("needs an attribute name loaded");
 
         match attribute_name {
             "on_click" => {
-                let callback = callback::WebCallback::new();
+                let (callback, web_closure) = callback::new_callback();
 
                 self.html_element()
-                    .set_onclick(Some(callback.web_closure.as_ref().unchecked_ref()));
+                    .set_onclick(Some(web_closure.as_ref().unchecked_ref()));
 
                 Ok(callback)
             }

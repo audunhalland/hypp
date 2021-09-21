@@ -235,7 +235,7 @@ component! {
     </article>
 }
 
-component_dbg! {
+component! {
     Fragment1(perhaps: bool) {}
 
     <div>"first"</div>
@@ -347,17 +347,9 @@ component! {
 }
 
 // Experimentation with new surface syntax
-component! {
+component_dbg! {
     Toggle(prop1: bool, prop2: &str) {
         toggled: bool,
-    }
-
-    fn update(&mut self) {
-        /*
-        if self.prop1 {
-            self.state = false;
-        }
-        */
     }
 
     fn handle_click(&mut self) {
@@ -375,3 +367,21 @@ component! {
         </button>
     </div>
 }
+
+/*
+component_dbg! {
+    ConditionalCallback(show_button: bool) {
+        toggled: bool,
+    }
+
+    fn handle_click(&mut self) {
+        *self.toggled = !*self.toggled;
+    }
+
+    if show_button {
+        <button on_click={Self::handle_click}>
+            "A button"
+        </button>
+    }
+}
+*/

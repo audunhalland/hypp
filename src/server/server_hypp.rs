@@ -77,9 +77,8 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, RcNode> {
 }
 
 impl Callback for () {
-    fn bind(&self, _function: Box<dyn Fn()>) {}
-
-    fn release(&self) {}
+    fn bind(&mut self, _function: Box<dyn Fn()>) {}
+    fn release(&mut self) {}
 }
 
 pub struct ServerBuilder {
@@ -204,9 +203,9 @@ impl Cursor<ServerHypp> for ServerBuilder {
         self.const_exec_element(program)
     }
 
-    fn attribute_value_callback(&mut self) -> Result<(), Error> {
+    fn attribute_value_callback(&mut self) -> Result<std::rc::Rc<std::cell::RefCell<()>>, Error> {
         // Callbacks do nothing on the server
-        Ok(())
+        Ok(std::rc::Rc::new(std::cell::RefCell::new(())))
     }
 
     fn text(&mut self, text: &str) -> Result<RcNode, Error> {

@@ -495,7 +495,7 @@ impl ir::Block {
                 ir::Expression::AttributeCallback(_) => FieldInit {
                     field_mut: false,
                     init: quote! {
-                        ::std::rc::Rc::new(__cursor.attribute_value_callback() #err_handler)
+                        __cursor.attribute_value_callback() #err_handler
                     },
                 },
                 ir::Expression::Text(expr) => FieldInit {
@@ -645,7 +645,7 @@ impl ir::Block {
                         quote! {
                             {
                                 let __mounted = __mounted.clone();
-                                #field.bind(Box::new(move || {
+                                #field.borrow_mut().bind(Box::new(move || {
                                     __mounted.borrow_mut().shim_updater_trampoline(|shim| {
                                         shim.#ident();
                                     })
@@ -929,7 +929,7 @@ impl ir::StructFieldType {
                 let ident = &root_idents.owned_props_ident;
                 quote! { #ident }
             }
-            Self::Callback => quote! { ::std::rc::Rc<H::Callback> },
+            Self::Callback => quote! { ::hypp::SharedCallback<H> },
             Self::Param(param) => match &param.ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(ty) => {
