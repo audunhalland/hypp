@@ -7,20 +7,20 @@ pub static TEXT_SPAN: SingleTextSpan = SingleTextSpan;
 pub fn pass<H: Hypp>(spans: &[&dyn Span<H>], cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
     match op {
         SpanOp::PassOver => {
-            panic!("FIX");
-            /*
+            let mut result = false;
             for span in spans {
                 if span.pass_over(cursor) {
-                    return true;
+                    result = true;
                 }
             }
-            false
-            */
+            result
         }
         SpanOp::Erase => {
             let mut result = false;
             for span in spans {
-                result = result || span.erase(cursor);
+                if span.erase(cursor) {
+                    result = true;
+                }
             }
             result
         }

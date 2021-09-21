@@ -54,6 +54,7 @@ pub trait AsNode<H: Hypp> {
 /// The const opcodes are not lifetime constrained, and thus
 /// may be "allocated" in static memory.
 ///
+#[derive(Debug)]
 pub enum ConstOpCode {
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
@@ -171,7 +172,7 @@ pub trait Span<H: Hypp> {
     /// This method is reserved for the specific pass methods below.
     /// It exists so that a Span impl can implement pass generically,
     /// if it constists only of sub spans.
-    fn pass(&self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+    fn pass(&self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
         false
     }
 
