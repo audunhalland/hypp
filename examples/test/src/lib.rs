@@ -4,15 +4,13 @@ use hypp::prelude::*;
 
 use wasm_bindgen::prelude::*;
 
-use web_sys::console;
-
 hypp::component! {
     App() {
         toggled: bool,
     }
 
     fn handle_click(&mut self) {
-        console::log_1(&"Toggling!".into());
+        tracing::info!("Toggling!");
         *self.toggled = !*self.toggled;
     }
 
@@ -35,10 +33,7 @@ hypp::component! {
         if toggled {
             "Now try to turn it off again:"
         } else {
-            "Hypp: The perfect framework for "
-            <strong>
-                "Button toggling!"
-            </strong>
+            "Hypp: The perfect framework for "<strong>"Button toggling!"</strong>
         }
     </div>
 }
@@ -46,6 +41,7 @@ hypp::component! {
 // Called when the wasm module is instantiated
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
+    tracing_wasm::set_as_global_default();
     let hypp = hypp::web::WebHypp::new();
     App::mount(__AppProps {}, &mut hypp.builder_at_body()).unwrap();
 
