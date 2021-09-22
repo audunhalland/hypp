@@ -9,6 +9,7 @@ use crate::template_ast;
 /// The way something must be owned in order to work.
 /// Things with internal cyclic references need Shared ownership,
 /// for example when callbacks are involved.
+#[derive(Clone, Copy)]
 pub enum HandleKind {
     Unique,
     Shared,

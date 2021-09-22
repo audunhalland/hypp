@@ -84,14 +84,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
     );
 
-    let patch_cb_collector_local = root_block.handle_kind.cb_collector_local(&root_idents);
-    let patch_bind_callbacks = match &root_block.handle_kind {
-        ir::HandleKind::Shared => quote! {
-            ::hypp::shim::bind_callbacks::<H, _, _>(&self.__weak_self, __cb_collector);
-        },
-        ir::HandleKind::Unique => quote! {},
-    };
-
     let patch_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_patch(
             &root_idents,
@@ -165,13 +157,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             #[allow(unused_variables)]
             fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #self_props_bindings
-
                 #(#fn_stmts)*
-                #patch_cb_collector_local
-
                 #(#patch_stmts)*
-
-                #patch_bind_callbacks
             }
         }
 

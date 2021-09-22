@@ -374,7 +374,7 @@ component! {
 // callbacks in `fn patch` o_O
 component_dbg! {
     ConditionalCallback(show_button: bool) {
-        toggled: bool,
+        toggled: bool
     }
 
     fn handle_click(&mut self) {

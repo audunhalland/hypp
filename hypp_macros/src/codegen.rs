@@ -633,10 +633,26 @@ impl ir::Block {
                 .map(|statement| match &statement.expression {
                     ir::Expression::AttributeCallback(callback::Callback { ident }) => {
                         if let Some(field) = &statement.field {
-                            quote! {
-                                __cb_collector.push((#field.clone(), &|shim| {
-                                    shim.#ident();
-                                }));
+                            let closure = quote! {
+                                &|shim| { shim.#ident(); }
+                            };
+
+                            match ctx.function {
+                                Function::Mount => quote! {
+                                    // There's no `self` here:
+                                    __cb_collector.push((#field.clone(), #closure));
+                                },
+                                _ => {
+                                    let self_shim_ident = &root_idents.self_shim_ident;
+
+                                    quote! {
+                                        ::hypp::shim::bind_callback_weak::<
+                                            H,
+                                            _,
+                                            &'static dyn Fn(&mut #self_shim_ident<'_>)
+                                        >(#field.clone(), &self.__weak_self, #closure);
+                                    }
+                                }
                             }
                         } else {
                             quote! {}
@@ -646,28 +662,18 @@ impl ir::Block {
                 });
 
         // Things we have to do after the constructor
-        let shared_ref_statements = match self.handle_kind {
-            ir::HandleKind::Shared => {
+        let shared_ref_statements = match (self.handle_kind, ctx.function) {
+            (ir::HandleKind::Shared, Function::Mount) => {
                 quote! {
                     __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
-                    ::hypp::shim::bind_callbacks::<H, _, _>(&__mounted.borrow().__weak_self, __cb_collector);
+                    ::hypp::shim::bind_callbacks_weak::<H, _, _>(&__mounted.borrow().__weak_self, __cb_collector);
                 }
             }
-            ir::HandleKind::Unique => quote! {},
+            _ => quote! {},
         };
 
-        match self.handle_kind {
-            ir::HandleKind::Unique => quote! {
-                #anchor_init
-                #(#field_inits)*
-                #(#callback_collectors)*
-
-                let __mounted = #constructor_path {
-                    #(#struct_params)*
-                    #owned_props
-                };
-            },
-            ir::HandleKind::Shared => {
+        match (self.handle_kind, ctx.function) {
+            (ir::HandleKind::Shared, Function::Mount) => {
                 quote! {
                     #anchor_init
                     #cb_collector_local
@@ -687,6 +693,16 @@ impl ir::Block {
                     #shared_ref_statements
                 }
             }
+            _ => quote! {
+                #anchor_init
+                #(#field_inits)*
+                #(#callback_collectors)*
+
+                let __mounted = #constructor_path {
+                    #(#struct_params)*
+                    #owned_props
+                };
+            },
         }
     }
 
