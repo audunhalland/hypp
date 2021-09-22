@@ -24,3 +24,9 @@ Hypp is not designed towards a specific target. Thus, using it in a web server w
 
 ## Work in progress
 Hypp is a work in progress. The surface syntax is not written in stone. Examples on how to use it currently can be found inside the code base.
+
+## To do
+- [x] Self-update
+- [ ] For loops in template
+- [ ] Passing callbacks as props to other components
+- [ ] Reduce amount of generated code using closures in patch
