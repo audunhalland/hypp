@@ -22,6 +22,7 @@ pub enum Scope {
 
 #[derive(Clone, Copy)]
 pub struct CodegenCtx {
+    pub component_kind: ir::ComponentKind,
     pub function: Function,
     pub scope: Scope,
 }
@@ -206,6 +207,7 @@ pub fn generate_dom_program(
 
 pub fn collect_dynamic_span_enums(
     statements: &[ir::Statement],
+    component_kind: ir::ComponentKind,
     root_idents: &RootIdents,
     output: &mut Vec<TokenStream>,
 ) {
@@ -220,10 +222,16 @@ pub fn collect_dynamic_span_enums(
                     dynamic_span_type,
                     arms,
                     statement.dom_depth,
+                    component_kind,
                     root_idents,
                 ));
                 for arm in arms {
-                    collect_dynamic_span_enums(&arm.block.statements, root_idents, output);
+                    collect_dynamic_span_enums(
+                        &arm.block.statements,
+                        component_kind,
+                        root_idents,
+                        output,
+                    );
                 }
             }
             _ => {}
@@ -235,6 +243,7 @@ fn generate_dynamic_span_enum(
     dynamic_span_type: &ir::StructFieldType,
     arms: &[ir::Arm],
     dom_depth: ir::DomDepth,
+    component_kind: ir::ComponentKind,
     root_idents: &RootIdents,
 ) -> TokenStream {
     let dynamic_span_ident =
@@ -265,6 +274,7 @@ fn generate_dynamic_span_enum(
             dom_depth,
             root_idents,
             CodegenCtx {
+                component_kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             },
@@ -288,6 +298,7 @@ fn generate_dynamic_span_enum(
                 .map(ir::StructField::mut_pattern_tokens);
 
             let span_pass = block.gen_span_erase(CodegenCtx {
+                component_kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             });
@@ -393,6 +404,7 @@ impl ir::StructField {
             | ir::StructFieldType::DomText
             | ir::StructFieldType::Props
             | ir::StructFieldType::WeakSelf
+            | ir::StructFieldType::Anchor
             | ir::StructFieldType::Callback => quote! {
                 ref #ident,
             },
@@ -442,6 +454,14 @@ impl ir::Block {
             field_mut: bool,
             init: TokenStream,
         }
+
+        // Anchor needs to be taken before anything else
+        let anchor_init = match (ctx.component_kind, ctx.scope) {
+            (ir::ComponentKind::SelfUpdatable, Scope::Component) => Some(quote! {
+                let __anchor = __cursor.anchor();
+            }),
+            _ => None,
+        };
 
         let field_inits = self.statements.iter().map(|statement| {
             let FieldInit { field_mut, init } = match &statement.expression {
@@ -638,6 +658,7 @@ impl ir::Block {
 
         match self.handle_kind {
             ir::HandleKind::Unique => quote! {
+                #anchor_init
                 #(#field_inits)*
                 #(#callback_collectors)*
 
@@ -648,6 +669,7 @@ impl ir::Block {
             },
             ir::HandleKind::Shared => {
                 quote! {
+                    #anchor_init
                     #cb_collector_local
                     #(#field_inits)*
                     #(#callback_collectors)*
@@ -1020,11 +1042,10 @@ impl ir::StructFieldType {
                 let ident = &root_idents.owned_props_ident;
                 quote! { #ident }
             }
-            Self::WeakSelf => {
-                quote! {
-                    Option<::std::rc::Weak<::std::cell::RefCell<Self>>>
-                }
-            }
+            Self::WeakSelf => quote! {
+                Option<::std::rc::Weak<::std::cell::RefCell<Self>>>
+            },
+            Self::Anchor => quote! { H::Anchor },
             Self::Callback => quote! { ::hypp::SharedCallback<H> },
             Self::Param(param) => match &param.ty {
                 param::ParamRootType::One(ty) => match ty {

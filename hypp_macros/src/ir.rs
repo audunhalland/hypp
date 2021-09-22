@@ -14,6 +14,12 @@ pub enum HandleKind {
     Shared,
 }
 
+#[derive(Clone, Copy)]
+pub enum ComponentKind {
+    Basic,
+    SelfUpdatable,
+}
+
 impl Default for HandleKind {
     fn default() -> Self {
         Self::Unique
@@ -49,6 +55,7 @@ pub enum StructFieldType {
     DomText,
     Props,
     WeakSelf,
+    Anchor,
     Callback,
     Param(param::Param),
     Component(ComponentPath),

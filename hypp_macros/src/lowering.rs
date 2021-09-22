@@ -31,7 +31,7 @@ pub fn lower_root_node(
     root: template_ast::Node,
     direction: TraversalDirection,
     params: &[param::Param],
-) -> Result<ir::Block, LoweringError> {
+) -> Result<(ir::ComponentKind, ir::Block), LoweringError> {
     let mut root_builder = BlockBuilder::default();
 
     let mut ctx = Context {
@@ -67,15 +67,23 @@ pub fn lower_root_node(
 
     let mut root_block = root_builder.to_block(&mut ctx);
 
+    let mut component_kind = ir::ComponentKind::Basic;
+
     if ctx.callback_count > 0 {
+        component_kind = ir::ComponentKind::SelfUpdatable;
+
         root_block.handle_kind = ir::HandleKind::Shared;
+        root_block.struct_fields.push(ir::StructField {
+            ident: ir::FieldIdent::Param(quote::format_ident!("__anchor")),
+            ty: ir::StructFieldType::Anchor,
+        });
         root_block.struct_fields.push(ir::StructField {
             ident: ir::FieldIdent::Param(quote::format_ident!("__weak_self")),
             ty: ir::StructFieldType::WeakSelf,
         })
     }
 
-    Ok(root_block)
+    Ok((component_kind, root_block))
 }
 
 /// Context used for the whole template

@@ -60,6 +60,9 @@ impl Hypp for WebHypp {
     type Element = web_sys::Element;
     type Text = web_sys::Text;
 
+    type Anchor = WebBuilder;
+    type Builder = WebBuilder;
+
     type Callback = callback::WebCallback;
 
     fn set_text(node: &Self::Text, text: &str) {
@@ -111,6 +114,7 @@ impl<'a> Span<WebHypp> for SpanAdapter<'a, web_sys::Node> {
     }
 }
 
+#[derive(Clone)]
 pub struct WebBuilder {
     document: web_sys::Document,
     element: web_sys::Element,
@@ -187,6 +191,10 @@ impl WebBuilder {
 }
 
 impl Cursor<WebHypp> for WebBuilder {
+    fn anchor(&self) -> WebBuilder {
+        self.clone()
+    }
+
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Element, Error> {
         let mut result = Err(Error::NoProgram);
 
@@ -394,5 +402,11 @@ impl NodeExt for web_sys::Node {
             Ok(text) => Ok(text),
             Err(_) => Err(Error::NotAText),
         }
+    }
+}
+
+impl crate::Anchor<WebHypp> for WebBuilder {
+    fn create_builder(&self) -> WebBuilder {
+        self.clone()
     }
 }

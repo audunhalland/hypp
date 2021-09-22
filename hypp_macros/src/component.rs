@@ -9,6 +9,7 @@ use crate::param;
 use crate::codegen::*;
 
 struct Component {
+    component_kind: ir::ComponentKind,
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
     params: Vec<param::Param>,
@@ -27,6 +28,7 @@ struct PublicPropsStruct {
 
 pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
+        component_kind,
         dom_programs,
         root_idents,
         params,
@@ -76,6 +78,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         &root_idents,
         OwnedProps(Some(&prop_fields)),
         CodegenCtx {
+            component_kind,
             function: Function::Mount,
             scope: Scope::Component,
         },
@@ -93,6 +96,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         statement.gen_patch(
             &root_idents,
             CodegenCtx {
+                component_kind,
                 function: Function::Patch,
                 scope: Scope::Component,
             },
@@ -103,13 +107,26 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         ir::DomDepth(0),
         &root_idents,
         CodegenCtx {
+            component_kind,
             function: Function::SpanPass,
             scope: Scope::Component,
         },
     );
 
+    let fn_span_pass_over = match component_kind {
+        ir::ComponentKind::SelfUpdatable => Some(quote! {
+            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                // Self updating! This component needs to store the updated anchor.
+                self.__anchor = __cursor.anchor();
+                self.pass(__cursor, ::hypp::SpanOp::PassOver)
+            }
+        }),
+        ir::ComponentKind::Basic => None,
+    };
+
     let fn_span_erase = root_block
         .gen_span_erase(CodegenCtx {
+            component_kind,
             function: Function::Erase,
             scope: Scope::Component,
         })
@@ -171,6 +188,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #span_pass
             }
 
+            #fn_span_pass_over
             #fn_span_erase
         }
 
@@ -185,6 +203,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         }
 
         #shim_impls
+
     }
 }
 
@@ -196,7 +215,7 @@ fn analyze_ast(
         template,
     }: component_ast::Component,
 ) -> Component {
-    let root_block =
+    let (component_kind, root_block) =
         lowering::lower_root_node(template, lowering::TraversalDirection::LastToFirst, &params)
             .expect("Compile error: Lowering problem");
 
@@ -225,11 +244,13 @@ fn analyze_ast(
     let mut dynamic_span_enums = vec![];
     collect_dynamic_span_enums(
         &root_block.statements,
+        component_kind,
         &root_idents,
         &mut dynamic_span_enums,
     );
 
     Component {
+        component_kind,
         dom_programs,
         root_idents,
         params,
@@ -502,8 +523,8 @@ fn create_shim_impls(
 
                 cb(&mut shim);
 
-                // FIXME: The only thing missing now, is the call to self.patch().
-                // But then we need to instantiate a Cursor builder positioned at the first DOM node.
+                let mut cursor = self.__anchor.create_builder();
+                self.patch(&__updates, &mut cursor);
             }
         }
     }

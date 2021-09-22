@@ -41,6 +41,9 @@ impl Hypp for ServerHypp {
     type Element = RcNode;
     type Text = RcNode;
 
+    type Anchor = ServerBuilder;
+    type Builder = ServerBuilder;
+
     type Callback = ();
 
     fn set_text(node: &Self::Text, text: &str) {
@@ -81,6 +84,7 @@ impl Callback for () {
     fn release(&mut self) {}
 }
 
+#[derive(Clone)]
 pub struct ServerBuilder {
     element: RcNode,
     next_child: Option<RcNode>,
@@ -157,6 +161,10 @@ impl ServerBuilder {
 }
 
 impl Cursor<ServerHypp> for ServerBuilder {
+    fn anchor(&self) -> ServerBuilder {
+        self.clone()
+    }
+
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<RcNode, Error> {
         let mut result = Err(Error::NoProgram);
 
@@ -279,6 +287,12 @@ impl Cursor<ServerHypp> for ServerBuilder {
                 }
             };
         }
+    }
+}
+
+impl crate::Anchor<ServerHypp> for ServerBuilder {
+    fn create_builder(&self) -> ServerBuilder {
+        self.clone()
     }
 }
 

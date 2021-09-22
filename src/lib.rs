@@ -35,6 +35,10 @@ pub trait Hypp: Sized {
     type Element: Clone + span::AsSpan + AsNode<Self>;
     type Text: Clone + span::AsSpan + AsNode<Self>;
 
+    /// An immutable variant of the cursor:
+    type Anchor: Anchor<Self>;
+    type Builder: Cursor<Self>;
+
     type Callback: Callback;
 
     fn set_text(node: &Self::Text, text: &str);
@@ -99,6 +103,9 @@ pub enum ConstOpCode {
 /// and `next` will then be item that item that has been most recently produced.
 ///
 pub trait Cursor<H: Hypp> {
+    /// Create a storable anchor at the current position.
+    fn anchor(&self) -> H::Anchor;
+
     /// Execute a series of opcodes.
     /// The last node opcode must produce an element.
     fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
@@ -139,6 +146,11 @@ pub trait Cursor<H: Hypp> {
     /// Don't mutate anything.
     /// The DOM described by the program must match the actual DOM.
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
+}
+
+pub trait Anchor<H: Hypp> {
+    /// Create a builder at the anchor position
+    fn create_builder(&self) -> H::Builder;
 }
 
 #[derive(Debug, Clone, Copy)]

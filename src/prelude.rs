@@ -1,3 +1,4 @@
+pub use crate::Anchor;
 pub use crate::AsNode;
 pub use crate::Callback;
 pub use crate::Component;
