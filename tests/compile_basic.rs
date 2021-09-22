@@ -365,7 +365,11 @@ component! {
     </div>
     <div>
         <button on_click={Self::handle_click}>
-            "A button"
+            if toggled {
+                "Toggled"
+            } else {
+                "Not toggled"
+            }
         </button>
     </div>
 }
@@ -383,7 +387,11 @@ component_dbg! {
 
     if show_button {
         <button on_click={Self::handle_click}>
-            "A button"
+            if toggled {
+                "Toggled"
+            } else {
+                "Not toggled"
+            }
         </button>
     }
 }

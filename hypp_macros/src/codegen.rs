@@ -367,8 +367,8 @@ impl ir::StructField {
 
         match &self.ty {
             ir::StructFieldType::Param(param) => match &param.kind {
-                // State variable types must implement default:
-                param::ParamKind::State => quote! { #ident: Default::default(), },
+                // State variables should already be in scope
+                param::ParamKind::State => quote! { #ident, },
                 // Convert from generally borrowed props:
                 param::ParamKind::Prop => match &param.ty {
                     param::ParamRootType::One(ty) => match ty {

@@ -73,6 +73,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         .iter()
         .map(|field| field.field_def_tokens(&root_idents, Scope::Component));
 
+    let mount_state_locals = create_mount_state_locals(&params);
+
     let mount = root_block.gen_mount(
         ConstructorKind::Component,
         &root_idents,
@@ -149,6 +151,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
             pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                #mount_state_locals
                 #(#fn_stmts)*
                 #mount
                 Ok(#handle_path::new(__mounted))
@@ -325,6 +328,23 @@ fn create_owned_props_struct(fields: &[ir::StructField], root_idents: &RootIdent
         pub struct #props_ident {
             #(#fields)*
         }
+    }
+}
+
+fn create_mount_state_locals(params: &[param::Param]) -> TokenStream {
+    let locals = params.iter().filter_map(|param| match &param.kind {
+        param::ParamKind::State => {
+            let ident = &param.ident;
+
+            Some(quote! {
+                let #ident = Default::default();
+            })
+        }
+        param::ParamKind::Prop => None,
+    });
+
+    quote! {
+        #(#locals)*
     }
 }
 
