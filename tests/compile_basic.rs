@@ -1,3 +1,5 @@
+#![feature(generic_associated_types)]
+
 use hypp::prelude::*;
 
 use wasm_bindgen_test::*;
@@ -370,8 +372,7 @@ component! {
 
 // Still doesn't work, because we have to create+setup
 // callbacks in `fn patch` o_O
-/*
-component! {
+component_dbg! {
     ConditionalCallback(show_button: bool) {
         toggled: bool,
     }
@@ -386,4 +387,3 @@ component! {
         </button>
     }
 }
-*/

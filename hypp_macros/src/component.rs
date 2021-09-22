@@ -54,8 +54,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     } else {
         quote! {}
     };
-    let shim_support = if has_self_shim.0 {
-        create_shim_support(&root_block.struct_fields, &root_idents, &params)
+    let shim_impls = if has_self_shim.0 {
+        create_shim_impls(&root_block.struct_fields, &root_idents, &params)
     } else {
         quote! {}
     };
@@ -80,6 +80,14 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             scope: Scope::Component,
         },
     );
+
+    let patch_cb_collector_local = root_block.handle_kind.cb_collector_local(&root_idents);
+    let patch_bind_callbacks = match &root_block.handle_kind {
+        ir::HandleKind::Shared => quote! {
+            ::hypp::shim::bind_callbacks::<H, _, _>(&self.__weak_self, __cb_collector);
+        },
+        ir::HandleKind::Unique => quote! {},
+    };
 
     let patch_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_patch(
@@ -142,10 +150,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #self_props_bindings
 
                 #(#fn_stmts)*
-                #(#patch_stmts)*
-            }
+                #patch_cb_collector_local
 
-            #shim_support
+                #(#patch_stmts)*
+
+                #patch_bind_callbacks
+            }
         }
 
         impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
@@ -173,6 +183,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 self.patch(&__updates, __cursor);
             }
         }
+
+        #shim_impls
     }
 }
 
@@ -438,7 +450,7 @@ fn create_self_shim(
         });
 
     quote! {
-        struct #shim_ident<'c> {
+        pub struct #shim_ident<'c> {
             props: &'c #owned_props_ident,
             #(#state_fields)*
         }
@@ -449,12 +461,13 @@ fn create_self_shim(
     }
 }
 
-fn create_shim_support(
+fn create_shim_impls(
     struct_fields: &[ir::StructField],
     root_idents: &RootIdents,
     params: &[param::Param],
 ) -> TokenStream {
     let n_params = params.iter().count();
+    let component_ident = &root_idents.component_ident;
     let shim_ident = &root_idents.self_shim_ident;
 
     let state_fields = struct_fields
@@ -472,35 +485,26 @@ fn create_shim_support(
         });
 
     quote! {
-        fn bind_callbacks(
-            &self,
-            callbacks: Vec<(
-                ::hypp::SharedCallback<H>,
-                &'static dyn Fn(&mut #shim_ident<'_>),
-            )>
-        ) {
-            let zelf = self.__weak_self.as_ref().and_then(|weak| weak.upgrade()).unwrap();
-            for (callback, method) in callbacks.into_iter() {
-                let zelf = zelf.clone();
-                callback.borrow_mut().bind(Box::new(move || {
-                    zelf.borrow_mut().shim_updater_trampoline(method)
-                }))
+        impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for #component_ident<H> {
+            type Shim<'s> = #shim_ident<'s>;
+
+            fn shim_trampoline<F>(&mut self, cb: F)
+            where
+                for<'s> F: Fn(&'s mut Self::Shim<'s>),
+            {
+                let mut __updates: [bool; #n_params] = [false; #n_params];
+
+                let mut shim = #shim_ident {
+                    props: &self.props,
+
+                    #(#state_fields)*
+                };
+
+                cb(&mut shim);
+
+                // FIXME: The only thing missing now, is the call to self.patch().
+                // But then we need to instantiate a Cursor builder positioned at the first DOM node.
             }
-        }
-
-        fn shim_updater_trampoline(&mut self, cb: impl Fn(&mut #shim_ident)) {
-            let mut __updates: [bool; #n_params] = [false; #n_params];
-
-            let mut shim = #shim_ident {
-                props: &self.props,
-
-                #(#state_fields)*
-            };
-
-            cb(&mut shim);
-
-            // FIXME: The only thing missing now, is the call to self.patch().
-            // But then we need to instantiate a Cursor builder positioned at the first DOM node.
         }
     }
 }

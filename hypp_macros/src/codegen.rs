@@ -436,15 +436,7 @@ impl ir::Block {
             _ => quote! { .unwrap() },
         };
 
-        let cb_collector_local = match self.handle_kind {
-            ir::HandleKind::Shared => {
-                let self_shim_ident = &root_idents.self_shim_ident;
-                quote! {
-                    let mut __cb_collector: Vec<(::hypp::SharedCallback<H>, &'static dyn Fn(&mut #self_shim_ident<'_>))> = vec![];
-                }
-            }
-            ir::HandleKind::Unique => quote! {},
-        };
+        let cb_collector_local = self.handle_kind.cb_collector_local(root_idents);
 
         struct FieldInit {
             field_mut: bool,
@@ -638,7 +630,7 @@ impl ir::Block {
             ir::HandleKind::Shared => {
                 quote! {
                     __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
-                    __mounted.borrow().bind_callbacks(__cb_collector);
+                    ::hypp::shim::bind_callbacks::<H, _, _>(&__mounted.borrow().__weak_self, __cb_collector);
                 }
             }
             ir::HandleKind::Unique => quote! {},
@@ -1077,6 +1069,18 @@ impl ir::HandleKind {
         match self {
             Self::Unique => quote! { ::hypp::handle::Unique },
             Self::Shared => quote! { ::hypp::handle::Shared },
+        }
+    }
+
+    pub fn cb_collector_local(&self, root_idents: &RootIdents) -> TokenStream {
+        match self {
+            ir::HandleKind::Shared => {
+                let self_shim_ident = &root_idents.self_shim_ident;
+                quote! {
+                    let mut __cb_collector: Vec<(::hypp::SharedCallback<H>, &'static dyn Fn(&mut #self_shim_ident<'_>))> = vec![];
+                }
+            }
+            ir::HandleKind::Unique => quote! {},
         }
     }
 }

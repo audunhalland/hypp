@@ -10,6 +10,7 @@
 pub mod error;
 pub mod handle;
 pub mod server;
+pub mod shim;
 pub mod span;
 pub mod state_ref;
 pub mod web;
@@ -262,3 +263,20 @@ pub trait Callback {
 }
 
 pub type SharedCallback<H> = std::rc::Rc<std::cell::RefCell<<H as Hypp>::Callback>>;
+
+///
+/// Inject a "shim" type as the argument of a closure and call that closure.
+///
+pub trait ShimTrampoline {
+    type Shim<'s>
+    where
+        Self: 's;
+
+    ///
+    /// Set up the shim, and call the given closure
+    /// with that shim as its only argument.
+    ///
+    fn shim_trampoline<F>(&mut self, cb: F)
+    where
+        for<'s> F: Fn(&'s mut Self::Shim<'s>);
+}
