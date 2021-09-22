@@ -16,13 +16,21 @@ hypp::component! {
         *self.toggled = !*self.toggled;
     }
 
-    <button on_click={Self::handle_click}>
+    <div>
+        "Hypp: The perfect framework for "
+        <strong>
+            "Button toggling!"
+        </strong>
+    </div>
+    <div>
+        <button on_click={Self::handle_click}>
         if toggled {
             "Toggled"
         } else {
             "Not toggled"
         }
-    </button>
+        </button>
+    </div>
 }
 
 // Called when the wasm module is instantiated
