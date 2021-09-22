@@ -123,6 +123,13 @@ pub struct WebBuilder {
 }
 
 impl WebBuilder {
+    fn current_child(&self) -> Option<web_sys::Node> {
+        match &self.next_child {
+            Some(next_child) => next_child.previous_sibling(),
+            None => self.element.last_child(),
+        }
+    }
+
     fn enter_element(&mut self, tag_name: &str) -> Result<web_sys::Element, Error> {
         let element = self.document.create_element(tag_name).unwrap();
         self.element
@@ -147,6 +154,7 @@ impl WebBuilder {
         let node = self.document.create_text_node(text);
         self.element
             .insert_before(node.as_ref(), self.next_child.as_ref())?;
+        self.next_child = Some(node.as_node().clone());
 
         Ok(node)
     }
@@ -157,30 +165,12 @@ impl WebBuilder {
             .parent_node()
             .expect("Failed to exit: no parent node");
 
-        self.next_child = self.element.next_sibling();
+        self.next_child = Some(self.element.as_node().clone());
 
         Ok(std::mem::replace(
             &mut self.element,
             parent_node.try_into_element()?,
         ))
-    }
-
-    fn remove_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
-        let next_element = self
-            .next_child
-            .take()
-            .ok_or(Error::RemoveElement)?
-            .try_into_element()?;
-
-        if next_element.tag_name() != tag_name {
-            Err(Error::RemoveElement)
-        } else {
-            let next_sibling = next_element.next_sibling();
-            self.element.remove_child(&next_element)?;
-            self.next_child = next_sibling;
-
-            Ok(next_element)
-        }
     }
 
     fn html_element(&self) -> &web_sys::HtmlElement {
@@ -260,10 +250,14 @@ impl Cursor<WebHypp> for WebBuilder {
 
         match attribute_name {
             "on_click" => {
-                let (callback, web_closure) = callback::new_callback();
+                let callback = callback::new_callback();
 
-                self.html_element()
-                    .set_onclick(Some(web_closure.as_ref().unchecked_ref()));
+                {
+                    let borrow = callback.borrow();
+
+                    self.html_element()
+                        .set_onclick(Some(borrow.web_closure().as_ref().unchecked_ref()));
+                }
 
                 Ok(callback)
             }
@@ -276,59 +270,54 @@ impl Cursor<WebHypp> for WebBuilder {
     }
 
     fn remove_node(&mut self) -> Result<(), Error> {
-        let child = self
-            .next_child
-            .take()
-            .expect("Expected an element to remove");
-
-        self.next_child = child.next_sibling();
+        let child = self.current_child().expect("Expected a node to remove");
+        self.element.remove_child(&child)?;
 
         Ok(())
     }
 
     fn remove_element(&mut self, tag_name: &'static str) -> Result<web_sys::Element, Error> {
         let child = self
-            .next_child
-            .take()
-            .expect("Expected an element to remove");
+            .current_child()
+            .expect("Expected an element to remove")
+            .try_into_element()?;
         child.assert_is_element_with_tag_name(tag_name);
 
-        self.next_child = child.next_sibling();
+        self.element.remove_child(&child)?;
 
-        child.try_into_element()
+        Ok(child)
     }
 
     fn remove_text(&mut self) -> Result<web_sys::Text, Error> {
         let child = self
-            .next_child
-            .take()
-            .expect("Expected an element to remove");
+            .current_child()
+            .expect("Expected an element to remove")
+            .try_into_text()?;
 
-        self.next_child = child.next_sibling();
+        self.element.remove_child(&child)?;
 
-        child.try_into_text()
+        Ok(child)
     }
 
     fn move_to_children_of(&mut self, element: &web_sys::Element) {
         self.element = element.clone();
-        self.next_child = element.first_child();
+        // Start at the end of the child list:
+        self.next_child = None;
     }
 
     fn move_to_following_sibling(&mut self) -> Result<(), Error> {
-        if let Some(child) = self.next_child.take() {
-            self.next_child = child.previous_sibling();
-            Ok(())
-        } else {
-            Err(Error::Move)
-        }
+        self.next_child = Some(self.current_child().expect("Moved past the first child"));
+        Ok(())
     }
 
     fn move_to_following_sibling_of(&mut self, node: &web_sys::Node) {
-        self.element = node.parent_node().unwrap().try_into_element().unwrap();
+        self.element = node.parent_element().unwrap();
+        // The next child is the node itself (so the cursor points before that node)
         self.next_child = Some(node.clone());
     }
 
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {
+        /*
         for opcode in program {
             match opcode {
                 ConstOpCode::EnterElement(tag_name) => {
@@ -359,6 +348,8 @@ impl Cursor<WebHypp> for WebBuilder {
                 }
             };
         }
+        */
+        unimplemented!("Not needed");
     }
 }
 

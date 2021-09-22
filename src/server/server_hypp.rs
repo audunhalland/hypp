@@ -250,7 +250,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
     }
 
     fn move_to_following_sibling(&mut self) -> Result<(), Error> {
-        self.next_child = Some(self.current_child().expect("Moved past the first childa"));
+        self.next_child = Some(self.current_child().expect("Moved past the first child"));
         Ok(())
     }
 
@@ -261,6 +261,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
     }
 
     fn skip_const_program(&mut self, program: &[ConstOpCode]) {
+        /*
         for opcode in program {
             match opcode {
                 ConstOpCode::EnterElement(tag_name) => {
@@ -287,6 +288,8 @@ impl Cursor<ServerHypp> for ServerBuilder {
                 }
             };
         }
+        */
+        unimplemented!("Not needed");
     }
 }
 

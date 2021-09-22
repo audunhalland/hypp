@@ -1,3 +1,5 @@
+#![feature(generic_associated_types)]
+
 use hypp::prelude::*;
 
 use wasm_bindgen::prelude::*;
