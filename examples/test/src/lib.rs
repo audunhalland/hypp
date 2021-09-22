@@ -16,12 +16,7 @@ hypp::component! {
         *self.toggled = !*self.toggled;
     }
 
-    <div>
-        "Hypp: The perfect framework for "
-        <strong>
-            "Button toggling!"
-        </strong>
-    </div>
+    <Headline toggled={toggled} />
     <div>
         <button on_click={Self::handle_click}>
         if toggled {
@@ -30,6 +25,21 @@ hypp::component! {
             "Not toggled"
         }
         </button>
+    </div>
+}
+
+hypp::component! {
+    Headline(toggled: bool) {}
+
+    <div>
+        if toggled {
+            "Now try to turn it off again:"
+        } else {
+            "Hypp: The perfect framework for "
+            <strong>
+                "Button toggling!"
+            </strong>
+        }
     </div>
 }
 
