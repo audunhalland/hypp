@@ -1,5 +1,6 @@
 pub use crate::Anchor;
 pub use crate::AsNode;
+pub use crate::BindCallback;
 pub use crate::Callback;
 pub use crate::Component;
 pub use crate::Cursor;

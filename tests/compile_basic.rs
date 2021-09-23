@@ -374,8 +374,6 @@ component! {
     </div>
 }
 
-// Still doesn't work, because we have to create+setup
-// callbacks in `fn patch` o_O
 component_dbg! {
     ConditionalCallback(show_button: bool) {
         toggled: bool

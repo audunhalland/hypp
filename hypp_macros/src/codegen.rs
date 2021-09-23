@@ -448,8 +448,6 @@ impl ir::Block {
             _ => quote! { .unwrap() },
         };
 
-        let cb_collector_local = self.handle_kind.cb_collector_local(root_idents);
-
         struct FieldInit {
             field_mut: bool,
             init: TokenStream,
@@ -633,26 +631,15 @@ impl ir::Block {
                 .map(|statement| match &statement.expression {
                     ir::Expression::AttributeCallback(callback::Callback { ident }) => {
                         if let Some(field) = &statement.field {
-                            let closure = quote! {
-                                &|shim| { shim.#ident(); }
-                            };
+                            let component_ident = &root_idents.component_ident;
 
-                            match ctx.function {
-                                Function::Mount => quote! {
-                                    // There's no `self` here:
-                                    __cb_collector.push((#field.clone(), #closure));
-                                },
-                                _ => {
-                                    let self_shim_ident = &root_idents.self_shim_ident;
-
-                                    quote! {
-                                        ::hypp::shim::bind_callback_weak::<
-                                            H,
-                                            _,
-                                            &'static dyn Fn(&mut #self_shim_ident<'_>)
-                                        >(#field.clone(), &self.__weak_self, #closure);
-                                    }
-                                }
+                            quote! {
+                                __binder.bind(
+                                    #field.clone(),
+                                    ::hypp::ShimMethod::<#component_ident<H>>(&|shim| {
+                                        shim.#ident();
+                                    }),
+                                );
                             }
                         } else {
                             quote! {}
@@ -666,7 +653,7 @@ impl ir::Block {
             (ir::HandleKind::Shared, Function::Mount) => {
                 quote! {
                     __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
-                    ::hypp::shim::bind_callbacks_weak::<H, _, _>(&__mounted.borrow().__weak_self, __cb_collector);
+                    __binder.bind_all(&__mounted.borrow().__weak_self);
                 }
             }
             _ => quote! {},
@@ -676,7 +663,8 @@ impl ir::Block {
             (ir::HandleKind::Shared, Function::Mount) => {
                 quote! {
                     #anchor_init
-                    #cb_collector_local
+                    let mut __binder: ::hypp::shim::LazyBinder<H, Self> = ::hypp::shim::LazyBinder::new();
+
                     #(#field_inits)*
                     #(#callback_collectors)*
 
@@ -1106,18 +1094,6 @@ impl ir::HandleKind {
         match self {
             Self::Unique => quote! { ::hypp::handle::Unique },
             Self::Shared => quote! { ::hypp::handle::Shared },
-        }
-    }
-
-    pub fn cb_collector_local(&self, root_idents: &RootIdents) -> TokenStream {
-        match self {
-            ir::HandleKind::Shared => {
-                let self_shim_ident = &root_idents.self_shim_ident;
-                quote! {
-                    let mut __cb_collector: Vec<(::hypp::SharedCallback<H>, &'static dyn Fn(&mut #self_shim_ident<'_>))> = vec![];
-                }
-            }
-            ir::HandleKind::Unique => quote! {},
         }
     }
 }

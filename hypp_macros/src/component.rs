@@ -86,6 +86,13 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
     );
 
+    let patch_binder_local = match component_kind {
+        ir::ComponentKind::SelfUpdatable => Some(quote! {
+            let mut __binder: ::hypp::shim::Binder<H, Self> = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
+        }),
+        ir::ComponentKind::Basic => None,
+    };
+
     let patch_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_patch(
             &root_idents,
@@ -161,6 +168,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #self_props_bindings
                 #(#fn_stmts)*
+                #patch_binder_local
                 #(#patch_stmts)*
             }
         }
@@ -516,9 +524,7 @@ fn create_shim_impls(
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for #component_ident<H> {
             type Shim<'s> = #shim_ident<'s>;
 
-            fn shim_trampoline<F>(&mut self, cb: F)
-            where
-                for<'s> F: Fn(&'s mut Self::Shim<'s>),
+            fn shim_trampoline(&mut self, method: ::hypp::ShimMethod<Self>)
             {
                 let mut __updates: [bool; #n_params] = [false; #n_params];
 
@@ -528,7 +534,7 @@ fn create_shim_impls(
                     #(#state_fields)*
                 };
 
-                cb(&mut shim);
+                method.0(&mut shim);
 
                 let mut cursor = self.__anchor.create_builder();
                 self.patch(&__updates, &mut cursor);

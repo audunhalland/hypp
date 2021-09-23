@@ -276,10 +276,23 @@ pub trait Callback {
 
 pub type SharedCallback<H> = std::rc::Rc<std::cell::RefCell<<H as Hypp>::Callback>>;
 
+// Bug: derive(Clone) broken
+// https://github.com/rust-lang/rust/issues/89188
+// #[derive(Clone)]
+pub struct ShimMethod<T: ShimTrampoline + 'static>(
+    pub &'static dyn for<'s> Fn(&'s mut T::Shim<'s>),
+);
+
+impl<T: ShimTrampoline + 'static> ShimMethod<T> {
+    fn clone(&self) -> Self {
+        ShimMethod(self.0)
+    }
+}
+
 ///
 /// Inject a "shim" type as the argument of a closure and call that closure.
 ///
-pub trait ShimTrampoline {
+pub trait ShimTrampoline: Sized {
     type Shim<'s>
     where
         Self: 's;
@@ -288,7 +301,14 @@ pub trait ShimTrampoline {
     /// Set up the shim, and call the given closure
     /// with that shim as its only argument.
     ///
-    fn shim_trampoline<F>(&mut self, cb: F)
-    where
-        for<'s> F: Fn(&'s mut Self::Shim<'s>);
+    fn shim_trampoline(&mut self, method: ShimMethod<Self>);
+}
+
+///
+/// Bind a callback.
+///
+/// The intention is to associate a callback with a method.
+///
+pub trait BindCallback<H: Hypp, T: ShimTrampoline> {
+    fn bind(&mut self, callback: SharedCallback<H>, method: ShimMethod<T>);
 }
