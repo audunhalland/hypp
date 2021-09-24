@@ -46,7 +46,7 @@ pub struct StructField {
 pub enum FieldIdent {
     Id(u16),
     Param(syn::Ident),
-    Props,
+    Env,
 }
 
 /// Type of a struct field
@@ -54,11 +54,10 @@ pub enum FieldIdent {
 pub enum StructFieldType {
     DomElement,
     DomText,
-    Props,
+    Env,
     WeakSelf,
     Anchor,
     Callback,
-    Param(param::Param),
     Component(ComponentPath),
     DynamicSpan(u16),
 }

@@ -9,16 +9,15 @@ pub enum ParamError {
 #[derive(Clone)]
 pub struct Param {
     pub id: u16,
-    pub kind: ParamKind,
     pub ident: syn::Ident,
-    pub ty: ParamRootType,
+    pub kind: ParamKind,
 }
 
 impl Param {
     pub fn is_prop(&self) -> bool {
         match &self.kind {
-            ParamKind::Prop => true,
-            ParamKind::State => false,
+            ParamKind::Prop(_) => true,
+            ParamKind::State(_) => false,
         }
     }
 
@@ -27,10 +26,10 @@ impl Param {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum ParamKind {
-    Prop,
-    State,
+    Prop(ParamRootType),
+    State(syn::Type),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

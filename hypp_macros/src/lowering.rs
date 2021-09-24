@@ -45,22 +45,12 @@ pub fn lower_root_node(
 
     let scope = flow::FlowScope::from_params(params);
 
-    for param in params {
-        // State fields are stored directly and independently. Prop fields are not..
-        if param.is_state() {
-            root_builder.struct_fields.push(ir::StructField {
-                ident: ir::FieldIdent::Param(param.ident.clone()),
-                ty: ir::StructFieldType::Param(param.clone()),
-            });
-        }
-    }
-
-    // All the props are stored in "owned props" struct.
+    // Props (and state) is stored in "env" struct.
     // This is to allow immutable access to props in mutable contexts
     // like callbacks.
     root_builder.struct_fields.push(ir::StructField {
-        ident: ir::FieldIdent::Props,
-        ty: ir::StructFieldType::Props,
+        ident: ir::FieldIdent::Env,
+        ty: ir::StructFieldType::Env,
     });
 
     root_builder.lower_ast(root, &scope, &mut ctx)?;

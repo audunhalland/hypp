@@ -13,7 +13,6 @@ struct Component {
     dom_programs: Vec<TokenStream>,
     root_idents: RootIdents,
     params: Vec<param::Param>,
-    prop_fields: Vec<ir::StructField>,
     root_block: ir::Block,
     dynamic_span_enums: Vec<TokenStream>,
     fn_stmts: Vec<syn::Stmt>,
@@ -32,7 +31,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         dom_programs,
         root_idents,
         params,
-        prop_fields,
         root_block,
         dynamic_span_enums,
         fn_stmts,
@@ -46,26 +44,26 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let PublicPropsStruct {
         tokens: public_props_struct,
         has_p_lifetime,
-    } = create_public_props_struct(&prop_fields, &root_idents);
-    let owned_props_struct = create_owned_props_struct(&prop_fields, &root_idents);
+    } = create_public_props_struct(&params, &root_idents);
+    let env_struct = create_env_struct(&params, &root_idents);
     let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
-    let self_props_bindings = create_self_props_bindings(&params);
+    let self_env_bindings = create_self_env_bindings(&params);
     let props_updater = create_props_updater(&params);
     let self_shim = if has_self_shim.0 {
-        create_self_shim(&root_block.struct_fields, &root_idents, methods)
+        create_self_shim(&params, &root_idents, methods)
     } else {
         quote! {}
     };
     let shim_impls = if has_self_shim.0 {
-        create_shim_impls(&root_block.struct_fields, &root_idents, &params)
+        Some(create_shim_impls(&params, &root_idents))
     } else {
-        quote! {}
+        None
     };
 
     let public_props_generics = if has_p_lifetime {
-        quote! { <'p> }
+        Some(quote! { <'p> })
     } else {
-        quote! {}
+        None
     };
 
     let struct_field_defs = root_block
@@ -74,11 +72,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         .map(|field| field.field_def_tokens(&root_idents, Scope::Component));
 
     let mount_state_locals = create_mount_state_locals(&params);
-
     let mount = root_block.gen_mount(
         ConstructorKind::Component,
         &root_idents,
-        OwnedProps(Some(&prop_fields)),
+        Params(Some(&params)),
         CodegenCtx {
             component_kind,
             function: Function::Mount,
@@ -144,7 +141,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     quote! {
         #public_props_struct
-        #owned_props_struct
+        #env_struct
         #self_shim
 
         #(#dom_programs)*
@@ -166,7 +163,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             #[allow(unused_variables)]
             fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
-                #self_props_bindings
+                #self_env_bindings
                 #(#fn_stmts)*
                 #patch_binder_local
                 #(#patch_stmts)*
@@ -227,15 +224,6 @@ fn analyze_ast(
     // Root idents which are used as prefixes for every global ident generated:
     let root_idents = RootIdents::from_component_ident(ident);
 
-    let prop_fields = params
-        .iter()
-        .filter(|param| param.is_prop())
-        .map(|param| ir::StructField {
-            ident: ir::FieldIdent::Param(param.ident.clone()),
-            ty: ir::StructFieldType::Param(param.clone()),
-        })
-        .collect::<Vec<_>>();
-
     let mut dom_programs = vec![];
     collect_dom_programs(&root_block.statements, &root_idents, &mut dom_programs);
 
@@ -252,7 +240,6 @@ fn analyze_ast(
         dom_programs,
         root_idents,
         params,
-        prop_fields,
         root_block,
         dynamic_span_enums,
         fn_stmts: vec![],
@@ -263,36 +250,35 @@ fn analyze_ast(
 
 /// Create the props `struct` that callees will use to instantiate the component
 fn create_public_props_struct(
-    fields: &[ir::StructField],
+    params: &[param::Param],
     root_idents: &RootIdents,
 ) -> PublicPropsStruct {
     let props_ident = &root_idents.public_props_ident;
 
     let mut has_p_lifetime = false;
 
-    let fields = fields
+    let fields = params
         .iter()
-        .map(|field| {
-            let ident = &field.ident;
-
-            let ty = match &field.ty {
-                ir::StructFieldType::Param(ty) => match &ty.ty {
-                    param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(ty) => quote! { #ty },
-                        param::ParamLeafType::Ref(ty) => {
-                            has_p_lifetime = true;
-                            quote! { &'p #ty }
-                        }
-                    },
-                    param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
-                        param::ParamLeafType::Ref(ty) => {
-                            has_p_lifetime = true;
-                            quote! { Option<&'p #ty> }
-                        }
-                    },
+        .filter_map(|param| match &param.kind {
+            param::ParamKind::Prop(root_ty) => Some((&param.ident, root_ty)),
+            param::ParamKind::State(_) => None,
+        })
+        .map(|(ident, root_ty)| {
+            let ty = match root_ty {
+                param::ParamRootType::One(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => quote! { #ty },
+                    param::ParamLeafType::Ref(ty) => {
+                        has_p_lifetime = true;
+                        quote! { &'p #ty }
+                    }
                 },
-                _ => quote! {},
+                param::ParamRootType::Option(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
+                    param::ParamLeafType::Ref(ty) => {
+                        has_p_lifetime = true;
+                        quote! { Option<&'p #ty> }
+                    }
+                },
             };
 
             quote! {
@@ -302,9 +288,9 @@ fn create_public_props_struct(
         .collect::<Vec<_>>();
 
     let generics = if has_p_lifetime {
-        quote! { <'p> }
+        Some(quote! { <'p> })
     } else {
-        quote! {}
+        None
     };
 
     PublicPropsStruct {
@@ -317,15 +303,13 @@ fn create_public_props_struct(
     }
 }
 
-/// Create the props `struct` that the component uses to store the props internally
-fn create_owned_props_struct(fields: &[ir::StructField], root_idents: &RootIdents) -> TokenStream {
-    let props_ident = &root_idents.owned_props_ident;
+/// Create the env struct that the component uses to cache internal data
+fn create_env_struct(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
+    let env_ident = &root_idents.env_ident;
 
-    let fields = fields.iter().map(|field| {
-        let ident = &field.ident;
-        let ty = field
-            .ty
-            .to_tokens(root_idents, Scope::Component, WithGenerics(true));
+    let fields = params.iter().map(|param| {
+        let ident = &param.ident;
+        let ty = param.owned_ty_tokens();
 
         quote! {
             pub #ident: #ty,
@@ -333,26 +317,9 @@ fn create_owned_props_struct(fields: &[ir::StructField], root_idents: &RootIdent
     });
 
     quote! {
-        pub struct #props_ident {
+        pub struct #env_ident {
             #(#fields)*
         }
-    }
-}
-
-fn create_mount_state_locals(params: &[param::Param]) -> TokenStream {
-    let locals = params.iter().filter_map(|param| match &param.kind {
-        param::ParamKind::State => {
-            let ident = &param.ident;
-
-            Some(quote! {
-                let #ident = Default::default();
-            })
-        }
-        param::ParamKind::Prop => None,
-    });
-
-    quote! {
-        #(#locals)*
     }
 }
 
@@ -360,14 +327,14 @@ fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIden
     let props_ident = &root_idents.public_props_ident;
 
     let fields = params.iter().filter_map(|param| match &param.kind {
-        param::ParamKind::Prop => {
+        param::ParamKind::Prop(_) => {
             let ident = &param.ident;
 
             Some(quote! {
                 #ident,
             })
         }
-        param::ParamKind::State => None,
+        param::ParamKind::State(_) => None,
     });
 
     syn::parse_quote! {
@@ -378,33 +345,54 @@ fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIden
     }
 }
 
-fn create_self_props_bindings(params: &[param::Param]) -> TokenStream {
+// Temporary while still using separate 'mount' template code
+fn create_mount_state_locals(params: &[param::Param]) -> TokenStream {
+    let locals = params.iter().filter_map(|param| match &param.kind {
+        param::ParamKind::State(_) => {
+            let ident = &param.ident;
+
+            Some(quote! {
+                let #ident = Default::default();
+            })
+        }
+        param::ParamKind::Prop(_) => None,
+    });
+
+    quote! {
+        #(#locals)*
+    }
+}
+
+fn create_self_env_bindings(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
-        let substruct = if param.is_prop() {
-            quote! { .props }
-        } else {
-            quote! {}
-        };
-
-        match &param.ty {
-            param::ParamRootType::One(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { let #ident = self #substruct.#ident; },
-                param::ParamLeafType::Ref(_) => {
-                    // Remember, when storing a _reference_ prop inside self,
-                    // we use the `<T as ToOwned>::Owned` type to store it..
-                    // so we can just take the reference to that again!
-                    quote! {
-                        let #ident = &self #substruct.#ident;
+        match &param.kind {
+            param::ParamKind::Prop(root_ty) => match root_ty {
+                param::ParamRootType::One(ty) => match ty {
+                    param::ParamLeafType::Owned(_) => {
+                        quote! { let #ident = self.env.#ident; }
                     }
-                }
+                    param::ParamLeafType::Ref(_) => {
+                        // Remember, when storing a _reference_ prop inside self,
+                        // we use the `<T as ToOwned>::Owned` type to store it..
+                        // so we can just take the reference to that again!
+                        quote! {
+                            let #ident = &self.env.#ident;
+                        }
+                    }
+                },
+                param::ParamRootType::Option(ty) => match ty {
+                    param::ParamLeafType::Owned(_) => {
+                        quote! { let #ident = self.env.#ident; }
+                    }
+                    param::ParamLeafType::Ref(_) => {
+                        quote! { let #ident = self.env.#ident.as_deref(); }
+                    }
+                },
             },
-            param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { let #ident = self #substruct.#ident; },
-                param::ParamLeafType::Ref(_) => {
-                    quote! { let #ident = self #substruct.#ident.as_deref(); }
-                }
+            param::ParamKind::State(_) => quote! {
+                let #ident = &self.env.#ident;
             },
         }
     });
@@ -421,34 +409,39 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
         let id = param.id as usize;
         let ident = &param.ident;
 
-        let self_prop_as_ref = match &param.ty {
-            param::ParamRootType::One(_) => quote! { self.props.#ident },
-            param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { self.props.#ident },
-                param::ParamLeafType::Ref(_) => quote! {self.props.#ident.as_deref() },
-            },
-        };
+        match &param.kind {
+            param::ParamKind::Prop(root_ty) => {
+                let self_prop_as_ref = match root_ty {
+                    param::ParamRootType::One(_) => quote! { self.env.#ident },
+                    param::ParamRootType::Option(ty) => match ty {
+                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident },
+                        param::ParamLeafType::Ref(_) => quote! {self.env.#ident.as_deref() },
+                    },
+                };
 
-        let write = match &param.ty {
-            param::ParamRootType::One(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { self.props.#ident = #ident; },
-                param::ParamLeafType::Ref(_) => quote! {
-                    self.props.#ident = #ident.to_owned();
-                },
-            },
-            param::ParamRootType::Option(ty) => match ty {
-                param::ParamLeafType::Owned(_) => quote! { self.props.#ident = #ident; },
-                param::ParamLeafType::Ref(_) => quote! {
-                    self.props.#ident = #ident.map(|val| val.to_owned());
-                },
-            },
-        };
+                let write = match root_ty {
+                    param::ParamRootType::One(ty) => match ty {
+                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident = #ident; },
+                        param::ParamLeafType::Ref(_) => quote! {
+                            self.env.#ident = #ident.to_owned();
+                        },
+                    },
+                    param::ParamRootType::Option(ty) => match ty {
+                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident = #ident; },
+                        param::ParamLeafType::Ref(_) => quote! {
+                            self.env.#ident = #ident.map(|val| val.to_owned());
+                        },
+                    },
+                };
 
-        quote! {
-            if #self_prop_as_ref != #ident {
-                #write
-                __updates[#id] = true;
+                Some(quote! {
+                    if #self_prop_as_ref != #ident {
+                        #write
+                        __updates[#id] = true;
+                    }
+                })
             }
+            param::ParamKind::State(_) => None,
         }
     });
 
@@ -461,34 +454,38 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
 }
 
 fn create_self_shim(
-    struct_fields: &[ir::StructField],
+    params: &[param::Param],
     root_idents: &RootIdents,
     methods: Vec<syn::ItemFn>,
 ) -> TokenStream {
     let shim_ident = &root_idents.self_shim_ident;
-    let owned_props_ident = &root_idents.owned_props_ident;
 
-    let state_fields = struct_fields
-        .iter()
-        .filter_map(|struct_field| match &struct_field.ty {
-            ir::StructFieldType::Param(param) if param.is_state() => {
-                let ident = &struct_field.ident;
-                let inner_ty =
-                    struct_field
-                        .ty
-                        .to_tokens(&root_idents, Scope::Component, WithGenerics(true));
+    let fields = params.iter().map(|param| {
+        let ident = &param.ident;
+        let ty = match &param.kind {
+            param::ParamKind::Prop(root_ty) => match root_ty {
+                param::ParamRootType::One(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => quote! { &'c #ty },
+                    param::ParamLeafType::Ref(ty) => quote! { &'c #ty },
+                },
+                param::ParamRootType::Option(ty) => match ty {
+                    param::ParamLeafType::Owned(ty) => quote! { Option<&'p #ty> },
+                    param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
+                },
+            },
+            param::ParamKind::State(ty) => quote! {
+                ::hypp::state_ref::StateRef<'c, #ty>
+            },
+        };
 
-                Some(quote! {
-                    #ident: ::hypp::state_ref::StateRef<'c, #inner_ty>,
-                })
-            }
-            _ => None,
-        });
+        quote! {
+            #ident: #ty,
+        }
+    });
 
     quote! {
         pub struct #shim_ident<'c> {
-            props: &'c #owned_props_ident,
-            #(#state_fields)*
+            #(#fields)*
         }
 
         impl<'c> #shim_ident<'c> {
@@ -497,28 +494,26 @@ fn create_self_shim(
     }
 }
 
-fn create_shim_impls(
-    struct_fields: &[ir::StructField],
-    root_idents: &RootIdents,
-    params: &[param::Param],
-) -> TokenStream {
+fn create_shim_impls(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
     let n_params = params.iter().count();
     let component_ident = &root_idents.component_ident;
     let shim_ident = &root_idents.self_shim_ident;
 
-    let state_fields = struct_fields
-        .iter()
-        .filter_map(|struct_field| match &struct_field.ty {
-            ir::StructFieldType::Param(param) if param.is_state() => {
-                let ident = &struct_field.ident;
+    let env_fields = params.iter().map(|param| {
+        let ident = &param.ident;
+        match &param.kind {
+            param::ParamKind::Prop(_) => quote! {
+                #ident: &self.env.#ident,
+            },
+            param::ParamKind::State(_) => {
                 let id = param.id as usize;
 
-                Some(quote! {
-                    #ident: ::hypp::state_ref::StateRef::new(&mut self.#ident, &mut __updates[#id]),
-                })
+                quote! {
+                    #ident: ::hypp::state_ref::StateRef::new(&mut self.env.#ident, &mut __updates[#id]),
+                }
             }
-            _ => None,
-        });
+        }
+    });
 
     quote! {
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for #component_ident<H> {
@@ -529,9 +524,7 @@ fn create_shim_impls(
                 let mut __updates: [bool; #n_params] = [false; #n_params];
 
                 let mut shim = #shim_ident {
-                    props: &self.props,
-
-                    #(#state_fields)*
+                    #(#env_fields)*
                 };
 
                 method.0(&mut shim);
