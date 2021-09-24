@@ -12,6 +12,10 @@ struct Env<H: ::hypp::Hypp> {
 }
 
 impl<H: ::hypp::Hypp + 'static> Env<H> {
+    // BUG: These won't work because of variable bindings
+    // in match patterns.
+    // But the idea with ::Init variants might still work,
+    // to reduce code duplication between mount and patch.
     fn mount_span0_v0(
         &self,
         __cursor: &mut dyn ::hypp::Cursor<H>,
@@ -64,31 +68,6 @@ impl<H: ::hypp::Hypp + 'static> Env<H> {
         let __f5 = __cursor.const_exec_text(&__CONDITIONALCALLBACK_PRG2)?;
         Ok(__ConditionalCallbackSpan1::V1 { __f5 })
     }
-
-    fn mount(
-        self,
-        __cursor: &mut dyn ::hypp::Cursor<H>,
-    ) -> Result<::hypp::handle::Shared<ConditionalCallback<H>>, ::hypp::Error> {
-        let __anchor = __cursor.anchor();
-        let show_button = self.props.show_button;
-        let mut __binder = ::hypp::shim::LazyBinder::new();
-
-        let __f0 = match show_button {
-            true => self.mount_span0_v0(__cursor, &mut __binder)?,
-            false => self.mount_span0_v1(__cursor)?,
-        };
-
-        let __weak_self = None;
-        let __mounted = ::std::rc::Rc::new(::std::cell::RefCell::new(ConditionalCallback {
-            env: self,
-            __f0,
-            __anchor,
-            __weak_self,
-        }));
-        __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
-        __binder.bind_all(&__mounted.borrow().__weak_self);
-        Ok(::hypp::handle::Shared::new(__mounted))
-    }
 }
 
 // macro output:
@@ -118,6 +97,7 @@ static __CONDITIONALCALLBACK_PRG2: [::hypp::ConstOpCode; 1usize] =
 static __CONDITIONALCALLBACK_PRG3: [::hypp::ConstOpCode; 1usize] =
     [::hypp::ConstOpCode::ExitElement];
 enum __ConditionalCallbackSpan0<H: ::hypp::Hypp> {
+    Init,
     V0 {
         __f1: ::hypp::SharedCallback<H>,
         __f2: H::Element,
@@ -132,6 +112,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan0<H
     }
     fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
         match self {
+            Self::Init => false,
             Self::V0 {
                 ref __f1,
                 ref __f2,
@@ -148,6 +129,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan0<H
     }
     fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
         match self {
+            Self::Init => {}
             Self::V0 {
                 ref __f1,
                 ref __f2,
@@ -163,6 +145,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan0<H
     }
 }
 enum __ConditionalCallbackSpan1<H: ::hypp::Hypp> {
+    Init,
     V0 { __f4: H::Text },
     V1 { __f5: H::Text },
 }
@@ -172,6 +155,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan1<H
     }
     fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
         match self {
+            Self::Init => false,
             Self::V0 { ref __f4, .. } => ::hypp::span::pass(
                 &mut [&mut __CONDITIONALCALLBACK_PRG1[0usize].as_span()],
                 __cursor,
@@ -194,25 +178,59 @@ pub struct ConditionalCallback<H: ::hypp::Hypp> {
     __weak_self: Option<::std::rc::Weak<::std::cell::RefCell<Self>>>,
 }
 impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
+    // Mount using patch2?
     pub fn mount(
         __ConditionalCallbackProps { show_button, .. }: __ConditionalCallbackProps,
         __cursor: &mut dyn ::hypp::Cursor<H>,
     ) -> Result<::hypp::handle::Shared<Self>, ::hypp::Error> {
+        let __updates: [bool; 2usize] = [true; 2usize];
+        let __anchor = __cursor.anchor();
+        let mut __binder: ::hypp::shim::LazyBinder<H, Self> = ::hypp::shim::LazyBinder::new();
+
         let env = Env {
             props: __ConditionalCallbackOwnedProps { show_button },
             toggled: Default::default(),
             __phantom: std::marker::PhantomData,
         };
 
-        env.mount(__cursor)
-    }
-    #[allow(unused_variables)]
-    fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
-        let show_button = self.env.props.show_button;
-        let toggled = self.env.toggled;
-        let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
+        let mut __f0 = __ConditionalCallbackSpan0::Init;
+        Self::patch_f0(&mut __f0, &env, &__updates, __cursor, &mut __binder);
 
-        match (&mut self.__f0, show_button) {
+        let __weak_self = None;
+        let __mounted = ::std::rc::Rc::new(::std::cell::RefCell::new(ConditionalCallback {
+            env,
+            __f0,
+            __anchor,
+            __weak_self,
+        }));
+        __mounted.borrow_mut().__weak_self = Some(::std::rc::Rc::downgrade(&__mounted));
+        __binder.bind_all(&__mounted.borrow().__weak_self);
+
+        Ok(::hypp::handle::Shared::new(__mounted))
+    }
+
+    fn patch_root(
+        &mut self,
+        __updates: &[bool],
+        __cursor: &mut dyn ::hypp::Cursor<H>,
+        __binder: &mut dyn ::hypp::BindCallback<H, ConditionalCallback<H>>,
+    ) {
+        Self::patch_f0(&mut self.__f0, &self.env, __updates, __cursor, __binder);
+    }
+
+    // Patch only one root conditional.
+    // can be used by initial mount.
+    fn patch_f0(
+        mut __f0: &mut __ConditionalCallbackSpan0<H>,
+        __env: &Env<H>,
+        __updates: &[bool],
+        __cursor: &mut dyn ::hypp::Cursor<H>,
+        __binder: &mut dyn ::hypp::BindCallback<H, ConditionalCallback<H>>,
+    ) {
+        let show_button = __env.props.show_button;
+        let toggled = __env.toggled;
+
+        match (&mut __f0, show_button) {
             (
                 __ConditionalCallbackSpan0::V0 {
                     ref __f1,
@@ -226,31 +244,41 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
                 __cursor.move_to_children_of(&__f2);
                 match (&__f3, toggled) {
                     (__ConditionalCallbackSpan1::V0 { ref __f4, .. }, true) => {
-                        __cursor.move_to_following_sibling_of(__f4.as_node());
+                        // Can do this
+                        __f3.pass_over(__cursor);
+                        // Instead of this:
+                        // __cursor.move_to_following_sibling_of(__f4.as_node());
                     }
-                    (__ConditionalCallbackSpan1::V1 { .. }, true) => {
+                    (
+                        __ConditionalCallbackSpan1::Init | __ConditionalCallbackSpan1::V1 { .. },
+                        true,
+                    ) => {
                         __f3.erase(__cursor);
-                        *__f3 = self.env.mount_span1_v0(__cursor).unwrap();
+                        *__f3 = __env.mount_span1_v0(__cursor).unwrap();
                     }
                     (__ConditionalCallbackSpan1::V1 { ref __f5, .. }, false) => {
-                        __cursor.move_to_following_sibling_of(__f5.as_node());
+                        __f3.pass_over(__cursor);
                     }
-                    (__ConditionalCallbackSpan1::V0 { .. }, false) => {
+                    (
+                        __ConditionalCallbackSpan1::Init | __ConditionalCallbackSpan1::V0 { .. },
+                        false,
+                    ) => {
                         __f3.erase(__cursor);
-                        *__f3 = self.env.mount_span1_v1(__cursor).unwrap();
+                        *__f3 = __env.mount_span1_v1(__cursor).unwrap();
                     }
                 }
+                // Just pass the nodes instead.. We know statically what they will be
                 __cursor.move_to_following_sibling_of(__f6.as_node());
             }
-            (__ConditionalCallbackSpan0::V1 { .. }, true) => {
-                self.__f0.erase(__cursor);
-                self.__f0 = self.env.mount_span0_v0(__cursor, &mut binder).unwrap();
+            (__ConditionalCallbackSpan0::Init | __ConditionalCallbackSpan0::V1 { .. }, true) => {
+                __f0.erase(__cursor);
+                *__f0 = __env.mount_span0_v0(__cursor, __binder).unwrap();
             }
             (__ConditionalCallbackSpan0::V1 { .. }, false) => {}
-            (__ConditionalCallbackSpan0::V0 { .. }, false) => {
-                self.__f0.erase(__cursor);
+            (__ConditionalCallbackSpan0::Init | __ConditionalCallbackSpan0::V0 { .. }, false) => {
+                __f0.erase(__cursor);
                 let __mounted = __ConditionalCallbackSpan0::V1 {};
-                self.__f0 = __mounted;
+                *__f0 = __mounted;
             }
         }
     }
@@ -286,7 +314,9 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for ConditionalCall
             self.env.props.show_button = show_button;
             __updates[0usize] = true;
         }
-        self.patch(&__updates, __cursor);
+
+        let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
+        self.patch_root(&__updates, __cursor, &mut binder);
     }
 }
 impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for ConditionalCallback<H> {
@@ -301,8 +331,10 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for ConditionalCallba
             ),
         };
         method.0(&mut shim);
+
         let mut cursor = self.__anchor.create_builder();
-        self.patch(&__updates, &mut cursor);
+        let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
+        self.patch_root(&__updates, &mut cursor, &mut binder);
     }
 }
 

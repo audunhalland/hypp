@@ -6,6 +6,13 @@ pub struct Binder<H: Hypp, T> {
 }
 
 impl<H: Hypp, T> Binder<H, T> {
+    pub fn from_rc(rc: std::rc::Rc<std::cell::RefCell<T>>) -> Self {
+        Self {
+            rc,
+            __phantom: std::marker::PhantomData,
+        }
+    }
+
     pub fn from_opt_weak(weak: &Option<std::rc::Weak<std::cell::RefCell<T>>>) -> Self {
         let rc = weak.as_ref().and_then(|weak| weak.upgrade()).unwrap();
         Self {

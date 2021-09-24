@@ -374,7 +374,7 @@ component! {
     </div>
 }
 
-component_dbg! {
+component! {
     ConditionalCallback(show_button: bool) {
         toggled: bool
     }
