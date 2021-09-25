@@ -10,6 +10,7 @@ use crate::template_ast;
 pub enum Function {
     Mount,
     Patch,
+    Patch2,
     SpanPass,
     Erase,
 }
@@ -88,15 +89,16 @@ impl quote::ToTokens for ir::FieldIdent {
 }
 
 /// A field we want to reference (read)
-pub struct FieldExpr<'f>(&'f ir::FieldIdent, CodegenCtx);
+pub struct FieldExpr<'f>(pub &'f ir::FieldIdent, pub CodegenCtx);
 
 impl<'f> quote::ToTokens for FieldExpr<'f> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let field = &self.0;
 
-        tokens.extend(match self.1.scope {
-            Scope::Component => quote! { self.#field },
-            Scope::DynamicSpan => quote! { #field },
+        tokens.extend(match (self.1.scope, self.1.function) {
+            (Scope::Component, Function::Patch2) => quote! { #field },
+            (Scope::Component, _) => quote! { self.#field },
+            (Scope::DynamicSpan, _) => quote! { #field },
         });
     }
 }

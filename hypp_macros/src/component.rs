@@ -105,6 +105,16 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         )
     });
 
+    let patch2_stmts = crate::patch::gen_patch(
+        &root_block,
+        &root_idents,
+        CodegenCtx {
+            component_kind,
+            function: Function::Patch2,
+            scope: Scope::Component,
+        },
+    );
+
     let span_pass = root_block.gen_span_pass(
         ir::DomDepth(0),
         &root_idents,
@@ -183,6 +193,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 __bind: &mut dyn ::hypp::BindCallback<H, Self>,
             ) -> Result<(), ::hypp::Error> {
                 #env_locals
+
+                #patch2_stmts
 
                 match __root {
                     ::hypp::InputOrOutput::Output(span) => {

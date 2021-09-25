@@ -12,6 +12,7 @@ mod flow;
 mod ir;
 mod lowering;
 mod param;
+mod patch;
 mod template_ast;
 
 #[proc_macro]
