@@ -320,3 +320,10 @@ pub enum InputOrOutput<'a, T> {
     Input(&'a mut T),
     Output(&'a mut Option<T>),
 }
+
+pub struct PatchCtx<'a, H: Hypp, T: ShimTrampoline> {
+    pub cur: &'a mut dyn Cursor<H>,
+    pub bind: &'a mut dyn BindCallback<H, T>,
+}
+
+pub type Void = Result<(), Error>;

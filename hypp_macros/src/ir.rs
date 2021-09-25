@@ -3,7 +3,6 @@
 use std::collections::BTreeSet;
 
 use crate::callback;
-use crate::param;
 use crate::template_ast;
 
 /// The way something must be owned in order to work.

@@ -50,7 +50,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpanRoo
 }
 
 enum __ConditionalCallbackSpan0<H: ::hypp::Hypp> {
-    Init,
+    Erased,
     V0 {
         __f1: ::hypp::SharedCallback<H>,
         __f2: H::Element,
@@ -65,7 +65,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan0<H
     }
     fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
         match self {
-            Self::Init => false,
+            Self::Erased => false,
             Self::V0 {
                 ref __f1,
                 ref __f2,
@@ -82,7 +82,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan0<H
     }
     fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
         match self {
-            Self::Init => {}
+            Self::Erased => {}
             Self::V0 {
                 ref __f1,
                 ref __f2,
@@ -94,11 +94,13 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan0<H
             }
             Self::V1 { .. } => {}
         }
-        self.pass(__cursor, ::hypp::SpanOp::Erase)
+        let res = self.pass(__cursor, ::hypp::SpanOp::Erase);
+        *self = Self::Erased;
+        res
     }
 }
 enum __ConditionalCallbackSpan1<H: ::hypp::Hypp> {
-    Init,
+    Erased,
     V0 { __f4: H::Text },
     V1 { __f5: H::Text },
 }
@@ -108,7 +110,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan1<H
     }
     fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
         match self {
-            Self::Init => false,
+            Self::Erased => false,
             Self::V0 { ref __f4, .. } => ::hypp::span::pass(
                 &mut [&mut __CONDITIONALCALLBACK_PRG1[0usize].as_span()],
                 __cursor,
@@ -120,6 +122,11 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan1<H
                 op,
             ),
         }
+    }
+    fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+        let res = self.pass(__cursor, ::hypp::SpanOp::Erase);
+        *self = Self::Erased;
+        res
     }
 }
 
@@ -150,9 +157,11 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
             ::hypp::InputOrOutput::Output(&mut span),
             &env,
             &__updates,
-            __cursor,
-            &mut __binder,
-        );
+            &mut ::hypp::PatchCtx {
+                cur: __cursor,
+                bind: &mut __binder,
+            },
+        )?;
 
         let __weak_self = None;
         let __mounted = ::std::rc::Rc::new(::std::cell::RefCell::new(ConditionalCallback {
@@ -173,44 +182,70 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
         __root: ::hypp::InputOrOutput<__ConditionalCallbackSpanRoot<H>>,
         __env: &Env,
         __updates: &[bool],
-        __cursor: &mut dyn ::hypp::Cursor<H>,
-        __bind: &mut dyn ::hypp::BindCallback<H, ConditionalCallback<H>>,
-    ) -> Result<(), ::hypp::Error> {
+        __ctx: &mut ::hypp::PatchCtx<H, Self>,
+    ) -> ::hypp::Void {
         let show_button = __env.show_button;
         let toggled = __env.toggled;
         let list = &__env.list;
 
-        let mut do_with_list = |__cursor: &mut dyn ::hypp::Cursor<H>| -> Result<(), ::hypp::Error> {
-            for item in list.iter() {}
+        let do_with_list = |__ctx: &mut ::hypp::PatchCtx<H, Self>| -> Result<(), ::hypp::Error> {
+            let cb = __ctx.cur.attribute_value_callback()?;
+            __ctx.bind.bind(
+                cb,
+                ::hypp::ShimMethod::<ConditionalCallback<H>>(&|shim| {
+                    shim.handle_click();
+                }),
+            );
+            for _item in list.iter() {}
             Ok(())
         };
 
-        let mut do_with_list2 =
-            |__cursor: &mut dyn ::hypp::Cursor<H>| -> Result<(), ::hypp::Error> {
-                for item in list.iter() {}
-                Ok(())
-            };
+        let do_with_list2 = |__ctx: &mut ::hypp::PatchCtx<H, Self>| -> Result<(), ::hypp::Error> {
+            for _item in list.iter() {}
+            Ok(())
+        };
 
-        let mut patch_span0 = |mut __f0: &mut __ConditionalCallbackSpan0<H>,
-                               __cursor: &mut dyn ::hypp::Cursor<H>|
-         -> Result<(), ::hypp::Error> {
+        let __patch_span0 = |mut __f0: &mut __ConditionalCallbackSpan0<H>,
+                             __ctx: &mut ::hypp::PatchCtx<H, Self>|
+         -> ::hypp::Void {
             match show_button {
                 // Single pattern here!
                 true => {
-                    let mount_span1_v0 = |__cursor: &mut dyn ::hypp::Cursor<H>| -> Result<
-                        __ConditionalCallbackSpan1<H>,
-                        ::hypp::Error,
-                    > {
-                        let __f4 = __cursor.const_exec_text(&__CONDITIONALCALLBACK_PRG1)?;
-                        Ok(__ConditionalCallbackSpan1::V0 { __f4 })
-                    };
-
-                    let mount_span1_v1 = |__cursor: &mut dyn ::hypp::Cursor<H>| -> Result<
-                        __ConditionalCallbackSpan1<H>,
-                        ::hypp::Error,
-                    > {
-                        let __f5 = __cursor.const_exec_text(&__CONDITIONALCALLBACK_PRG2)?;
-                        Ok(__ConditionalCallbackSpan1::V1 { __f5 })
+                    let __patch_span1 = |mut __f3: &mut __ConditionalCallbackSpan1<H>,
+                                         __ctx: &mut ::hypp::PatchCtx<H, Self>|
+                     -> ::hypp::Void {
+                        // Single pattern here!
+                        match toggled {
+                            true => {
+                                match &__f3 {
+                                    __ConditionalCallbackSpan1::V0 { ref __f4, .. } => {
+                                        // Can do this
+                                        __f3.pass_over(__ctx.cur);
+                                        // Instead of this:
+                                        // __cursor.move_to_following_sibling_of(__f4.as_node());
+                                    }
+                                    _ => {
+                                        __f3.erase(__ctx.cur);
+                                        let __f4 = __ctx
+                                            .cur
+                                            .const_exec_text(&__CONDITIONALCALLBACK_PRG1)?;
+                                        *__f3 = __ConditionalCallbackSpan1::V0 { __f4 };
+                                    }
+                                }
+                            }
+                            false => match &__f3 {
+                                __ConditionalCallbackSpan1::V1 { ref __f5, .. } => {
+                                    __f3.pass_over(__ctx.cur);
+                                }
+                                _ => {
+                                    __f3.erase(__ctx.cur);
+                                    let __f5 =
+                                        __ctx.cur.const_exec_text(&__CONDITIONALCALLBACK_PRG2)?;
+                                    *__f3 = __ConditionalCallbackSpan1::V1 { __f5 };
+                                }
+                            },
+                        }
+                        Ok(())
                     };
 
                     match &mut __f0 {
@@ -222,50 +257,21 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
                             ..
                         } => {
                             // Patch internals of V0
-                            __cursor.move_to_children_of(&__f2);
-                            match toggled {
-                                true => {
-                                    match &__f3 {
-                                        __ConditionalCallbackSpan1::V0 { ref __f4, .. } => {
-                                            // Can do this
-                                            __f3.pass_over(__cursor);
-                                            // Instead of this:
-                                            // __cursor.move_to_following_sibling_of(__f4.as_node());
-                                        }
-                                        __ConditionalCallbackSpan1::Init
-                                        | __ConditionalCallbackSpan1::V1 { .. } => {
-                                            __f3.erase(__cursor);
-                                            *__f3 = mount_span1_v0(__cursor)?;
-                                        }
-                                    }
-                                }
-                                false => match &__f3 {
-                                    __ConditionalCallbackSpan1::V1 { ref __f5, .. } => {
-                                        __f3.pass_over(__cursor);
-                                    }
-                                    __ConditionalCallbackSpan1::Init
-                                    | __ConditionalCallbackSpan1::V0 { .. } => {
-                                        __f3.erase(__cursor);
-                                        *__f3 = mount_span1_v1(__cursor)?;
-                                    }
-                                },
-                            }
+                            __ctx.cur.move_to_children_of(&__f2);
+                            __patch_span1(__f3, __ctx)?;
                             // Just pass the nodes instead? We know statically what they will be
-                            __cursor.move_to_following_sibling_of(__f6.as_node());
+                            __ctx.cur.move_to_following_sibling_of(__f6.as_node());
                         }
-                        __ConditionalCallbackSpan0::Init
-                        | __ConditionalCallbackSpan0::V1 { .. } => {
-                            __f0.erase(__cursor);
+                        _ => {
+                            __f0.erase(__ctx.cur);
 
-                            let __f2 = __cursor.const_exec_element(&__CONDITIONALCALLBACK_PRG0)?;
-                            let __f1 = __cursor.attribute_value_callback().unwrap();
-                            let __f3 = match toggled {
-                                true => mount_span1_v0(__cursor)?,
-                                false => mount_span1_v1(__cursor)?,
-                            };
-                            let __f6 = __cursor.const_exec_element(&__CONDITIONALCALLBACK_PRG3)?;
+                            let __f2 = __ctx.cur.const_exec_element(&__CONDITIONALCALLBACK_PRG0)?;
+                            let __f1 = __ctx.cur.attribute_value_callback()?;
+                            let mut __f3 = __ConditionalCallbackSpan1::Erased;
+                            __patch_span1(&mut __f3, __ctx)?;
+                            let __f6 = __ctx.cur.const_exec_element(&__CONDITIONALCALLBACK_PRG3)?;
 
-                            __bind.bind(
+                            __ctx.bind.bind(
                                 __f1.clone(),
                                 ::hypp::ShimMethod::<ConditionalCallback<H>>(&|shim| {
                                     shim.handle_click();
@@ -283,8 +289,8 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
                 }
                 false => match &mut __f0 {
                     __ConditionalCallbackSpan0::V1 { .. } => {}
-                    __ConditionalCallbackSpan0::Init | __ConditionalCallbackSpan0::V0 { .. } => {
-                        __f0.erase(__cursor);
+                    _ => {
+                        __f0.erase(__ctx.cur);
                         let __mounted = __ConditionalCallbackSpan0::V1 {};
                         *__f0 = __mounted;
                     }
@@ -295,14 +301,14 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
 
         match __root {
             ::hypp::InputOrOutput::Output(span) => {
-                let mut __f0 = __ConditionalCallbackSpan0::Init;
-                do_with_list(__cursor);
-                do_with_list2(__cursor);
-                patch_span0(&mut __f0, __cursor)?;
+                do_with_list(__ctx)?;
+                do_with_list2(__ctx)?;
+                let mut __f0 = __ConditionalCallbackSpan0::Erased;
+                __patch_span0(&mut __f0, __ctx)?;
                 *span = Some(__ConditionalCallbackSpanRoot { __f0 });
             }
             ::hypp::InputOrOutput::Input(span) => {
-                patch_span0(&mut span.__f0, __cursor)?;
+                __patch_span0(&mut span.__f0, __ctx)?;
             }
         }
 
@@ -346,9 +352,12 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for ConditionalCall
             ::hypp::InputOrOutput::Input(&mut self.span),
             &self.env,
             &__updates,
-            __cursor,
-            &mut binder,
-        );
+            &mut ::hypp::PatchCtx {
+                cur: __cursor,
+                bind: &mut binder,
+            },
+        )
+        .unwrap();
     }
 }
 impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for ConditionalCallback<H> {
@@ -370,9 +379,12 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for ConditionalCallba
             ::hypp::InputOrOutput::Input(&mut self.span),
             &self.env,
             &__updates,
-            &mut cursor,
-            &mut binder,
-        );
+            &mut ::hypp::PatchCtx {
+                cur: &mut cursor,
+                bind: &mut binder,
+            },
+        )
+        .unwrap();
     }
 }
 

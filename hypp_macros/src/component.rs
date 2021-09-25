@@ -184,6 +184,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 #(#patch_stmts)*
             }
 
+            /*
             #[allow(unused_variables)]
             fn patch2(
                 __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
@@ -209,6 +210,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 }
                 Ok(())
             }
+            */
         }
 
         impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {

@@ -130,7 +130,7 @@ impl<'f> quote::ToTokens for MutFieldRef<'f> {
     }
 }
 
-pub struct MutFieldPat<'f>(&'f ir::FieldIdent, CodegenCtx);
+pub struct MutFieldPat<'f>(pub &'f ir::FieldIdent, pub CodegenCtx);
 
 impl<'f> quote::ToTokens for MutFieldPat<'f> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
@@ -145,7 +145,7 @@ impl<'f> quote::ToTokens for MutFieldPat<'f> {
 }
 
 /// A field we want to assign to (mut)
-pub struct FieldAssign<'f>(&'f ir::FieldIdent, CodegenCtx);
+pub struct FieldAssign<'f>(pub &'f ir::FieldIdent, pub CodegenCtx);
 
 impl<'f> quote::ToTokens for FieldAssign<'f> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
