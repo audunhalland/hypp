@@ -40,18 +40,17 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let component_ident = &comp_ctx.component_ident;
     let props_ident = &comp_ctx.public_props_ident;
-    // let env_ident = &comp_ctx.env_ident;
-    // let root_span_ident = &comp_ctx.root_span_ident;
+    let env_ident = &comp_ctx.env_ident;
+    let root_span_ident = &comp_ctx.root_span_ident;
 
     let PublicPropsStruct {
         tokens: public_props_struct,
         has_p_lifetime,
     } = create_public_props_struct(&params, &comp_ctx);
     let env_struct = create_env_struct(&params, &comp_ctx);
-    let root_span_struct = create_root_span_struct(&root_block, &comp_ctx);
+    let root_span_struct = create_root_span(&root_block, &comp_ctx, component_kind);
     let fn_props_destructuring = create_fn_props_destructuring(&params, &comp_ctx);
-    let self_env_locals = create_env_locals(&params, quote! { self.env });
-    let env_locals = create_env_locals(&params, quote! { __env });
+    let env_locals = create_env_locals(&params);
     let props_updater = create_props_updater(&params);
     let self_shim = if has_self_shim.0 {
         create_self_shim(&params, &comp_ctx, methods)
@@ -70,10 +69,18 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         None
     };
 
-    let struct_field_defs = root_block
-        .struct_fields
-        .iter()
-        .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
+    let component_field_defs = match component_kind {
+        ir::ComponentKind::Basic => quote! {
+            env: #env_ident,
+            root_span: #root_span_ident<H>,
+        },
+        ir::ComponentKind::SelfUpdatable => quote! {
+            env: #env_ident,
+            root_span: #root_span_ident<H>,
+            anchor: H::Anchor,
+            weak_self: Option<::std::rc::Weak<::std::cell::RefCell<Self>>>
+        },
+    };
 
     let mount_state_locals = create_mount_state_locals(&params);
     let mount = root_block.gen_mount(
@@ -89,7 +96,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let patch_binder_local = match component_kind {
         ir::ComponentKind::SelfUpdatable => Some(quote! {
-            let mut __binder: ::hypp::shim::Binder<H, Self> = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
+            let mut __binder: ::hypp::shim::Binder<H, Self> = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
         }),
         ir::ComponentKind::Basic => None,
     };
@@ -109,19 +116,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         &root_block,
         &comp_ctx,
         env_locals,
+        fn_stmts,
         CodegenCtx {
             component_kind,
             function: Function::Patch2,
-            scope: Scope::Component,
-        },
-    );
-
-    let span_pass = root_block.gen_span_pass(
-        ir::DomDepth(0),
-        &comp_ctx,
-        CodegenCtx {
-            component_kind,
-            function: Function::SpanPass,
             scope: Scope::Component,
         },
     );
@@ -130,27 +128,22 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         ir::ComponentKind::SelfUpdatable => Some(quote! {
             fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 // Self updating! This component needs to store the updated anchor.
-                self.__anchor = __cursor.anchor();
+                self.anchor = __cursor.anchor();
                 self.pass(__cursor, ::hypp::SpanOp::PassOver)
             }
         }),
         ir::ComponentKind::Basic => None,
     };
 
-    let fn_span_erase = root_block
-        .gen_span_erase(CodegenCtx {
-            component_kind,
-            function: Function::Erase,
-            scope: Scope::Component,
-        })
-        .map(|stmts| {
-            quote! {
-                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                    #stmts
-                    self.pass(__cursor, ::hypp::SpanOp::Erase)
-                }
+    let fn_span_erase = match component_kind {
+        ir::ComponentKind::SelfUpdatable => Some(quote! {
+            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                self.weak_self = None;
+                self.pass(__cursor, ::hypp::SpanOp::Erase)
             }
-        });
+        }),
+        ir::ComponentKind::Basic => None,
+    };
 
     let handle_path = root_block.handle_kind.handle_path();
 
@@ -166,7 +159,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         #[allow(dead_code)]
         pub struct #component_ident<H: ::hypp::Hypp> {
-            #(#struct_field_defs)*
+            #component_field_defs
         }
 
         impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
@@ -204,7 +197,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             }
 
             fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
-                #span_pass
+                ::hypp::span::pass(&mut [&mut self.root_span], __cursor, op)
             }
 
             #fn_span_pass_over
@@ -344,19 +337,59 @@ fn create_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream
     }
 }
 
-fn create_root_span_struct(block: &ir::Block, comp_ctx: &CompCtx) -> TokenStream {
+fn create_root_span(
+    block: &ir::Block,
+    comp_ctx: &CompCtx,
+    component_kind: ir::ComponentKind,
+) -> TokenStream {
     let root_span_ident = &comp_ctx.root_span_ident;
 
     let struct_field_defs = block
         .struct_fields
         .iter()
-        .filter(|field| !field.ty.is_fake())
         .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
+
+    let span_pass = block.gen_span_pass(
+        ir::DomDepth(0),
+        &comp_ctx,
+        CodegenCtx {
+            component_kind,
+            function: Function::SpanPass,
+            scope: Scope::Component,
+        },
+    );
+
+    let fn_span_erase = block
+        .gen_span_erase(CodegenCtx {
+            component_kind,
+            function: Function::Erase,
+            scope: Scope::Component,
+        })
+        .map(|stmts| {
+            quote! {
+                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                    #stmts
+                    self.pass(__cursor, ::hypp::SpanOp::Erase)
+                }
+            }
+        });
 
     quote! {
         struct #root_span_ident<H: ::hypp::Hypp> {
             #(#struct_field_defs)*
             __phantom: ::std::marker::PhantomData<H>
+        }
+
+        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #root_span_ident<H> {
+            fn is_anchored(&self) -> bool {
+                unimplemented!()
+            }
+
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                #span_pass
+            }
+
+            #fn_span_erase
         }
     }
 }
@@ -401,7 +434,7 @@ fn create_mount_state_locals(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn create_env_locals(params: &[param::Param], prefix: TokenStream) -> TokenStream {
+fn create_env_locals(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
@@ -409,29 +442,29 @@ fn create_env_locals(params: &[param::Param], prefix: TokenStream) -> TokenStrea
             param::ParamKind::Prop(root_ty) => match root_ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(_) => {
-                        quote! { let #ident = #prefix.#ident; }
+                        quote! { let #ident = __env.#ident; }
                     }
                     param::ParamLeafType::Ref(_) => {
                         // Remember, when storing a _reference_ prop inside self,
                         // we use the `<T as ToOwned>::Owned` type to store it..
                         // so we can just take the reference to that again!
                         quote! {
-                            let #ident = &#prefix.#ident;
+                            let #ident = &__env.#ident;
                         }
                     }
                 },
                 param::ParamRootType::Option(ty) => match ty {
                     param::ParamLeafType::Owned(_) => {
-                        quote! { let #ident = #prefix.#ident; }
+                        quote! { let #ident = __env.#ident; }
                     }
                     param::ParamLeafType::Ref(_) => {
-                        quote! { let #ident = #prefix.#ident.as_deref(); }
+                        quote! { let #ident = __env.#ident.as_deref(); }
                     }
                 },
             },
             param::ParamKind::State(_) => quote! {
                 // err... take reference maybe?
-                let #ident = #prefix.#ident;
+                let #ident = __env.#ident;
             },
         }
     });
@@ -568,7 +601,7 @@ fn create_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream
 
                 method.0(&mut shim);
 
-                let mut cursor = self.__anchor.create_builder();
+                let mut cursor = self.anchor.create_builder();
                 self.patch(&__updates, &mut cursor);
             }
         }

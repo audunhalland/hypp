@@ -87,18 +87,8 @@ impl CompCtx {
 
 impl quote::ToTokens for ir::FieldIdent {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        match self {
-            Self::Id(id) => {
-                let ident = quote::format_ident!("__f{}", id);
-                tokens.extend(quote::quote! { #ident });
-            }
-            Self::Param(ident) => {
-                tokens.extend(quote::quote! { #ident });
-            }
-            Self::Env => {
-                tokens.extend(quote::quote! { env });
-            }
-        }
+        let ident = quote::format_ident!("__f{}", self.0);
+        tokens.extend(quote::quote! { #ident });
     }
 }
 
@@ -313,17 +303,17 @@ fn generate_dynamic_span_enum(
                 .iter()
                 .map(ir::StructField::mut_pattern_tokens);
 
-            let span_pass = block.gen_span_erase(CodegenCtx {
+            let span_erase = block.gen_span_erase(CodegenCtx {
                 component_kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             });
 
             (
-                ActuallyDoesErase(span_pass.is_some()),
+                ActuallyDoesErase(span_erase.is_some()),
                 quote! {
                     Self::#variant { #(#pat_fields)* .. } => {
-                        #span_pass
+                        #span_erase
                     },
                 },
             )
@@ -384,11 +374,7 @@ impl ir::StructField {
     pub fn struct_param_tokens(&self) -> TokenStream {
         let ident = &self.ident;
 
-        match &self.ty {
-            // Handled separately:
-            ir::StructFieldType::Env => quote! {},
-            _ => quote! { #ident, },
-        }
+        quote! { #ident, }
     }
 
     pub fn mut_pattern_tokens(&self) -> TokenStream {
@@ -402,9 +388,6 @@ impl ir::StructField {
             // immutable types
             ir::StructFieldType::DomElement
             | ir::StructFieldType::DomText
-            | ir::StructFieldType::Env
-            | ir::StructFieldType::WeakSelf
-            | ir::StructFieldType::Anchor
             | ir::StructFieldType::Callback => quote! {
                 ref #ident,
             },
@@ -797,7 +780,6 @@ impl ir::Block {
                 #(#stmts)*
             }),
             ir::HandleKind::Shared => Some(quote! {
-                self.__weak_self = None;
                 #(#stmts)*
             }),
         }
@@ -1040,14 +1022,6 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
-            Self::Env => {
-                let ident = &comp_ctx.env_ident;
-                quote! { #ident }
-            }
-            Self::WeakSelf => quote! {
-                Option<::std::rc::Weak<::std::cell::RefCell<Self>>>
-            },
-            Self::Anchor => quote! { H::Anchor },
             Self::Callback => quote! { ::hypp::SharedCallback<H> },
             Self::Component(path) => {
                 let type_path = &path.type_path;

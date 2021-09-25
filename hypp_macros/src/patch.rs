@@ -32,6 +32,7 @@ pub fn gen_patch2_fn(
     block: &ir::Block,
     comp_ctx: &CompCtx,
     env_locals: TokenStream,
+    fn_stmts: Vec<syn::Stmt>,
     ctx: CodegenCtx,
 ) -> TokenStream {
     let env_ident = &comp_ctx.env_ident;
@@ -48,7 +49,6 @@ pub fn gen_patch2_fn(
     let fields = block
         .struct_fields
         .iter()
-        .filter(|field| !field.ty.is_fake())
         .map(ir::StructField::mut_pattern_tokens);
 
     quote! {
@@ -60,6 +60,8 @@ pub fn gen_patch2_fn(
             __ctx: &mut #patch_ctx_ty,
         ) -> Result<(), ::hypp::Error> {
             #env_locals
+
+            #(#fn_stmts)*
 
             #(#closures)*
 
@@ -344,7 +346,6 @@ fn compile_body<'c>(
     let struct_params = block
         .struct_fields
         .iter()
-        .filter(|field| !field.ty.is_fake())
         .map(ir::StructField::struct_param_tokens);
 
     let phantom = match constructor_kind {

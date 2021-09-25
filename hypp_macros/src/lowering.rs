@@ -45,14 +45,6 @@ pub fn lower_root_node(
 
     let scope = flow::FlowScope::from_params(params);
 
-    // Props (and state) is stored in "env" struct.
-    // This is to allow immutable access to props in mutable contexts
-    // like callbacks.
-    root_builder.struct_fields.push(ir::StructField {
-        ident: ir::FieldIdent::Env,
-        ty: ir::StructFieldType::Env,
-    });
-
     root_builder.lower_ast(root, &scope, &mut ctx)?;
 
     let mut root_block = root_builder.to_block(&mut ctx);
@@ -61,16 +53,7 @@ pub fn lower_root_node(
 
     if ctx.callback_count > 0 {
         component_kind = ir::ComponentKind::SelfUpdatable;
-
         root_block.handle_kind = ir::HandleKind::Shared;
-        root_block.struct_fields.push(ir::StructField {
-            ident: ir::FieldIdent::Param(quote::format_ident!("__anchor")),
-            ty: ir::StructFieldType::Anchor,
-        });
-        root_block.struct_fields.push(ir::StructField {
-            ident: ir::FieldIdent::Param(quote::format_ident!("__weak_self")),
-            ty: ir::StructFieldType::WeakSelf,
-        })
     }
 
     Ok((component_kind, root_block))
@@ -98,7 +81,7 @@ impl Context {
     fn next_field_id(&mut self) -> ir::FieldIdent {
         let index = self.field_count;
         self.field_count += 1;
-        ir::FieldIdent::Id(index)
+        ir::FieldIdent(index)
     }
 
     fn next_dynamic_span_index(&mut self) -> u16 {
