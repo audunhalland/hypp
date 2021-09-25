@@ -50,7 +50,7 @@ pub struct StructField {
     pub ty: StructFieldType,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct FieldIdent(pub u16);
 
 /// Type of a struct field

@@ -138,7 +138,7 @@ fn compile_body<'c>(
                     Some(field) => {
                         // OPTIMIZATION: Can advance the cursor directly!
 
-                        let field_expr = FieldExpr(field, ctx);
+                        let field_expr = FieldExpr(*field, ctx);
                         match last_node_opcode {
                             Some(ir::DomOpCode::EnterElement(_)) => quote! {
                                 __ctx.cur.move_to_children_of(&#field_expr);
@@ -177,7 +177,7 @@ fn compile_body<'c>(
                 });
             }
             ir::Expression::Text(expr) => {
-                let field_expr = FieldExpr(stmt.field.as_ref().unwrap(), ctx);
+                let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
                 let test = stmt.param_deps.update_test_tokens();
 
                 field_inits.push(FieldInit {
@@ -242,7 +242,7 @@ fn compile_body<'c>(
                 // Only need a patch statement if the component actually depends on
                 // variable parameters. If not, it is a constant.
                 if stmt.param_deps.is_variable() {
-                    let field_expr = FieldExpr(stmt.field.as_ref().unwrap(), ctx);
+                    let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
                     let test = stmt.param_deps.update_test_tokens();
 
                     patch_stmts.push(quote! {
@@ -382,7 +382,7 @@ fn gen_match_closure<'c>(
     comp_ctx: &'c CompCtx,
     ctx: CodegenCtx,
 ) -> Closure<'c> {
-    let field = statement.field.as_ref().unwrap();
+    let field = statement.field.unwrap();
     let field_expr = FieldExpr(field, ctx);
 
     let pattern_arms = arms.iter().map(

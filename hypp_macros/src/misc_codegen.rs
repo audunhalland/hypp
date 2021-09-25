@@ -41,19 +41,6 @@ pub struct CompCtx {
     pub patch_ctx_ty: TokenStream,
 }
 
-pub enum ConstructorKind<'a> {
-    RootSpan,
-    DynamicSpan {
-        dynamic_span_type: &'a ir::StructFieldType,
-        variant: &'a syn::Ident,
-    },
-}
-
-/// A "self shim" is used when the client needs access to the component
-/// internals (e.g. callback functions). Not every component needs that.
-#[derive(Clone, Copy)]
-pub struct HasSelfShim(pub bool);
-
 impl CompCtx {
     pub fn new(component_ident: syn::Ident, kind: ir::ComponentKind) -> Self {
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
@@ -84,6 +71,38 @@ impl CompCtx {
     }
 }
 
+pub enum ConstructorKind<'a> {
+    RootSpan,
+    DynamicSpan {
+        dynamic_span_type: &'a ir::StructFieldType,
+        variant: &'a syn::Ident,
+    },
+}
+
+/// Code associated with a certain field
+pub struct FieldCode {
+    field: Option<ir::FieldIdent>,
+    code: TokenStream,
+}
+
+impl quote::ToTokens for FieldCode {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        tokens.extend(self.code.clone());
+    }
+}
+
+/// Code associated with a set of fields
+pub struct JoinedFieldCode {
+    fields: std::collections::BTreeSet<u16>,
+    code: TokenStream,
+}
+
+impl quote::ToTokens for JoinedFieldCode {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        tokens.extend(self.code.clone());
+    }
+}
+
 impl quote::ToTokens for ir::FieldIdent {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = quote::format_ident!("__f{}", self.0);
@@ -92,9 +111,9 @@ impl quote::ToTokens for ir::FieldIdent {
 }
 
 /// A field we want to reference (read)
-pub struct FieldExpr<'f>(pub &'f ir::FieldIdent, pub CodegenCtx);
+pub struct FieldExpr(pub ir::FieldIdent, pub CodegenCtx);
 
-impl<'f> quote::ToTokens for FieldExpr<'f> {
+impl quote::ToTokens for FieldExpr {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let field = &self.0;
 
@@ -120,9 +139,9 @@ impl<'f> quote::ToTokens for FieldRef<'f> {
     }
 }
 
-pub struct MutFieldRef<'f>(&'f ir::FieldIdent, CodegenCtx);
+pub struct MutFieldRef(ir::FieldIdent, CodegenCtx);
 
-impl<'f> quote::ToTokens for MutFieldRef<'f> {
+impl<'f> quote::ToTokens for MutFieldRef {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let field = &self.0;
 
@@ -262,11 +281,6 @@ fn generate_dynamic_span_enum(
     });
 
     let span_pass_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
-        let pat_fields = block
-            .struct_fields
-            .iter()
-            .map(ir::StructField::mut_pattern_tokens);
-
         let span_pass = block.gen_span_pass(
             dom_depth,
             comp_ctx,
@@ -276,6 +290,11 @@ fn generate_dynamic_span_enum(
                 scope: Scope::DynamicSpan,
             },
         );
+        let pat_fields = block
+            .struct_fields
+            .iter()
+            .filter(|field| span_pass.fields.contains(&field.ident.0))
+            .map(ir::StructField::mut_pattern_tokens);
 
         quote! {
             Self::#variant { #(#pat_fields)* .. } => {
@@ -289,22 +308,28 @@ fn generate_dynamic_span_enum(
     let span_erase_arms = arms
         .iter()
         .map(|ir::Arm { variant, block, .. }| {
-            let pat_fields = block
-                .struct_fields
-                .iter()
-                .map(ir::StructField::mut_pattern_tokens);
-
-            let span_erase = block.gen_span_erase(CodegenCtx {
+            let opt_span_erase = block.gen_span_erase(CodegenCtx {
                 component_kind: comp_ctx.kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             });
 
+            let pat_fields = block
+                .struct_fields
+                .iter()
+                .filter(|field| {
+                    opt_span_erase
+                        .as_ref()
+                        .map(|span_erase| span_erase.fields.contains(&field.ident.0))
+                        .unwrap_or(false)
+                })
+                .map(ir::StructField::mut_pattern_tokens);
+
             (
-                ActuallyDoesErase(span_erase.is_some()),
+                ActuallyDoesErase(opt_span_erase.is_some()),
                 quote! {
                     Self::#variant { #(#pat_fields)* .. } => {
-                        #span_erase
+                        #opt_span_erase
                     },
                 },
             )
@@ -416,8 +441,8 @@ impl ir::Block {
         base_dom_depth: ir::DomDepth,
         comp_ctx: &CompCtx,
         ctx: CodegenCtx,
-    ) -> TokenStream {
-        let mut sub_spans: Vec<TokenStream> = vec![];
+    ) -> JoinedFieldCode {
+        let mut sub_spans: Vec<FieldCode> = vec![];
 
         for statement in &self.statements {
             let mut dom_depth = statement.dom_depth.0 - base_dom_depth.0;
@@ -429,16 +454,22 @@ impl ir::Block {
                         match opcode {
                             ir::DomOpCode::EnterElement(_) => {
                                 if dom_depth == 0 {
-                                    sub_spans.push(quote! {
-                                        &mut #program_ident[#index].as_span()
+                                    sub_spans.push(FieldCode {
+                                        field: None,
+                                        code: quote! {
+                                            &mut #program_ident[#index].as_span()
+                                        },
                                     });
                                 }
                                 dom_depth += 1;
                             }
                             ir::DomOpCode::Text(_) => {
                                 if dom_depth == 0 {
-                                    sub_spans.push(quote! {
-                                        &mut #program_ident[#index].as_span()
+                                    sub_spans.push(FieldCode {
+                                        field: None,
+                                        code: quote! {
+                                            &mut #program_ident[#index].as_span()
+                                        },
                                     });
                                 }
                             }
@@ -452,36 +483,53 @@ impl ir::Block {
                 ir::Expression::AttributeCallback(_) => {}
                 ir::Expression::Text { .. } => {
                     if dom_depth == 0 {
-                        sub_spans.push(quote! {
+                        sub_spans.push(FieldCode {
+                            field: None,
+                            code: quote! {
                             &mut ::hypp::span::SingleTextSpan
+                            },
                         });
                     }
                 }
                 ir::Expression::Component { .. } => {
                     if dom_depth == 0 {
-                        let field_expr = FieldExpr(&statement.field.as_ref().unwrap(), ctx);
-                        sub_spans.push(quote! {
-                            #field_expr.borrow_mut()
+                        let field = statement.field.unwrap();
+                        let field_expr = FieldExpr(field, ctx);
+                        sub_spans.push(FieldCode {
+                            field: Some(field),
+                            code: quote! {
+                                #field_expr.borrow_mut()
+                            },
                         });
                     }
                 }
                 ir::Expression::Match { .. } => {
                     if dom_depth == 0 {
-                        let mut_field_ref = MutFieldRef(&statement.field.as_ref().unwrap(), ctx);
-                        sub_spans.push(quote! {
-                            #mut_field_ref
+                        let field = statement.field.unwrap();
+                        let mut_field_ref = MutFieldRef(field, ctx);
+                        sub_spans.push(FieldCode {
+                            field: Some(field),
+                            code: quote! {
+                                #mut_field_ref
+                            },
                         });
                     }
                 }
             }
         }
 
-        quote! {
-            ::hypp::span::pass(
-                &mut [#(#sub_spans),*],
-                __cursor,
-                op
-            )
+        JoinedFieldCode {
+            fields: sub_spans
+                .iter()
+                .filter_map(|span| Some(span.field?.0))
+                .collect(),
+            code: quote! {
+                ::hypp::span::pass(
+                    &mut [#(#sub_spans),*],
+                    __cursor,
+                    op
+                )
+            },
         }
     }
 
@@ -490,30 +538,40 @@ impl ir::Block {
     /// Will return None if no specializion for Erase is needed.
     /// (i.e. nothing needs to be released)
     ///
-    pub fn gen_span_erase(&self, ctx: CodegenCtx) -> Option<TokenStream> {
+    pub fn gen_span_erase(&self, ctx: CodegenCtx) -> Option<JoinedFieldCode> {
         let stmts = self
             .statements
             .iter()
             .filter_map(|statement| match &statement.expression {
                 ir::Expression::AttributeCallback(_) => {
-                    let field_expr = FieldExpr(statement.field.as_ref().unwrap(), ctx);
+                    let field = statement.field.unwrap();
+                    let field_expr = FieldExpr(field, ctx);
 
-                    Some(quote! {
-                        #field_expr.borrow_mut().release();
+                    Some(FieldCode {
+                        field: Some(field),
+                        code: quote! {
+                            #field_expr.borrow_mut().release();
+                        },
                     })
                 }
                 _ => None,
             })
             .collect::<Vec<_>>();
 
+        let code = JoinedFieldCode {
+            fields: stmts
+                .iter()
+                .filter_map(|field_code| Some(field_code.field?.0))
+                .collect(),
+            code: quote! {
+                #(#stmts)*
+            },
+        };
+
         match self.handle_kind {
             ir::HandleKind::Unique if stmts.is_empty() => None,
-            ir::HandleKind::Unique => Some(quote! {
-                #(#stmts)*
-            }),
-            ir::HandleKind::Shared => Some(quote! {
-                #(#stmts)*
-            }),
+            ir::HandleKind::Unique => Some(code),
+            ir::HandleKind::Shared => Some(code),
         }
     }
 }
