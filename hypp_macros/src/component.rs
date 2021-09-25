@@ -9,14 +9,12 @@ use crate::param;
 use crate::codegen::*;
 
 struct Component {
-    component_kind: ir::ComponentKind,
-    dom_programs: Vec<TokenStream>,
     comp_ctx: CompCtx,
+    dom_programs: Vec<TokenStream>,
     params: Vec<param::Param>,
     root_block: ir::Block,
     dynamic_span_enums: Vec<TokenStream>,
     fn_stmts: Vec<syn::Stmt>,
-    has_self_shim: HasSelfShim,
     methods: Vec<syn::ItemFn>,
 }
 
@@ -27,14 +25,12 @@ struct PublicPropsStruct {
 
 pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
-        component_kind,
-        dom_programs,
         comp_ctx,
+        dom_programs,
         params,
         root_block,
         dynamic_span_enums,
         fn_stmts,
-        has_self_shim,
         methods,
     } = analyze_ast(ast);
 
@@ -46,19 +42,20 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let PublicPropsStruct {
         tokens: public_props_struct,
         has_p_lifetime,
-    } = create_public_props_struct(&params, &comp_ctx);
-    let env_struct = create_env_struct(&params, &comp_ctx);
-    let root_span_struct = create_root_span(&root_block, &comp_ctx, component_kind);
-    let fn_props_destructuring = create_fn_props_destructuring(&params, &comp_ctx);
-    let env_locals = create_env_locals(&params);
-    let props_updater = create_props_updater(&params);
-    let self_shim = if has_self_shim.0 {
-        create_self_shim(&params, &comp_ctx, methods)
+    } = gen_public_props_struct(&params, &comp_ctx);
+    let env_struct = gen_env_struct(&params, &comp_ctx);
+    let root_span_struct = gen_root_span(&root_block, &comp_ctx);
+    let fn_props_destructuring = gen_fn_props_destructuring(&params, &comp_ctx);
+    let mount_body = gen_mount_body(&params, &comp_ctx);
+    let env_locals = gen_env_locals(&params);
+    let props_updater = gen_props_updater(&params);
+    let self_shim = if comp_ctx.kind.is_self_updatable() {
+        gen_self_shim(&params, &comp_ctx, methods)
     } else {
         quote! {}
     };
-    let shim_impls = if has_self_shim.0 {
-        Some(create_shim_impls(&params, &comp_ctx))
+    let shim_impls = if comp_ctx.kind.is_self_updatable() {
+        Some(gen_shim_impls(&params, &comp_ctx))
     } else {
         None
     };
@@ -69,7 +66,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         None
     };
 
-    let component_field_defs = match component_kind {
+    let component_field_defs = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
             env: #env_ident,
             root_span: #root_span_ident<H>,
@@ -88,13 +85,13 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         env_locals,
         fn_stmts,
         CodegenCtx {
-            component_kind,
+            component_kind: comp_ctx.kind,
             function: Function::Patch,
             scope: Scope::Component,
         },
     );
 
-    let fn_span_pass_over = match component_kind {
+    let fn_span_pass_over = match comp_ctx.kind {
         ir::ComponentKind::SelfUpdatable => Some(quote! {
             fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 // Self updating! This component needs to store the updated anchor.
@@ -105,7 +102,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         ir::ComponentKind::Basic => None,
     };
 
-    let fn_span_erase = match component_kind {
+    let fn_span_erase = match comp_ctx.kind {
         ir::ComponentKind::SelfUpdatable => Some(quote! {
             fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 self.weak_self = None;
@@ -115,7 +112,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         ir::ComponentKind::Basic => None,
     };
 
-    let pass_props_patch_call = match component_kind {
+    let pass_props_patch_call = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
             Self::patch(
                 ::hypp::InputOrOutput::Input(&mut self.root_span),
@@ -159,13 +156,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
             pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
-                panic!()
-                /*
-                #mount_state_locals
-                #(#fn_stmts)*
-                #mount
-                Ok(#handle_path::new(__mounted))
-                */
+                #mount_body
             }
 
             #patch_fn
@@ -214,13 +205,6 @@ fn analyze_ast(
         lowering::lower_root_node(template, lowering::TraversalDirection::LastToFirst, &params)
             .expect("Compile error: Lowering problem");
 
-    // Current heuristic for determining if we need self shim: component is stored
-    // with a shared handle:
-    let has_self_shim = match root_block.handle_kind {
-        ir::HandleKind::Shared => HasSelfShim(true),
-        ir::HandleKind::Unique => HasSelfShim(false),
-    };
-
     // Root idents which are used as prefixes for every global ident generated:
     let comp_ctx = CompCtx::new(ident, component_kind);
 
@@ -228,28 +212,21 @@ fn analyze_ast(
     collect_dom_programs(&root_block.statements, &comp_ctx, &mut dom_programs);
 
     let mut dynamic_span_enums = vec![];
-    collect_dynamic_span_enums(
-        &root_block.statements,
-        component_kind,
-        &comp_ctx,
-        &mut dynamic_span_enums,
-    );
+    collect_dynamic_span_enums(&root_block.statements, &comp_ctx, &mut dynamic_span_enums);
 
     Component {
-        component_kind,
-        dom_programs,
         comp_ctx,
+        dom_programs,
         params,
         root_block,
         dynamic_span_enums,
         fn_stmts: vec![],
-        has_self_shim,
         methods,
     }
 }
 
 /// Create the props `struct` that callees will use to instantiate the component
-fn create_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> PublicPropsStruct {
+fn gen_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> PublicPropsStruct {
     let props_ident = &comp_ctx.public_props_ident;
 
     let mut has_p_lifetime = false;
@@ -301,7 +278,7 @@ fn create_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> Pu
 }
 
 /// Create the env struct that the component uses to cache internal data
-fn create_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
+fn gen_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let env_ident = &comp_ctx.env_ident;
 
     let fields = params.iter().map(|param| {
@@ -320,11 +297,80 @@ fn create_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream
     }
 }
 
-fn create_root_span(
-    block: &ir::Block,
-    comp_ctx: &CompCtx,
-    component_kind: ir::ComponentKind,
-) -> TokenStream {
+fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
+    let n_params = params.iter().count();
+    let component_ident = &comp_ctx.component_ident;
+    let env_ident = &comp_ctx.env_ident;
+
+    let env_params = params.iter().map(param::Param::owned_struct_param_tokens);
+
+    let anchor_binder_locals = if comp_ctx.kind.is_self_updatable() {
+        Some(quote! {
+            let anchor = __cursor.anchor();
+            let mut binder: ::hypp::shim::LazyBinder<H, Self> = ::hypp::shim::LazyBinder::new();
+        })
+    } else {
+        None
+    };
+
+    let patch_ctx_arg = if comp_ctx.kind.is_self_updatable() {
+        quote! {
+            ::hypp::PatchBindCtx {
+                cur: __cursor,
+                bind: &mut binder,
+            }
+        }
+    } else {
+        quote! {
+            ::hypp::PatchCtx { cur: __cursor }
+        }
+    };
+
+    let component_constructor = if comp_ctx.kind.is_self_updatable() {
+        quote! {
+            let mounted = ::std::rc::Rc::new(::std::cell::RefCell::new(#component_ident {
+                env,
+                root_span: root_span.unwrap(),
+                anchor,
+                weak_self: None,
+            }));
+
+            mounted.borrow_mut().weak_self = Some(::std::rc::Rc::downgrade(&mounted));
+            binder.bind_all(&mounted.borrow().weak_self);
+
+            Ok(::hypp::handle::Shared::new(mounted))
+        }
+    } else {
+        quote! {
+            Ok(::hypp::handle::Unique::new(#component_ident {
+                env,
+                root_span: root_span.unwrap(),
+            }))
+        }
+    };
+
+    quote! {
+        let env = #env_ident {
+            #(#env_params)*
+        };
+
+        // When mounting, everything is "out of date"!
+        let updates: [bool; #n_params] = [true; #n_params];
+
+        #anchor_binder_locals
+        let mut root_span = None;
+        Self::patch(
+            ::hypp::InputOrOutput::Output(&mut root_span),
+            &env,
+            &updates,
+            &mut #patch_ctx_arg
+        )?;
+
+        #component_constructor
+    }
+}
+
+fn gen_root_span(block: &ir::Block, comp_ctx: &CompCtx) -> TokenStream {
     let root_span_ident = &comp_ctx.root_span_ident;
 
     let struct_field_defs = block
@@ -336,7 +382,7 @@ fn create_root_span(
         ir::DomDepth(0),
         &comp_ctx,
         CodegenCtx {
-            component_kind,
+            component_kind: comp_ctx.kind,
             function: Function::SpanPass,
             scope: Scope::Component,
         },
@@ -344,7 +390,7 @@ fn create_root_span(
 
     let fn_span_erase = block
         .gen_span_erase(CodegenCtx {
-            component_kind,
+            component_kind: comp_ctx.kind,
             function: Function::Erase,
             scope: Scope::Component,
         })
@@ -377,7 +423,7 @@ fn create_root_span(
     }
 }
 
-fn create_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) -> syn::FnArg {
+fn gen_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) -> syn::FnArg {
     let props_ident = &comp_ctx.public_props_ident;
 
     let fields = params.iter().filter_map(|param| match &param.kind {
@@ -399,7 +445,7 @@ fn create_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) ->
     }
 }
 
-fn create_env_locals(params: &[param::Param]) -> TokenStream {
+fn gen_env_locals(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
@@ -439,7 +485,7 @@ fn create_env_locals(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn create_props_updater(params: &[param::Param]) -> TokenStream {
+fn gen_props_updater(params: &[param::Param]) -> TokenStream {
     let n_params = params.iter().count();
 
     let checks = params.iter().filter(|param| param.is_prop()).map(|param| {
@@ -490,7 +536,7 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn create_self_shim(
+fn gen_self_shim(
     params: &[param::Param],
     comp_ctx: &CompCtx,
     methods: Vec<syn::ItemFn>,
@@ -531,7 +577,7 @@ fn create_self_shim(
     }
 }
 
-fn create_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
+fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let n_params = params.iter().count();
     let component_ident = &comp_ctx.component_ident;
     let shim_ident = &comp_ctx.self_shim_ident;

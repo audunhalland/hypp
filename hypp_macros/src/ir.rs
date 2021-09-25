@@ -20,6 +20,15 @@ pub enum ComponentKind {
     SelfUpdatable,
 }
 
+impl ComponentKind {
+    pub fn is_self_updatable(&self) -> bool {
+        match self {
+            Self::SelfUpdatable => true,
+            _ => false,
+        }
+    }
+}
+
 impl Default for HandleKind {
     fn default() -> Self {
         Self::Unique

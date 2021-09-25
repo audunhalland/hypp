@@ -26,6 +26,7 @@ pub struct CodegenCtx {
 
 /// Context for one whole component
 pub struct CompCtx {
+    pub kind: ir::ComponentKind,
     pub component_ident: syn::Ident,
     pub public_props_ident: syn::Ident,
     pub env_ident: syn::Ident,
@@ -50,14 +51,14 @@ pub enum ConstructorKind<'a> {
 pub struct HasSelfShim(pub bool);
 
 impl CompCtx {
-    pub fn new(component_ident: syn::Ident, component_kind: ir::ComponentKind) -> Self {
+    pub fn new(component_ident: syn::Ident, kind: ir::ComponentKind) -> Self {
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
         let env_ident = quote::format_ident!("__{}Env", component_ident);
         let root_span_ident = quote::format_ident!("__{}RootSpan", component_ident);
         let self_shim_ident = quote::format_ident!("__{}Shim", component_ident);
         let uppercase_prefix = format!("__{}", component_ident.clone().to_string().to_uppercase());
 
-        let patch_ctx_ty = match component_kind {
+        let patch_ctx_ty = match kind {
             ir::ComponentKind::Basic => quote! {
                 ::hypp::PatchCtx<H>
             },
@@ -67,6 +68,7 @@ impl CompCtx {
         };
 
         Self {
+            kind,
             component_ident,
             public_props_ident,
             env_ident,
@@ -206,7 +208,6 @@ pub fn generate_dom_program(program: &ir::ConstDomProgram, comp_ctx: &CompCtx) -
 
 pub fn collect_dynamic_span_enums(
     statements: &[ir::Statement],
-    component_kind: ir::ComponentKind,
     comp_ctx: &CompCtx,
     output: &mut Vec<TokenStream>,
 ) {
@@ -221,16 +222,10 @@ pub fn collect_dynamic_span_enums(
                     dynamic_span_type,
                     arms,
                     statement.dom_depth,
-                    component_kind,
                     comp_ctx,
                 ));
                 for arm in arms {
-                    collect_dynamic_span_enums(
-                        &arm.block.statements,
-                        component_kind,
-                        comp_ctx,
-                        output,
-                    );
+                    collect_dynamic_span_enums(&arm.block.statements, comp_ctx, output);
                 }
             }
             _ => {}
@@ -242,7 +237,6 @@ fn generate_dynamic_span_enum(
     dynamic_span_type: &ir::StructFieldType,
     arms: &[ir::Arm],
     dom_depth: ir::DomDepth,
-    component_kind: ir::ComponentKind,
     comp_ctx: &CompCtx,
 ) -> TokenStream {
     let dynamic_span_ident =
@@ -273,7 +267,7 @@ fn generate_dynamic_span_enum(
             dom_depth,
             comp_ctx,
             CodegenCtx {
-                component_kind,
+                component_kind: comp_ctx.kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             },
@@ -297,7 +291,7 @@ fn generate_dynamic_span_enum(
                 .map(ir::StructField::mut_pattern_tokens);
 
             let span_erase = block.gen_span_erase(CodegenCtx {
-                component_kind,
+                component_kind: comp_ctx.kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             });
