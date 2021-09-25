@@ -591,7 +591,7 @@ impl param::Param {
 
         match &self.kind {
             // State variables should already be in scope
-            param::ParamKind::State(_) => quote! { #ident, },
+            param::ParamKind::State(_) => quote! { #ident: Default::default(), },
             // Convert from generally borrowed props:
             param::ParamKind::Prop(root_ty) => match root_ty {
                 param::ParamRootType::One(ty) => match ty {

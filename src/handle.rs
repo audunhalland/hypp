@@ -1,6 +1,6 @@
 /// Trait for converting a type into a Handle.
 pub trait ToHandle: Sized {
-    /// The type of handle that must be used when owning an instance of this component.
+    /// The type of handle that must be used when owning an instance of this type.
     type Handle: Handle<Self>;
 }
 
@@ -23,13 +23,13 @@ pub trait ToHandle: Sized {
 /// This feature requires GAT support in the compiler.
 pub trait Handle<T>: Sized {
     /// Shared reference to the wrapped type; any type
-    /// the implements Deref to that type.
+    /// that implements Deref to that type.
     type Ref<'a>: std::ops::Deref<Target = T>
     where
         Self: 'a;
 
     /// Mutable reference to the wrapped type; any type
-    /// the implements DerefMut to that type.
+    /// that implements DerefMut to that type.
     type RefMut<'a>: std::ops::DerefMut<Target = T>
     where
         Self: 'a;

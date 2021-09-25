@@ -142,14 +142,13 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     quote! {
         #public_props_struct
         #env_struct
-        #root_span_struct
         #self_shim
+        #root_span_struct
 
         #(#dom_programs)*
 
         #(#dynamic_span_enums)*
 
-        #[allow(dead_code)]
         pub struct #component_ident<H: ::hypp::Hypp> {
             #component_field_defs
         }
@@ -297,6 +296,8 @@ fn gen_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     }
 }
 
+// TODO: A lot in this function is very similar for a lot
+// of components. Find a way to make a lib generic function.
 fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let n_params = params.iter().count();
     let component_ident = &comp_ctx.component_ident;
@@ -567,6 +568,7 @@ fn gen_self_shim(
     });
 
     quote! {
+        #[allow(dead_code)]
         pub struct #shim_ident<'c> {
             #(#fields)*
         }

@@ -52,7 +52,6 @@ pub fn gen_patch_fn(
         .map(ir::StructField::mut_pattern_tokens);
 
     quote! {
-        #[allow(unused_variables)]
         fn patch(
             __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
             __env: &#env_ident,
