@@ -1,3 +1,7 @@
+//!
+//! Parser for the complete component syntax
+//!
+
 use syn::parse::{Parse, ParseStream};
 
 use crate::param;

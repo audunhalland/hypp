@@ -1,6 +1,8 @@
 //!
 //! Abstract Syntax Tree data types,
-//! plus parsing of the template into AST.
+//! plus parsing of the _template_ into AST.
+//!
+//! 'template' is the markup-like syntax used to express the GUI.
 //!
 
 use std::fmt::Display;

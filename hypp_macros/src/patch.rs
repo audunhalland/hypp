@@ -1,32 +1,15 @@
+//!
+//! Code for generating the `patch` function,
+//! basically the final Rust output of a root template_ast::Node.
+//!
+
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::callback;
-use crate::codegen::*;
 use crate::ir;
+use crate::misc_codegen::*;
 use crate::template_ast;
-
-// body of a block before it's 'serialized'.
-struct Body<'c> {
-    /// helper functions used by 'mount' and 'patch',
-    /// to avoid code duplication.
-    closures: Vec<Closure<'c>>,
-
-    mount_locals: TokenStream,
-
-    mount_expr: TokenStream,
-
-    // code used when the body span already exists, and should
-    // be selectively updated
-    patch: TokenStream,
-}
-
-struct Closure<'c> {
-    comp_ctx: &'c CompCtx,
-    ident: syn::Ident,
-    args: TokenStream,
-    body: TokenStream,
-}
 
 pub fn gen_patch_fn(
     block: &ir::Block,
@@ -77,6 +60,28 @@ pub fn gen_patch_fn(
             Ok(())
         }
     }
+}
+
+// body of a block before it's 'serialized'.
+struct Body<'c> {
+    /// helper functions used by 'mount' and 'patch',
+    /// to avoid code duplication.
+    closures: Vec<Closure<'c>>,
+
+    mount_locals: TokenStream,
+
+    mount_expr: TokenStream,
+
+    // code used when the body span already exists, and should
+    // be selectively updated
+    patch: TokenStream,
+}
+
+struct Closure<'c> {
+    comp_ctx: &'c CompCtx,
+    ident: syn::Ident,
+    args: TokenStream,
+    body: TokenStream,
 }
 
 fn compile_body<'c>(

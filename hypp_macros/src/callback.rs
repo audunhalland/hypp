@@ -1,3 +1,7 @@
+//!
+//! Callback utilities
+//!
+
 use syn::spanned::Spanned;
 
 pub struct Callback {

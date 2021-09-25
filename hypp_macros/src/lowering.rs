@@ -1,3 +1,11 @@
+///
+/// Lowering / "flattening" of template_ast::Node, into a simple
+/// control-flow "tree" (not a graph, because there are no joins).
+///
+/// The tree consists of `ir::Block`, which contains code the _must_ run
+/// together with other code. The only reason to split a block would the
+/// presence of conditionals.
+///
 use syn::spanned::Spanned;
 
 use crate::callback;

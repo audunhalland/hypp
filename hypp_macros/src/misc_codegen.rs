@@ -1,3 +1,7 @@
+//!
+//! Miscellaenous helper structs and various code generators generating rust code.
+//!
+
 use proc_macro2::TokenStream;
 use quote::quote;
 

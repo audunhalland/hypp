@@ -1,3 +1,7 @@
+//!
+//! Main code generator for one component
+//!
+
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -6,7 +10,7 @@ use crate::ir;
 use crate::lowering;
 use crate::param;
 
-use crate::codegen::*;
+use crate::misc_codegen::*;
 
 struct Component {
     comp_ctx: CompCtx,
