@@ -40,14 +40,18 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let component_ident = &root_idents.component_ident;
     let props_ident = &root_idents.public_props_ident;
+    let env_ident = &root_idents.env_ident;
+    let root_span_ident = &root_idents.root_span_ident;
 
     let PublicPropsStruct {
         tokens: public_props_struct,
         has_p_lifetime,
     } = create_public_props_struct(&params, &root_idents);
     let env_struct = create_env_struct(&params, &root_idents);
+    let root_span_struct = create_root_span_struct(&root_block, &root_idents);
     let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
-    let self_env_bindings = create_self_env_bindings(&params);
+    let self_env_locals = create_env_locals(&params, quote! { self.env });
+    let env_locals = create_env_locals(&params, quote! { __env });
     let props_updater = create_props_updater(&params);
     let self_shim = if has_self_shim.0 {
         create_self_shim(&params, &root_idents, methods)
@@ -142,6 +146,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     quote! {
         #public_props_struct
         #env_struct
+        #root_span_struct
         #self_shim
 
         #(#dom_programs)*
@@ -163,10 +168,34 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             #[allow(unused_variables)]
             fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
-                #self_env_bindings
+                #self_env_locals
                 #(#fn_stmts)*
                 #patch_binder_local
                 #(#patch_stmts)*
+            }
+
+            #[allow(unused_variables)]
+            fn patch2(
+                __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
+                __env: &#env_ident,
+                __updates: &[bool],
+                __cursor: &mut dyn ::hypp::Cursor<H>,
+                __bind: &mut dyn ::hypp::BindCallback<H, Self>,
+            ) -> Result<(), ::hypp::Error> {
+                #env_locals
+
+                match __root {
+                    ::hypp::InputOrOutput::Output(span) => {
+                        *span = Some(#root_span_ident {
+                            __phantom: ::std::marker::PhantomData,
+                        });
+                    }
+                    ::hypp::InputOrOutput::Input(span) => {
+                        // just patch!
+                        // patch_span0(&mut span.__f0, __cursor)?;
+                    }
+                }
+                Ok(())
             }
         }
 
@@ -323,6 +352,16 @@ fn create_env_struct(params: &[param::Param], root_idents: &RootIdents) -> Token
     }
 }
 
+fn create_root_span_struct(block: &ir::Block, root_idents: &RootIdents) -> TokenStream {
+    let root_span_ident = &root_idents.root_span_ident;
+
+    quote! {
+        struct #root_span_ident<H: ::hypp::Hypp> {
+            __phantom: ::std::marker::PhantomData<H>
+        }
+    }
+}
+
 fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
     let props_ident = &root_idents.public_props_ident;
 
@@ -363,7 +402,7 @@ fn create_mount_state_locals(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn create_self_env_bindings(params: &[param::Param]) -> TokenStream {
+fn create_env_locals(params: &[param::Param], prefix: TokenStream) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
@@ -371,28 +410,29 @@ fn create_self_env_bindings(params: &[param::Param]) -> TokenStream {
             param::ParamKind::Prop(root_ty) => match root_ty {
                 param::ParamRootType::One(ty) => match ty {
                     param::ParamLeafType::Owned(_) => {
-                        quote! { let #ident = self.env.#ident; }
+                        quote! { let #ident = #prefix.#ident; }
                     }
                     param::ParamLeafType::Ref(_) => {
                         // Remember, when storing a _reference_ prop inside self,
                         // we use the `<T as ToOwned>::Owned` type to store it..
                         // so we can just take the reference to that again!
                         quote! {
-                            let #ident = &self.env.#ident;
+                            let #ident = &#prefix.#ident;
                         }
                     }
                 },
                 param::ParamRootType::Option(ty) => match ty {
                     param::ParamLeafType::Owned(_) => {
-                        quote! { let #ident = self.env.#ident; }
+                        quote! { let #ident = #prefix.#ident; }
                     }
                     param::ParamLeafType::Ref(_) => {
-                        quote! { let #ident = self.env.#ident.as_deref(); }
+                        quote! { let #ident = #prefix.#ident.as_deref(); }
                     }
                 },
             },
             param::ParamKind::State(_) => quote! {
-                let #ident = &self.env.#ident;
+                // err... take reference maybe?
+                let #ident = #prefix.#ident;
             },
         }
     });

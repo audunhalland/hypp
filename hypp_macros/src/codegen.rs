@@ -31,6 +31,7 @@ pub struct RootIdents {
     pub component_ident: syn::Ident,
     pub public_props_ident: syn::Ident,
     pub env_ident: syn::Ident,
+    pub root_span_ident: syn::Ident,
     pub self_shim_ident: syn::Ident,
     pub uppercase_prefix: String,
 }
@@ -54,6 +55,7 @@ impl RootIdents {
     pub fn from_component_ident(component_ident: syn::Ident) -> Self {
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
         let env_ident = quote::format_ident!("__{}Env", component_ident);
+        let root_span_ident = quote::format_ident!("__{}RootSpan", component_ident);
         let self_shim_ident = quote::format_ident!("__{}Shim", component_ident);
         let uppercase_prefix = format!("__{}", component_ident.clone().to_string().to_uppercase());
 
@@ -61,6 +63,7 @@ impl RootIdents {
             component_ident,
             public_props_ident,
             env_ident,
+            root_span_ident,
             self_shim_ident,
             uppercase_prefix,
         }

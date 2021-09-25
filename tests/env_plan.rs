@@ -5,11 +5,10 @@
 use hypp::prelude::*;
 
 /// NEW CODE: Env for storing props+state
-struct Env<H: ::hypp::Hypp> {
+struct Env {
     show_button: bool,
     toggled: bool,
     list: Vec<u32>,
-    __phantom: std::marker::PhantomData<H>,
 }
 
 // macro output:
@@ -126,7 +125,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpan1<H
 
 #[allow(dead_code)]
 pub struct ConditionalCallback<H: ::hypp::Hypp> {
-    env: Env<H>,
+    env: Env,
     span: __ConditionalCallbackSpanRoot<H>,
     __anchor: H::Anchor,
     __weak_self: Option<::std::rc::Weak<::std::cell::RefCell<Self>>>,
@@ -144,7 +143,6 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
             show_button,
             toggled: Default::default(),
             list: vec![],
-            __phantom: std::marker::PhantomData,
         };
 
         let mut span = None;
@@ -173,7 +171,7 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
     // can be used by initial mount.
     fn patch2(
         __root: ::hypp::InputOrOutput<__ConditionalCallbackSpanRoot<H>>,
-        __env: &Env<H>,
+        __env: &Env,
         __updates: &[bool],
         __cursor: &mut dyn ::hypp::Cursor<H>,
         __bind: &mut dyn ::hypp::BindCallback<H, ConditionalCallback<H>>,
