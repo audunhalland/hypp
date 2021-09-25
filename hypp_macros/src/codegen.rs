@@ -28,17 +28,21 @@ pub struct CodegenCtx {
     pub scope: Scope,
 }
 
-pub struct RootIdents {
+/// Context for one whole component
+pub struct CompCtx {
     pub component_ident: syn::Ident,
     pub public_props_ident: syn::Ident,
     pub env_ident: syn::Ident,
     pub root_span_ident: syn::Ident,
     pub self_shim_ident: syn::Ident,
     pub uppercase_prefix: String,
+
+    pub patch_ctx_ty: TokenStream,
 }
 
 pub enum ConstructorKind<'a> {
     Component,
+    RootSpan,
     DynamicSpan {
         dynamic_span_type: &'a ir::StructFieldType,
         variant: &'a syn::Ident,
@@ -52,13 +56,22 @@ pub struct HasSelfShim(pub bool);
 
 pub struct Params<'p>(pub Option<&'p [param::Param]>);
 
-impl RootIdents {
-    pub fn from_component_ident(component_ident: syn::Ident) -> Self {
+impl CompCtx {
+    pub fn new(component_ident: syn::Ident, component_kind: ir::ComponentKind) -> Self {
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
         let env_ident = quote::format_ident!("__{}Env", component_ident);
         let root_span_ident = quote::format_ident!("__{}RootSpan", component_ident);
         let self_shim_ident = quote::format_ident!("__{}Shim", component_ident);
         let uppercase_prefix = format!("__{}", component_ident.clone().to_string().to_uppercase());
+
+        let patch_ctx_ty = match component_kind {
+            ir::ComponentKind::Basic => quote! {
+                ::hypp::PatchCtx<H>
+            },
+            ir::ComponentKind::SelfUpdatable => quote! {
+                ::hypp::PatchBindCtx<H, Self>
+            },
+        };
 
         Self {
             component_ident,
@@ -67,6 +80,7 @@ impl RootIdents {
             root_span_ident,
             self_shim_ident,
             uppercase_prefix,
+            patch_ctx_ty,
         }
     }
 }
@@ -160,17 +174,17 @@ impl<'f> quote::ToTokens for FieldAssign<'f> {
 
 pub fn collect_dom_programs(
     statements: &[ir::Statement],
-    root_idents: &RootIdents,
+    comp_ctx: &CompCtx,
     output: &mut Vec<TokenStream>,
 ) {
     for statement in statements {
         match &statement.expression {
             ir::Expression::ConstDom(program) => {
-                output.push(generate_dom_program(program, root_idents));
+                output.push(generate_dom_program(program, comp_ctx));
             }
             ir::Expression::Match { arms, .. } => {
                 for arm in arms {
-                    collect_dom_programs(&arm.block.statements, root_idents, output);
+                    collect_dom_programs(&arm.block.statements, comp_ctx, output);
                 }
             }
             _ => {}
@@ -178,10 +192,7 @@ pub fn collect_dom_programs(
     }
 }
 
-pub fn generate_dom_program(
-    program: &ir::ConstDomProgram,
-    root_idents: &RootIdents,
-) -> TokenStream {
+pub fn generate_dom_program(program: &ir::ConstDomProgram, comp_ctx: &CompCtx) -> TokenStream {
     let opcodes = program.opcodes.iter().map(|opcode| match opcode {
         ir::DomOpCode::EnterElement(lit_str) => quote! {
             ::hypp::ConstOpCode::EnterElement(#lit_str),
@@ -201,7 +212,7 @@ pub fn generate_dom_program(
     });
 
     let len = program.opcodes.len();
-    let ident = program.get_ident(root_idents);
+    let ident = program.get_ident(comp_ctx);
 
     quote! {
         static #ident: [::hypp::ConstOpCode; #len] = [
@@ -213,7 +224,7 @@ pub fn generate_dom_program(
 pub fn collect_dynamic_span_enums(
     statements: &[ir::Statement],
     component_kind: ir::ComponentKind,
-    root_idents: &RootIdents,
+    comp_ctx: &CompCtx,
     output: &mut Vec<TokenStream>,
 ) {
     for statement in statements {
@@ -228,13 +239,13 @@ pub fn collect_dynamic_span_enums(
                     arms,
                     statement.dom_depth,
                     component_kind,
-                    root_idents,
+                    comp_ctx,
                 ));
                 for arm in arms {
                     collect_dynamic_span_enums(
                         &arm.block.statements,
                         component_kind,
-                        root_idents,
+                        comp_ctx,
                         output,
                     );
                 }
@@ -249,10 +260,10 @@ fn generate_dynamic_span_enum(
     arms: &[ir::Arm],
     dom_depth: ir::DomDepth,
     component_kind: ir::ComponentKind,
-    root_idents: &RootIdents,
+    comp_ctx: &CompCtx,
 ) -> TokenStream {
     let dynamic_span_ident =
-        dynamic_span_type.to_tokens(root_idents, Scope::DynamicSpan, WithGenerics(false));
+        dynamic_span_type.to_tokens(comp_ctx, Scope::DynamicSpan, WithGenerics(false));
 
     let variant_defs = arms.iter().map(|arm| {
         let variant = &arm.variant;
@@ -260,7 +271,7 @@ fn generate_dynamic_span_enum(
             .block
             .struct_fields
             .iter()
-            .map(|field| field.field_def_tokens(root_idents, Scope::DynamicSpan));
+            .map(|field| field.field_def_tokens(comp_ctx, Scope::DynamicSpan));
 
         quote! {
             #variant {
@@ -277,7 +288,7 @@ fn generate_dynamic_span_enum(
 
         let span_pass = block.gen_span_pass(
             dom_depth,
-            root_idents,
+            comp_ctx,
             CodegenCtx {
                 component_kind,
                 function: Function::SpanPass,
@@ -327,6 +338,7 @@ fn generate_dynamic_span_enum(
         quote! {
             fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 match self {
+                    Self::Erased => {},
                     #(#arms)*
                 }
                 self.pass(__cursor, ::hypp::SpanOp::Erase)
@@ -350,6 +362,7 @@ fn generate_dynamic_span_enum(
 
             fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 match self {
+                    Self::Erased => false,
                     #(#span_pass_arms)*
                 }
             }
@@ -360,9 +373,9 @@ fn generate_dynamic_span_enum(
 }
 
 impl ir::StructField {
-    pub fn field_def_tokens(&self, root_idents: &RootIdents, scope: Scope) -> TokenStream {
+    pub fn field_def_tokens(&self, comp_ctx: &CompCtx, scope: Scope) -> TokenStream {
         let ident = &self.ident;
-        let ty = self.ty.to_tokens(root_idents, scope, WithGenerics(true));
+        let ty = self.ty.to_tokens(comp_ctx, scope, WithGenerics(true));
 
         quote! { #ident: #ty, }
     }
@@ -425,7 +438,7 @@ impl ir::Block {
     pub fn gen_mount(
         &self,
         constructor_kind: ConstructorKind<'_>,
-        root_idents: &RootIdents,
+        comp_ctx: &CompCtx,
         params: Params,
         ctx: CodegenCtx,
     ) -> TokenStream {
@@ -451,7 +464,7 @@ impl ir::Block {
         let field_inits = self.statements.iter().map(|statement| {
             let FieldInit { field_mut, init } = match &statement.expression {
                 ir::Expression::ConstDom(program) => {
-                    let program_ident = program.get_ident(root_idents);
+                    let program_ident = program.get_ident(comp_ctx);
 
                     FieldInit {
                         field_mut: false,
@@ -538,7 +551,7 @@ impl ir::Block {
                                     dynamic_span_type,
                                     variant,
                                 },
-                                &root_idents,
+                                &comp_ctx,
                                 Params(None),
                                 CodegenCtx {
                                     scope: Scope::DynamicSpan,
@@ -584,12 +597,13 @@ impl ir::Block {
 
         let constructor_path = match constructor_kind {
             ConstructorKind::Component => quote! { Self },
+            ConstructorKind::RootSpan => panic!(),
             ConstructorKind::DynamicSpan {
                 dynamic_span_type,
                 variant,
             } => {
                 let dynamic_span_ident =
-                    dynamic_span_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+                    dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
 
                 quote! {
                     #dynamic_span_ident::#variant
@@ -598,7 +612,7 @@ impl ir::Block {
         };
 
         let env = if let Some(params) = params.0 {
-            let env_ident = &root_idents.env_ident;
+            let env_ident = &comp_ctx.env_ident;
             let struct_params = params.iter().map(param::Param::owned_struct_param_tokens);
 
             quote! {
@@ -616,7 +630,7 @@ impl ir::Block {
                 .map(|statement| match &statement.expression {
                     ir::Expression::AttributeCallback(callback::Callback { ident }) => {
                         if let Some(field) = &statement.field {
-                            let component_ident = &root_idents.component_ident;
+                            let component_ident = &comp_ctx.component_ident;
 
                             quote! {
                                 __binder.bind(
@@ -685,7 +699,7 @@ impl ir::Block {
     pub fn gen_span_pass(
         &self,
         base_dom_depth: ir::DomDepth,
-        root_idents: &RootIdents,
+        comp_ctx: &CompCtx,
         ctx: CodegenCtx,
     ) -> TokenStream {
         let mut sub_spans: Vec<TokenStream> = vec![];
@@ -695,7 +709,7 @@ impl ir::Block {
 
             match &statement.expression {
                 ir::Expression::ConstDom(program) => {
-                    let program_ident = program.get_ident(root_idents);
+                    let program_ident = program.get_ident(comp_ctx);
                     for (index, opcode) in program.opcodes.iter().enumerate() {
                         match opcode {
                             ir::DomOpCode::EnterElement(_) => {
@@ -791,7 +805,7 @@ impl ir::Block {
 }
 
 impl ir::Statement {
-    pub fn gen_patch(&self, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
+    pub fn gen_patch(&self, comp_ctx: &CompCtx, ctx: CodegenCtx) -> TokenStream {
         // FIXME: Do some "peephole optimization" here.
         // E.g. there is no reason to output "advance to next"
         // if the next instruction does not require the cursor
@@ -817,7 +831,7 @@ impl ir::Statement {
                         _ => panic!(),
                     }
                 } else {
-                    let program_ident = program.get_ident(root_idents);
+                    let program_ident = program.get_ident(comp_ctx);
 
                     quote! {
                         __cursor.skip_const_program(&#program_ident);
@@ -882,7 +896,7 @@ impl ir::Statement {
                 arms,
             } => match &self.param_deps {
                 ir::ParamDeps::Const => quote! {},
-                _ => gen_match_patch(self, dynamic_span_type, expr, arms, root_idents, ctx),
+                _ => gen_match_patch(self, dynamic_span_type, expr, arms, comp_ctx, ctx),
             },
         }
     }
@@ -908,11 +922,10 @@ fn gen_match_patch(
     dynamic_span_type: &ir::StructFieldType,
     expr: &syn::Expr,
     arms: &[ir::Arm],
-    root_idents: &RootIdents,
+    comp_ctx: &CompCtx,
     ctx: CodegenCtx,
 ) -> TokenStream {
-    let dynamic_span_ident =
-        dynamic_span_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+    let dynamic_span_ident = dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
     let field = statement.field.as_ref().unwrap();
     let field_expr = FieldExpr(field, ctx);
     let field_assign = FieldAssign(field, ctx);
@@ -945,7 +958,7 @@ fn gen_match_patch(
 
             let patch_stmts = block.statements.iter().map(|statement| {
                 statement.gen_patch(
-                    root_idents,
+                    comp_ctx,
                     CodegenCtx {
                         scope: Scope::DynamicSpan,
                         ..ctx
@@ -972,7 +985,7 @@ fn gen_match_patch(
                     dynamic_span_type,
                     variant,
                 },
-                &root_idents,
+                &comp_ctx,
                 Params(None),
                 CodegenCtx {
                     scope: Scope::DynamicSpan,
@@ -1005,8 +1018,8 @@ fn gen_match_patch(
 }
 
 impl ir::ConstDomProgram {
-    pub fn get_ident(&self, root_idents: &RootIdents) -> syn::Ident {
-        quote::format_ident!("{}_PRG{}", root_idents.uppercase_prefix, self.id)
+    pub fn get_ident(&self, comp_ctx: &CompCtx) -> syn::Ident {
+        quote::format_ident!("{}_PRG{}", comp_ctx.uppercase_prefix, self.id)
     }
 }
 
@@ -1015,7 +1028,7 @@ pub struct WithGenerics(pub bool);
 impl ir::StructFieldType {
     pub fn to_tokens(
         &self,
-        root_idents: &RootIdents,
+        comp_ctx: &CompCtx,
         scope: Scope,
         with_generics: WithGenerics,
     ) -> TokenStream {
@@ -1028,7 +1041,7 @@ impl ir::StructFieldType {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
             Self::Env => {
-                let ident = &root_idents.env_ident;
+                let ident = &comp_ctx.env_ident;
                 quote! { #ident }
             }
             Self::WeakSelf => quote! {
@@ -1049,7 +1062,7 @@ impl ir::StructFieldType {
             }
             Self::DynamicSpan(span_index) => {
                 let ident =
-                    quote::format_ident!("__{}Span{}", root_idents.component_ident, span_index);
+                    quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
                 quote! { #ident #generics }
             }
         }

@@ -11,7 +11,7 @@ use crate::codegen::*;
 struct Component {
     component_kind: ir::ComponentKind,
     dom_programs: Vec<TokenStream>,
-    root_idents: RootIdents,
+    comp_ctx: CompCtx,
     params: Vec<param::Param>,
     root_block: ir::Block,
     dynamic_span_enums: Vec<TokenStream>,
@@ -29,7 +29,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let Component {
         component_kind,
         dom_programs,
-        root_idents,
+        comp_ctx,
         params,
         root_block,
         dynamic_span_enums,
@@ -38,28 +38,28 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         methods,
     } = analyze_ast(ast);
 
-    let component_ident = &root_idents.component_ident;
-    let props_ident = &root_idents.public_props_ident;
-    let env_ident = &root_idents.env_ident;
-    let root_span_ident = &root_idents.root_span_ident;
+    let component_ident = &comp_ctx.component_ident;
+    let props_ident = &comp_ctx.public_props_ident;
+    // let env_ident = &comp_ctx.env_ident;
+    // let root_span_ident = &comp_ctx.root_span_ident;
 
     let PublicPropsStruct {
         tokens: public_props_struct,
         has_p_lifetime,
-    } = create_public_props_struct(&params, &root_idents);
-    let env_struct = create_env_struct(&params, &root_idents);
-    let root_span_struct = create_root_span_struct(&root_block, &root_idents);
-    let fn_props_destructuring = create_fn_props_destructuring(&params, &root_idents);
+    } = create_public_props_struct(&params, &comp_ctx);
+    let env_struct = create_env_struct(&params, &comp_ctx);
+    let root_span_struct = create_root_span_struct(&root_block, &comp_ctx);
+    let fn_props_destructuring = create_fn_props_destructuring(&params, &comp_ctx);
     let self_env_locals = create_env_locals(&params, quote! { self.env });
     let env_locals = create_env_locals(&params, quote! { __env });
     let props_updater = create_props_updater(&params);
     let self_shim = if has_self_shim.0 {
-        create_self_shim(&params, &root_idents, methods)
+        create_self_shim(&params, &comp_ctx, methods)
     } else {
         quote! {}
     };
     let shim_impls = if has_self_shim.0 {
-        Some(create_shim_impls(&params, &root_idents))
+        Some(create_shim_impls(&params, &comp_ctx))
     } else {
         None
     };
@@ -73,12 +73,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let struct_field_defs = root_block
         .struct_fields
         .iter()
-        .map(|field| field.field_def_tokens(&root_idents, Scope::Component));
+        .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
 
     let mount_state_locals = create_mount_state_locals(&params);
     let mount = root_block.gen_mount(
         ConstructorKind::Component,
-        &root_idents,
+        &comp_ctx,
         Params(Some(&params)),
         CodegenCtx {
             component_kind,
@@ -96,7 +96,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let patch_stmts = root_block.statements.iter().map(|statement| {
         statement.gen_patch(
-            &root_idents,
+            &comp_ctx,
             CodegenCtx {
                 component_kind,
                 function: Function::Patch,
@@ -105,9 +105,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         )
     });
 
-    let patch2_stmts = crate::patch::gen_patch(
+    let patch2_fn = crate::patch::gen_patch2_fn(
         &root_block,
-        &root_idents,
+        &comp_ctx,
+        env_locals,
         CodegenCtx {
             component_kind,
             function: Function::Patch2,
@@ -117,7 +118,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let span_pass = root_block.gen_span_pass(
         ir::DomDepth(0),
-        &root_idents,
+        &comp_ctx,
         CodegenCtx {
             component_kind,
             function: Function::SpanPass,
@@ -170,47 +171,27 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
             pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                panic!()
+                /*
                 #mount_state_locals
                 #(#fn_stmts)*
                 #mount
                 Ok(#handle_path::new(__mounted))
+                */
             }
 
             #[allow(unused_variables)]
             fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
+                panic!()
+                /*
                 #self_env_locals
                 #(#fn_stmts)*
                 #patch_binder_local
                 #(#patch_stmts)*
+                */
             }
 
-            /*
-            #[allow(unused_variables)]
-            fn patch2(
-                __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
-                __env: &#env_ident,
-                __updates: &[bool],
-                __cursor: &mut dyn ::hypp::Cursor<H>,
-                __bind: &mut dyn ::hypp::BindCallback<H, Self>,
-            ) -> Result<(), ::hypp::Error> {
-                #env_locals
-
-                #patch2_stmts
-
-                match __root {
-                    ::hypp::InputOrOutput::Output(span) => {
-                        *span = Some(#root_span_ident {
-                            __phantom: ::std::marker::PhantomData,
-                        });
-                    }
-                    ::hypp::InputOrOutput::Input(span) => {
-                        // just patch!
-                        // patch_span0(&mut span.__f0, __cursor)?;
-                    }
-                }
-                Ok(())
-            }
-            */
+            #patch2_fn
         }
 
         impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
@@ -265,23 +246,23 @@ fn analyze_ast(
     };
 
     // Root idents which are used as prefixes for every global ident generated:
-    let root_idents = RootIdents::from_component_ident(ident);
+    let comp_ctx = CompCtx::new(ident, component_kind);
 
     let mut dom_programs = vec![];
-    collect_dom_programs(&root_block.statements, &root_idents, &mut dom_programs);
+    collect_dom_programs(&root_block.statements, &comp_ctx, &mut dom_programs);
 
     let mut dynamic_span_enums = vec![];
     collect_dynamic_span_enums(
         &root_block.statements,
         component_kind,
-        &root_idents,
+        &comp_ctx,
         &mut dynamic_span_enums,
     );
 
     Component {
         component_kind,
         dom_programs,
-        root_idents,
+        comp_ctx,
         params,
         root_block,
         dynamic_span_enums,
@@ -292,11 +273,8 @@ fn analyze_ast(
 }
 
 /// Create the props `struct` that callees will use to instantiate the component
-fn create_public_props_struct(
-    params: &[param::Param],
-    root_idents: &RootIdents,
-) -> PublicPropsStruct {
-    let props_ident = &root_idents.public_props_ident;
+fn create_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> PublicPropsStruct {
+    let props_ident = &comp_ctx.public_props_ident;
 
     let mut has_p_lifetime = false;
 
@@ -347,8 +325,8 @@ fn create_public_props_struct(
 }
 
 /// Create the env struct that the component uses to cache internal data
-fn create_env_struct(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
-    let env_ident = &root_idents.env_ident;
+fn create_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
+    let env_ident = &comp_ctx.env_ident;
 
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
@@ -366,18 +344,25 @@ fn create_env_struct(params: &[param::Param], root_idents: &RootIdents) -> Token
     }
 }
 
-fn create_root_span_struct(block: &ir::Block, root_idents: &RootIdents) -> TokenStream {
-    let root_span_ident = &root_idents.root_span_ident;
+fn create_root_span_struct(block: &ir::Block, comp_ctx: &CompCtx) -> TokenStream {
+    let root_span_ident = &comp_ctx.root_span_ident;
+
+    let struct_field_defs = block
+        .struct_fields
+        .iter()
+        .filter(|field| !field.ty.is_fake())
+        .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
 
     quote! {
         struct #root_span_ident<H: ::hypp::Hypp> {
+            #(#struct_field_defs)*
             __phantom: ::std::marker::PhantomData<H>
         }
     }
 }
 
-fn create_fn_props_destructuring(params: &[param::Param], root_idents: &RootIdents) -> syn::FnArg {
-    let props_ident = &root_idents.public_props_ident;
+fn create_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) -> syn::FnArg {
+    let props_ident = &comp_ctx.public_props_ident;
 
     let fields = params.iter().filter_map(|param| match &param.kind {
         param::ParamKind::Prop(_) => {
@@ -509,10 +494,10 @@ fn create_props_updater(params: &[param::Param]) -> TokenStream {
 
 fn create_self_shim(
     params: &[param::Param],
-    root_idents: &RootIdents,
+    comp_ctx: &CompCtx,
     methods: Vec<syn::ItemFn>,
 ) -> TokenStream {
-    let shim_ident = &root_idents.self_shim_ident;
+    let shim_ident = &comp_ctx.self_shim_ident;
 
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
@@ -548,10 +533,10 @@ fn create_self_shim(
     }
 }
 
-fn create_shim_impls(params: &[param::Param], root_idents: &RootIdents) -> TokenStream {
+fn create_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let n_params = params.iter().count();
-    let component_ident = &root_idents.component_ident;
-    let shim_ident = &root_idents.self_shim_ident;
+    let component_ident = &comp_ctx.component_ident;
+    let shim_ident = &comp_ctx.self_shim_ident;
 
     let env_fields = params.iter().map(|param| {
         let ident = &param.ident;

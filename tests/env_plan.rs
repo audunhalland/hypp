@@ -158,7 +158,7 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
             ::hypp::InputOrOutput::Output(&mut span),
             &env,
             &__updates,
-            &mut ::hypp::PatchCtx {
+            &mut ::hypp::PatchBindCtx {
                 cur: __cursor,
                 bind: &mut __binder,
             },
@@ -183,38 +183,40 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
         __root: ::hypp::InputOrOutput<__ConditionalCallbackSpanRoot<H>>,
         __env: &Env,
         __updates: &[bool],
-        __ctx: &mut ::hypp::PatchCtx<H, Self>,
+        __ctx: &mut ::hypp::PatchBindCtx<H, Self>,
     ) -> ::hypp::Void {
         let show_button = __env.show_button;
         let toggled = __env.toggled;
         let list = &__env.list;
 
         // test code
-        let do_with_list = |__ctx: &mut ::hypp::PatchCtx<H, Self>| -> Result<(), ::hypp::Error> {
-            let cb = __ctx.cur.attribute_value_callback()?;
-            __ctx.bind.bind(
-                cb,
-                ::hypp::ShimMethod::<ConditionalCallback<H>>(&|shim| {
-                    shim.handle_click();
-                }),
-            );
-            for _item in list.iter() {}
-            Ok(())
-        };
+        let do_with_list =
+            |__ctx: &mut ::hypp::PatchBindCtx<H, Self>| -> Result<(), ::hypp::Error> {
+                let cb = __ctx.cur.attribute_value_callback()?;
+                __ctx.bind.bind(
+                    cb,
+                    ::hypp::ShimMethod::<ConditionalCallback<H>>(&|shim| {
+                        shim.handle_click();
+                    }),
+                );
+                for _item in list.iter() {}
+                Ok(())
+            };
 
-        let do_with_list2 = |__ctx: &mut ::hypp::PatchCtx<H, Self>| -> Result<(), ::hypp::Error> {
-            for _item in list.iter() {}
-            Ok(())
-        };
+        let do_with_list2 =
+            |__ctx: &mut ::hypp::PatchBindCtx<H, Self>| -> Result<(), ::hypp::Error> {
+                for _item in list.iter() {}
+                Ok(())
+            };
 
         let __patch_span0 = |mut __f0: &mut __ConditionalCallbackSpan0<H>,
-                             __ctx: &mut ::hypp::PatchCtx<H, Self>|
+                             __ctx: &mut ::hypp::PatchBindCtx<H, Self>|
          -> ::hypp::Void {
             match show_button {
                 // Single pattern here!
                 true => {
                     let __patch_span1 = |mut __f3: &mut __ConditionalCallbackSpan1<H>,
-                                         __ctx: &mut ::hypp::PatchCtx<H, Self>|
+                                         __ctx: &mut ::hypp::PatchBindCtx<H, Self>|
                      -> ::hypp::Void {
                         // Single pattern here!
                         match toggled {
@@ -361,7 +363,7 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for ConditionalCall
             ::hypp::InputOrOutput::Input(&mut self.span),
             &self.env,
             &__updates,
-            &mut ::hypp::PatchCtx {
+            &mut ::hypp::PatchBindCtx {
                 cur: __cursor,
                 bind: &mut binder,
             },
@@ -388,7 +390,7 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for ConditionalCallba
             ::hypp::InputOrOutput::Input(&mut self.span),
             &self.env,
             &__updates,
-            &mut ::hypp::PatchCtx {
+            &mut ::hypp::PatchBindCtx {
                 cur: &mut cursor,
                 bind: &mut binder,
             },

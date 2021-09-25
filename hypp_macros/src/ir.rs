@@ -53,12 +53,24 @@ pub enum FieldIdent {
 pub enum StructFieldType {
     DomElement,
     DomText,
-    Env,
-    WeakSelf,
-    Anchor,
     Callback,
     Component(ComponentPath),
     DynamicSpan(u16),
+
+    // Things really reserved for the component struct, should really not be here.
+    // The struct fields are for span structs.
+    Env,
+    WeakSelf,
+    Anchor,
+}
+
+impl StructFieldType {
+    pub fn is_fake(&self) -> bool {
+        match self {
+            Self::Env | Self::WeakSelf | Self::Anchor => true,
+            _ => false,
+        }
+    }
 }
 
 // A type path representing another component

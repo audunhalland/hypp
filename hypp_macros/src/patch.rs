@@ -4,40 +4,100 @@ use quote::quote;
 use crate::callback;
 use crate::codegen::*;
 use crate::ir;
-use crate::param;
 use crate::template_ast;
 
 // body of a block before it's 'serialized'.
-struct Body {
+struct Body<'c> {
     /// helper functions used by 'mount' and 'patch',
     /// to avoid code duplication.
-    closures: Vec<Closure>,
+    closures: Vec<Closure<'c>>,
 
-    // code used when the block must be built from scratch
-    mount: TokenStream,
+    mount_locals: TokenStream,
+
+    mount_expr: TokenStream,
 
     // code used when the body span already exists, and should
     // be selectively updated
     patch: TokenStream,
 }
 
-struct Closure {
+struct Closure<'c> {
+    comp_ctx: &'c CompCtx,
     ident: syn::Ident,
-    arg_ty: TokenStream,
+    args: TokenStream,
     body: TokenStream,
 }
 
-pub fn gen_patch(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) -> TokenStream {
-    let Body { closures, .. } = compile_body(block, root_idents, ctx);
+pub fn gen_patch2_fn(
+    block: &ir::Block,
+    comp_ctx: &CompCtx,
+    env_locals: TokenStream,
+    ctx: CodegenCtx,
+) -> TokenStream {
+    let env_ident = &comp_ctx.env_ident;
+    let root_span_ident = &comp_ctx.root_span_ident;
+    let patch_ctx_ty = &comp_ctx.patch_ctx_ty;
+
+    let Body {
+        closures,
+        mount_locals,
+        mount_expr,
+        patch,
+    } = compile_body(block, comp_ctx, ctx, ConstructorKind::RootSpan);
+
+    let fields = block
+        .struct_fields
+        .iter()
+        .filter(|field| !field.ty.is_fake())
+        .map(ir::StructField::mut_pattern_tokens);
 
     quote! {
-        #(#closures)*
+        #[allow(unused_variables)]
+        fn patch2(
+            __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
+            __env: &#env_ident,
+            __updates: &[bool],
+            __ctx: &mut #patch_ctx_ty,
+        ) -> Result<(), ::hypp::Error> {
+            #env_locals
+
+            #(#closures)*
+
+            match __root {
+                ::hypp::InputOrOutput::Output(__root) => {
+                    #mount_locals
+                    *__root = Some(#mount_expr);
+                }
+                // Destructure here:
+                ::hypp::InputOrOutput::Input(#root_span_ident { #(#fields)* .. }) => {
+                    #patch
+                }
+            }
+            Ok(())
+        }
     }
 }
 
-fn compile_body(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) -> Body {
+fn compile_body<'c>(
+    block: &ir::Block,
+    comp_ctx: &'c CompCtx,
+    ctx: CodegenCtx,
+    constructor_kind: ConstructorKind<'_>,
+) -> Body<'c> {
+    enum FieldLocal {
+        Let,
+        LetMut,
+    }
+
+    struct FieldInit<'b> {
+        local: FieldLocal,
+        field_ident: &'b Option<ir::FieldIdent>,
+        init: TokenStream,
+        post_init: Option<TokenStream>,
+    }
+
     let mut closures: Vec<Closure> = vec![];
-    let mut mount_stmts: Vec<TokenStream> = vec![];
+    let mut field_inits: Vec<FieldInit> = vec![];
     let mut patch_stmts: Vec<TokenStream> = vec![];
 
     fn next_closure_ident(closures: &[Closure]) -> syn::Ident {
@@ -48,19 +108,24 @@ fn compile_body(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) ->
     for stmt in &block.statements {
         match &stmt.expression {
             ir::Expression::ConstDom(program) => {
-                let program_ident = program.get_ident(root_idents);
+                let program_ident = program.get_ident(comp_ctx);
                 let last_node_opcode = program.last_node_opcode();
 
-                mount_stmts.push(match last_node_opcode {
-                    Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
-                        quote! {
-                            __cursor.const_exec_element(&#program_ident)?
+                field_inits.push(FieldInit {
+                    local: FieldLocal::Let,
+                    field_ident: &stmt.field,
+                    init: match last_node_opcode {
+                        Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
+                            quote! {
+                                __ctx.cur.const_exec_element(&#program_ident)?;
+                            }
                         }
-                    }
-                    Some(ir::DomOpCode::Text(_)) => quote! {
-                        __cursor.const_exec_text(&#program_ident)?
+                        Some(ir::DomOpCode::Text(_)) => quote! {
+                            __ctx.cur.const_exec_text(&#program_ident)?;
+                        },
+                        _ => panic!(),
                     },
-                    _ => panic!(),
+                    post_init: None,
                 });
 
                 patch_stmts.push(match &stmt.field {
@@ -80,32 +145,42 @@ fn compile_body(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) ->
                     }
                     None => {
                         quote! {
-                            __cursor.skip_const_program(&#program_ident);
+                            __ctx.cur.skip_const_program(&#program_ident);
                         }
                     }
                 });
             }
             ir::Expression::AttributeCallback(callback::Callback { ident }) => {
                 let field = stmt.field.as_ref().unwrap();
-                let component_ident = &root_idents.component_ident;
+                let component_ident = &comp_ctx.component_ident;
 
-                mount_stmts.push(quote! {
-                    let #field = __ctx.cur.attribute_value_callback()?;
-
-                    __ctx.bind.bind(
-                        #field.clone(),
-                        ::hypp::ShimMethod::<#component_ident<H>>(&|shim| {
-                            shim.#ident();
-                        }),
-                    );
+                field_inits.push(FieldInit {
+                    local: FieldLocal::Let,
+                    field_ident: &stmt.field,
+                    init: quote! {
+                        __ctx.cur.attribute_value_callback()?;
+                    },
+                    post_init: Some(quote! {
+                        __ctx.bind.bind(
+                            #field.clone(),
+                            ::hypp::ShimMethod::<#component_ident<H>>(&|shim| {
+                                shim.#ident();
+                            }),
+                        );
+                    }),
                 });
             }
             ir::Expression::Text(expr) => {
                 let field_expr = FieldExpr(stmt.field.as_ref().unwrap(), ctx);
                 let test = stmt.param_deps.update_test_tokens();
 
-                mount_stmts.push(quote! {
-                    __ctx.cur.text(#expr.as_ref())?
+                field_inits.push(FieldInit {
+                    local: FieldLocal::Let,
+                    field_ident: &stmt.field,
+                    init: quote! {
+                        __ctx.cur.text(#expr.as_ref())?;
+                    },
+                    post_init: None,
                 });
 
                 patch_stmts.push(quote! {
@@ -142,20 +217,20 @@ fn compile_body(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) ->
                         #props_path {
                             #(#prop_list)*
                         },
-                        __cursor
+                        __ctx.cur
                     )?
                 };
 
-                mount_stmts.push(match (&stmt.field, ctx.scope) {
-                    (Some(field), Scope::Component) => quote! {
-                        let #field = #mount_expr;
+                field_inits.push(FieldInit {
+                    local: FieldLocal::Let,
+                    field_ident: &stmt.field,
+                    init: match &ctx.scope {
+                        Scope::Component => quote! { #mount_expr; },
+                        Scope::DynamicSpan => quote! {
+                            #mount_expr.into_boxed();
+                        },
                     },
-                    (Some(field), Scope::DynamicSpan) => quote! {
-                        let #field = #mount_expr.into_boxed();
-                    },
-                    (None, _) => quote! {
-                        #mount_expr;
-                    },
+                    post_init: None,
                 });
 
                 // Only need a patch statement if the component actually depends on
@@ -175,7 +250,7 @@ fn compile_body(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) ->
                         } else {
                             // Nothing has changed, but the cursor must pass
                             // over the component. This should be very cheap.
-                            #field_expr.borrow_mut().pass_over(__cursor);
+                            #field_expr.borrow_mut().pass_over(__ctx.cur);
                         }
                     });
                 }
@@ -188,55 +263,124 @@ fn compile_body(block: &ir::Block, root_idents: &RootIdents, ctx: CodegenCtx) ->
                 ir::ParamDeps::Const => {}
                 _ => {
                     let dynamic_span_ident =
-                        dynamic_span_type.to_tokens(root_idents, ctx.scope, WithGenerics(false));
+                        dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
 
                     let closure_ident = next_closure_ident(&closures);
                     let closure = gen_match_closure(
                         stmt,
+                        dynamic_span_type,
                         &dynamic_span_ident,
                         closure_ident.clone(),
                         expr,
                         arms,
-                        root_idents,
+                        comp_ctx,
                         ctx,
                     );
 
                     let field = stmt.field.as_ref().unwrap();
 
                     closures.push(closure);
-                    mount_stmts.push(quote! {
-                        let mut #field = #dynamic_span_ident::Erased;
-                        #closure_ident(&mut #field, __ctx);
+                    field_inits.push(FieldInit {
+                        local: FieldLocal::LetMut,
+                        field_ident: &stmt.field,
+                        init: quote! {
+                            #dynamic_span_ident::Erased;
+                        },
+                        post_init: Some(quote! {
+                            #closure_ident(&mut #field, __ctx)?;
+                        }),
                     });
 
                     patch_stmts.push(quote! {
-                        #closure_ident(&mut #field, __ctx);
+                        #closure_ident(#field, __ctx)?;
                     });
                 }
             },
         }
     }
 
+    let mount_field_stmts = field_inits.into_iter().map(|field_init| {
+        let init = field_init.init;
+        let post_init = field_init.post_init;
+        match &field_init.field_ident {
+            None => quote! {
+                #init
+                #post_init
+            },
+            Some(field_ident) => match field_init.local {
+                FieldLocal::Let => quote! {
+                    let #field_ident = #init
+                    #post_init
+                },
+                FieldLocal::LetMut => quote! {
+                    let mut #field_ident = #init
+                    #post_init
+                },
+            },
+        }
+    });
+
+    let constructor_path = match constructor_kind {
+        ConstructorKind::Component => panic!(),
+        ConstructorKind::RootSpan => {
+            let root_span_ident = &comp_ctx.root_span_ident;
+            quote! {
+                #root_span_ident
+            }
+        }
+        ConstructorKind::DynamicSpan {
+            dynamic_span_type,
+            variant,
+        } => {
+            let dynamic_span_ident =
+                dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
+
+            quote! {
+                #dynamic_span_ident::#variant
+            }
+        }
+    };
+
+    let struct_params = block
+        .struct_fields
+        .iter()
+        .filter(|field| !field.ty.is_fake())
+        .map(ir::StructField::struct_param_tokens);
+
+    let phantom = match constructor_kind {
+        ConstructorKind::Component => panic!(),
+        ConstructorKind::RootSpan => Some(quote! { __phantom: ::std::marker::PhantomData, }),
+        ConstructorKind::DynamicSpan { .. } => None,
+    };
+
     Body {
         closures,
-        mount: quote! {},
-        patch: quote! {},
+        mount_locals: quote! {
+            #(#mount_field_stmts)*
+        },
+        mount_expr: quote! {
+            #constructor_path {
+                #(#struct_params)* #phantom
+            }
+        },
+        patch: quote! {
+            #(#patch_stmts)*
+        },
     }
 }
 
-fn gen_match_closure(
+fn gen_match_closure<'c>(
     statement: &ir::Statement,
+    dynamic_span_type: &ir::StructFieldType,
     dynamic_span_ident: &TokenStream,
     closure_ident: syn::Ident,
     expr: &syn::Expr,
     arms: &[ir::Arm],
-    root_idents: &RootIdents,
+    comp_ctx: &'c CompCtx,
     ctx: CodegenCtx,
-) -> Closure {
+) -> Closure<'c> {
     let field = statement.field.as_ref().unwrap();
     let field_expr = FieldExpr(field, ctx);
-    let field_assign = FieldAssign(field, ctx);
-    let mut_field_pat = MutFieldPat(field, ctx);
 
     let pattern_arms = arms.iter().map(
         |ir::Arm {
@@ -247,14 +391,19 @@ fn gen_match_closure(
          }| {
             let Body {
                 closures,
-                mount,
+                mount_locals,
+                mount_expr,
                 patch,
             } = compile_body(
                 &block,
-                root_idents,
+                comp_ctx,
                 CodegenCtx {
                     scope: Scope::DynamicSpan,
                     ..ctx
+                },
+                ConstructorKind::DynamicSpan {
+                    dynamic_span_type,
+                    variant,
                 },
             );
 
@@ -267,7 +416,7 @@ fn gen_match_closure(
                 #pattern => {
                     #(#closures)*
 
-                    match #mut_field_pat {
+                    match &mut #field {
                         #dynamic_span_ident::#variant { #(#fields)* .. } => {
                             // The matching arm (this variant corresponds to 'expr')
                             #patch
@@ -275,11 +424,11 @@ fn gen_match_closure(
                         _ => {
                             // The non-matching arm, erase and then re-mount
                             #field_expr.erase(__ctx.cur);
-                            #mount
-                            #field_assign = __mounted;
+                            #mount_locals
+                            *#field = #mount_expr;
                         }
                     }
-                }
+                },
             }
         },
     );
@@ -291,20 +440,27 @@ fn gen_match_closure(
     };
 
     Closure {
+        comp_ctx,
         ident: closure_ident,
-        arg_ty: quote! { () },
+        args: quote! {
+            mut #field: &mut #dynamic_span_ident<H>,
+        },
         body,
     }
 }
 
-impl quote::ToTokens for Closure {
+impl<'c> quote::ToTokens for Closure<'c> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = &self.ident;
+        let args = &self.args;
+        let patch_ctx_ty = &self.comp_ctx.patch_ctx_ty;
+        let body = &self.body;
 
         let output = quote! {
-            let #ident = || -> ::hypp::Void {
+            let #ident = |#args __ctx: &mut #patch_ctx_ty| -> ::hypp::Void {
+                #body
                 Ok(())
-            }
+            };
         };
         tokens.extend(output);
     }
