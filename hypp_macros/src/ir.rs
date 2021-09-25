@@ -121,6 +121,13 @@ pub enum ParamDeps {
 }
 
 impl ParamDeps {
+    pub fn is_variable(&self) -> bool {
+        match self {
+            Self::Const => false,
+            _ => true,
+        }
+    }
+
     pub fn extend(&mut self, other: &ParamDeps) {
         match self {
             Self::Const => *self = other.clone(),

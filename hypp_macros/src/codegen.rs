@@ -338,6 +338,7 @@ fn generate_dynamic_span_enum(
 
     quote! {
         enum #dynamic_span_ident<H: ::hypp::Hypp> {
+            Erased,
             #(#variant_defs)*
         }
 
@@ -1004,7 +1005,7 @@ fn gen_match_patch(
 }
 
 impl ir::ConstDomProgram {
-    fn get_ident(&self, root_idents: &RootIdents) -> syn::Ident {
+    pub fn get_ident(&self, root_idents: &RootIdents) -> syn::Ident {
         quote::format_ident!("{}_PRG{}", root_idents.uppercase_prefix, self.id)
     }
 }

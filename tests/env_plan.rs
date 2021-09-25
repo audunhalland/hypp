@@ -52,6 +52,7 @@ impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for __ConditionalCallbackSpanRoo
 enum __ConditionalCallbackSpan0<H: ::hypp::Hypp> {
     Erased,
     V0 {
+        // Callback should actually implement Span..
         __f1: ::hypp::SharedCallback<H>,
         __f2: H::Element,
         __f3: __ConditionalCallbackSpan1<H>,
@@ -188,6 +189,7 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
         let toggled = __env.toggled;
         let list = &__env.list;
 
+        // test code
         let do_with_list = |__ctx: &mut ::hypp::PatchCtx<H, Self>| -> Result<(), ::hypp::Error> {
             let cb = __ctx.cur.attribute_value_callback()?;
             __ctx.bind.bind(
@@ -226,9 +228,9 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
                                     }
                                     _ => {
                                         __f3.erase(__ctx.cur);
-                                        let __f4 = __ctx
-                                            .cur
-                                            .const_exec_text(&__CONDITIONALCALLBACK_PRG1)?;
+                                        let __f4 = __ctx.cur.const_exec_text(&[
+                                            ::hypp::ConstOpCode::Text("Toggled"),
+                                        ])?;
                                         *__f3 = __ConditionalCallbackSpan1::V0 { __f4 };
                                     }
                                 }
@@ -240,7 +242,9 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
                                 _ => {
                                     __f3.erase(__ctx.cur);
                                     let __f5 =
-                                        __ctx.cur.const_exec_text(&__CONDITIONALCALLBACK_PRG2)?;
+                                        __ctx.cur.const_exec_text(&[::hypp::ConstOpCode::Text(
+                                            "Not toggled",
+                                        )])?;
                                     *__f3 = __ConditionalCallbackSpan1::V1 { __f5 };
                                 }
                             },
@@ -265,11 +269,16 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
                         _ => {
                             __f0.erase(__ctx.cur);
 
-                            let __f2 = __ctx.cur.const_exec_element(&__CONDITIONALCALLBACK_PRG0)?;
+                            let __f2 = __ctx.cur.const_exec_element(&[
+                                ::hypp::ConstOpCode::EnterElement("button"),
+                                ::hypp::ConstOpCode::AttributeName("on_click"),
+                            ])?;
                             let __f1 = __ctx.cur.attribute_value_callback()?;
                             let mut __f3 = __ConditionalCallbackSpan1::Erased;
                             __patch_span1(&mut __f3, __ctx)?;
-                            let __f6 = __ctx.cur.const_exec_element(&__CONDITIONALCALLBACK_PRG3)?;
+                            let __f6 = __ctx
+                                .cur
+                                .const_exec_element(&[::hypp::ConstOpCode::ExitElement])?;
 
                             __ctx.bind.bind(
                                 __f1.clone(),
@@ -300,15 +309,15 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
         };
 
         match __root {
+            ::hypp::InputOrOutput::Input(span) => {
+                __patch_span0(&mut span.__f0, __ctx)?;
+            }
             ::hypp::InputOrOutput::Output(span) => {
                 do_with_list(__ctx)?;
                 do_with_list2(__ctx)?;
                 let mut __f0 = __ConditionalCallbackSpan0::Erased;
                 __patch_span0(&mut __f0, __ctx)?;
                 *span = Some(__ConditionalCallbackSpanRoot { __f0 });
-            }
-            ::hypp::InputOrOutput::Input(span) => {
-                __patch_span0(&mut span.__f0, __ctx)?;
             }
         }
 
