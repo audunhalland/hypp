@@ -4,11 +4,6 @@
 #[allow(unused_imports)]
 use hypp::prelude::*;
 
-enum PatchOrMount<'a, T> {
-    Patch(&'a mut T),
-    Mount(&'a mut Option<T>),
-}
-
 /// NEW CODE: Env for storing props+state
 struct Env<H: ::hypp::Hypp> {
     show_button: bool,
@@ -137,7 +132,6 @@ pub struct ConditionalCallback<H: ::hypp::Hypp> {
     __weak_self: Option<::std::rc::Weak<::std::cell::RefCell<Self>>>,
 }
 impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
-    // Mount using patch2?
     pub fn mount(
         __ConditionalCallbackProps { show_button, .. }: __ConditionalCallbackProps,
         __cursor: &mut dyn ::hypp::Cursor<H>,
@@ -154,8 +148,8 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
         };
 
         let mut span = None;
-        Self::patch_or_mount(
-            PatchOrMount::Mount(&mut span),
+        Self::patch2(
+            ::hypp::InputOrOutput::Output(&mut span),
             &env,
             &__updates,
             __cursor,
@@ -177,8 +171,8 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
 
     // Patch only one root conditional.
     // can be used by initial mount.
-    fn patch_or_mount(
-        __root: PatchOrMount<__ConditionalCallbackSpanRoot<H>>,
+    fn patch2(
+        __root: ::hypp::InputOrOutput<__ConditionalCallbackSpanRoot<H>>,
         __env: &Env<H>,
         __updates: &[bool],
         __cursor: &mut dyn ::hypp::Cursor<H>,
@@ -302,14 +296,14 @@ impl<H: ::hypp::Hypp + 'static> ConditionalCallback<H> {
         };
 
         match __root {
-            PatchOrMount::Mount(span) => {
+            ::hypp::InputOrOutput::Output(span) => {
                 let mut __f0 = __ConditionalCallbackSpan0::Init;
                 do_with_list(__cursor);
                 do_with_list2(__cursor);
                 patch_span0(&mut __f0, __cursor)?;
                 *span = Some(__ConditionalCallbackSpanRoot { __f0 });
             }
-            PatchOrMount::Patch(span) => {
+            ::hypp::InputOrOutput::Input(span) => {
                 patch_span0(&mut span.__f0, __cursor)?;
             }
         }
@@ -350,8 +344,8 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for ConditionalCall
         }
 
         let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
-        Self::patch_or_mount(
-            PatchOrMount::Patch(&mut self.span),
+        Self::patch2(
+            ::hypp::InputOrOutput::Input(&mut self.span),
             &self.env,
             &__updates,
             __cursor,
@@ -374,8 +368,8 @@ impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for ConditionalCallba
 
         let mut cursor = self.__anchor.create_builder();
         let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.__weak_self);
-        Self::patch_or_mount(
-            PatchOrMount::Patch(&mut self.span),
+        Self::patch2(
+            ::hypp::InputOrOutput::Input(&mut self.span),
             &self.env,
             &__updates,
             &mut cursor,

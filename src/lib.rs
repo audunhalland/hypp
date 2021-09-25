@@ -312,3 +312,11 @@ pub trait ShimTrampoline: Sized {
 pub trait BindCallback<H: Hypp, T: ShimTrampoline> {
     fn bind(&mut self, callback: SharedCallback<H>, method: ShimMethod<T>);
 }
+
+///
+/// A function parameter that can function dynamically as either an input or an output parameter
+///
+pub enum InputOrOutput<'a, T> {
+    Input(&'a mut T),
+    Output(&'a mut Option<T>),
+}
