@@ -28,7 +28,7 @@ struct Closure<'c> {
     body: TokenStream,
 }
 
-pub fn gen_patch2_fn(
+pub fn gen_patch_fn(
     block: &ir::Block,
     comp_ctx: &CompCtx,
     env_locals: TokenStream,
@@ -53,7 +53,7 @@ pub fn gen_patch2_fn(
 
     quote! {
         #[allow(unused_variables)]
-        fn patch2(
+        fn patch(
             __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
             __env: &#env_ident,
             __updates: &[bool],
@@ -323,7 +323,6 @@ fn compile_body<'c>(
     });
 
     let constructor_path = match constructor_kind {
-        ConstructorKind::Component => panic!(),
         ConstructorKind::RootSpan => {
             let root_span_ident = &comp_ctx.root_span_ident;
             quote! {
@@ -349,7 +348,6 @@ fn compile_body<'c>(
         .map(ir::StructField::struct_param_tokens);
 
     let phantom = match constructor_kind {
-        ConstructorKind::Component => panic!(),
         ConstructorKind::RootSpan => Some(quote! { __phantom: ::std::marker::PhantomData, }),
         ConstructorKind::DynamicSpan { .. } => None,
     };

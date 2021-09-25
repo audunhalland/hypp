@@ -82,44 +82,14 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
     };
 
-    let mount_state_locals = create_mount_state_locals(&params);
-    let mount = root_block.gen_mount(
-        ConstructorKind::Component,
-        &comp_ctx,
-        Params(Some(&params)),
-        CodegenCtx {
-            component_kind,
-            function: Function::Mount,
-            scope: Scope::Component,
-        },
-    );
-
-    let patch_binder_local = match component_kind {
-        ir::ComponentKind::SelfUpdatable => Some(quote! {
-            let mut __binder: ::hypp::shim::Binder<H, Self> = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
-        }),
-        ir::ComponentKind::Basic => None,
-    };
-
-    let patch_stmts = root_block.statements.iter().map(|statement| {
-        statement.gen_patch(
-            &comp_ctx,
-            CodegenCtx {
-                component_kind,
-                function: Function::Patch,
-                scope: Scope::Component,
-            },
-        )
-    });
-
-    let patch2_fn = crate::patch::gen_patch2_fn(
+    let patch_fn = crate::patch::gen_patch_fn(
         &root_block,
         &comp_ctx,
         env_locals,
         fn_stmts,
         CodegenCtx {
             component_kind,
-            function: Function::Patch2,
+            function: Function::Patch,
             scope: Scope::Component,
         },
     );
@@ -143,6 +113,31 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             }
         }),
         ir::ComponentKind::Basic => None,
+    };
+
+    let pass_props_patch_call = match component_kind {
+        ir::ComponentKind::Basic => quote! {
+            Self::patch(
+                ::hypp::InputOrOutput::Input(&mut self.root_span),
+                &self.env,
+                &__updates,
+                &mut ::hypp::PatchCtx {
+                    cur: __cursor,
+                }
+            ).unwrap();
+        },
+        ir::ComponentKind::SelfUpdatable => quote! {
+            let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
+            Self::patch(
+                ::hypp::InputOrOutput::Input(&mut self.root_span),
+                &self.env,
+                &__updates,
+                &mut ::hypp::PatchBindCtx {
+                    cur: __cursor,
+                    bind: &mut binder,
+                }
+            ).unwrap();
+        },
     };
 
     let handle_path = root_block.handle_kind.handle_path();
@@ -173,18 +168,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                 */
             }
 
-            #[allow(unused_variables)]
-            fn patch(&mut self, __updates: &[bool], __cursor: &mut dyn ::hypp::Cursor<H>) {
-                panic!()
-                /*
-                #self_env_locals
-                #(#fn_stmts)*
-                #patch_binder_local
-                #(#patch_stmts)*
-                */
-            }
-
-            #patch2_fn
+            #patch_fn
         }
 
         impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
@@ -209,8 +193,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
                 #props_updater
-
-                self.patch(&__updates, __cursor);
+                #pass_props_patch_call
             }
         }
 
@@ -416,24 +399,6 @@ fn create_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) ->
     }
 }
 
-// Temporary while still using separate 'mount' template code
-fn create_mount_state_locals(params: &[param::Param]) -> TokenStream {
-    let locals = params.iter().filter_map(|param| match &param.kind {
-        param::ParamKind::State(_) => {
-            let ident = &param.ident;
-
-            Some(quote! {
-                let #ident = Default::default();
-            })
-        }
-        param::ParamKind::Prop(_) => None,
-    });
-
-    quote! {
-        #(#locals)*
-    }
-}
-
 fn create_env_locals(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
@@ -602,7 +567,16 @@ fn create_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream
                 method.0(&mut shim);
 
                 let mut cursor = self.anchor.create_builder();
-                self.patch(&__updates, &mut cursor);
+                let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
+                Self::patch(
+                    ::hypp::InputOrOutput::Input(&mut self.root_span),
+                    &self.env,
+                    &__updates,
+                    &mut ::hypp::PatchBindCtx {
+                        cur: &mut cursor,
+                        bind: &mut binder,
+                    }
+                ).unwrap();
             }
         }
     }
