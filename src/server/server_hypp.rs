@@ -1,18 +1,21 @@
 use crate::error::Error;
 
-use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
+use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp, Mount, Span};
 
-impl AsNode<ServerHypp> for RcNode {
+use parking_lot::Mutex;
+use std::sync::Arc;
+
+impl AsNode<ServerHypp> for ArcNode {
     #[inline]
-    fn as_node(&self) -> &RcNode {
+    fn as_node(&self) -> &ArcNode {
         self
     }
 }
 
 pub struct ServerHypp {
-    body: RcNode,
+    body: ArcNode,
     mounts: Vec<Box<dyn std::any::Any>>,
 }
 
@@ -39,9 +42,9 @@ impl ServerHypp {
 }
 
 impl Hypp for ServerHypp {
-    type Node = RcNode;
-    type Element = RcNode;
-    type Text = RcNode;
+    type Node = ArcNode;
+    type Element = ArcNode;
+    type Text = ArcNode;
 
     type Anchor = ServerBuilder;
     type Builder = ServerBuilder;
@@ -49,7 +52,7 @@ impl Hypp for ServerHypp {
     type Shared<T>
     where
         T: 'static,
-    = std::rc::Rc<std::cell::RefCell<T>>;
+    = Arc<Mutex<T>>;
 
     type Callback = ();
 
@@ -71,7 +74,7 @@ impl Hypp for ServerHypp {
     }
 }
 
-impl AsSpan for RcNode {
+impl AsSpan for ArcNode {
     type Target = Self;
 
     fn as_span<'a>(&'a self) -> SpanAdapter<'a, Self> {
@@ -79,7 +82,7 @@ impl AsSpan for RcNode {
     }
 }
 
-impl<'a> Span<ServerHypp> for SpanAdapter<'a, RcNode> {
+impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
     fn is_anchored(&self) -> bool {
         true
     }
@@ -102,20 +105,20 @@ impl Callback for () {
 
 #[derive(Clone)]
 pub struct ServerBuilder {
-    element: RcNode,
-    next_child: Option<RcNode>,
+    element: ArcNode,
+    next_child: Option<ArcNode>,
     loaded_attribute_name: Option<&'static str>,
 }
 
 impl ServerBuilder {
-    fn current_child(&self) -> Option<RcNode> {
+    fn current_child(&self) -> Option<ArcNode> {
         match &self.next_child {
             Some(next_child) => next_child.prev_sibling(),
             None => self.element.last_child(),
         }
     }
 
-    fn enter_element(&mut self, tag_name: &'static str) -> RcNode {
+    fn enter_element(&mut self, tag_name: &'static str) -> ArcNode {
         let element = Node::create_element(tag_name);
         self.element
             .insert_before(element.clone(), self.next_child.clone());
@@ -127,7 +130,7 @@ impl ServerBuilder {
         element
     }
 
-    fn text(&mut self, text: &str) -> RcNode {
+    fn text(&mut self, text: &str) -> ArcNode {
         let node = Node::create_text(text.to_string());
         self.element
             .insert_before(node.clone(), self.next_child.clone());
@@ -138,7 +141,7 @@ impl ServerBuilder {
         node
     }
 
-    fn exit_element(&mut self) -> RcNode {
+    fn exit_element(&mut self) -> ArcNode {
         let parent_element = self
             .element
             .parent()
@@ -150,7 +153,7 @@ impl ServerBuilder {
         std::mem::replace(&mut self.element, parent_element)
     }
 
-    fn remove_element(&mut self, tag_name: &'static str) -> Result<RcNode, Error> {
+    fn remove_element(&mut self, tag_name: &'static str) -> Result<ArcNode, Error> {
         let next_child = self.next_child.take();
 
         match next_child {
@@ -181,7 +184,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
         self.clone()
     }
 
-    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<RcNode, Error> {
+    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<ArcNode, Error> {
         let mut result = Err(Error::NoProgram);
 
         for opcode in program {
@@ -200,7 +203,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
                     match &self.element.kind {
                         NodeKind::Element { attributes, .. } => {
                             attributes
-                                .borrow_mut()
+                                .lock()
                                 .map
                                 .insert(attribute_name, AttributeValue::Static(value));
                             self.loaded_attribute_name = None;
@@ -223,16 +226,16 @@ impl Cursor<ServerHypp> for ServerBuilder {
         result
     }
 
-    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<RcNode, Error> {
+    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<ArcNode, Error> {
         self.const_exec_element(program)
     }
 
-    fn attribute_value_callback(&mut self) -> Result<std::rc::Rc<std::cell::RefCell<()>>, Error> {
+    fn attribute_value_callback(&mut self) -> Result<Arc<Mutex<()>>, Error> {
         // Callbacks do nothing on the server
-        Ok(std::rc::Rc::new(std::cell::RefCell::new(())))
+        Ok(Arc::new(Mutex::new(())))
     }
 
-    fn text(&mut self, text: &str) -> Result<RcNode, Error> {
+    fn text(&mut self, text: &str) -> Result<ArcNode, Error> {
         Ok(self.text(text))
     }
 
@@ -243,7 +246,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
         Ok(())
     }
 
-    fn remove_element(&mut self, tag_name: &'static str) -> Result<RcNode, Error> {
+    fn remove_element(&mut self, tag_name: &'static str) -> Result<ArcNode, Error> {
         let child = self.current_child().expect("Expected an element to remove");
         child.assert_is_element_with_tag_name(tag_name);
 
@@ -252,14 +255,14 @@ impl Cursor<ServerHypp> for ServerBuilder {
         Ok(child)
     }
 
-    fn remove_text(&mut self) -> Result<RcNode, Error> {
+    fn remove_text(&mut self) -> Result<ArcNode, Error> {
         let child = self.current_child().expect("Expected an element to remove");
         self.element.remove_child(child.clone());
 
         Ok(child)
     }
 
-    fn move_to_children_of(&mut self, element: &RcNode) {
+    fn move_to_children_of(&mut self, element: &ArcNode) {
         self.element = element.clone();
         // Start at the end of the child list:
         self.next_child = None;
@@ -270,7 +273,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
         Ok(())
     }
 
-    fn move_to_following_sibling_of(&mut self, node: &RcNode) {
+    fn move_to_following_sibling_of(&mut self, node: &ArcNode) {
         self.element = node.parent().unwrap();
         // The next child is the node itself (so the cursor points before that node)
         self.next_child = Some(node.clone());

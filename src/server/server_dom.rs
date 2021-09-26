@@ -1,20 +1,20 @@
-use std::cell::RefCell;
+use parking_lot::Mutex;
 use std::collections::BTreeMap;
-use std::rc::{Rc, Weak};
+use std::sync::{Arc, Weak};
 
-pub type RcNode = Rc<Node>;
+pub type ArcNode = Arc<Node>;
 
 pub struct Node {
     pub kind: NodeKind,
 
-    links: RefCell<Links>,
+    links: Mutex<Links>,
 }
 
 pub enum NodeKind {
-    Text(RefCell<String>),
+    Text(Mutex<String>),
     Element {
         tag_name: &'static str,
-        attributes: RefCell<Attributes>,
+        attributes: Mutex<Attributes>,
     },
     Fragment,
 }
@@ -23,10 +23,10 @@ pub enum NodeKind {
 struct Links {
     pub parent: Option<Weak<Node>>,
 
-    pub next_sibling: Option<RcNode>,
+    pub next_sibling: Option<ArcNode>,
     pub prev_sibling: Option<Weak<Node>>,
 
-    pub first_child: Option<RcNode>,
+    pub first_child: Option<ArcNode>,
     pub last_child: Option<Weak<Node>>,
 }
 
@@ -71,32 +71,32 @@ impl Node {
                 panic!("Expected an element, but was fragment {}", self.to_string());
             }
             NodeKind::Text(self_text) => {
-                assert_eq!(self_text.borrow().as_str(), text);
+                assert_eq!(self_text.lock().as_str(), text);
             }
         }
     }
 
-    pub fn create_element(tag_name: &'static str) -> RcNode {
-        Rc::new(Node {
+    pub fn create_element(tag_name: &'static str) -> ArcNode {
+        Arc::new(Node {
             kind: NodeKind::Element {
                 tag_name,
-                attributes: RefCell::new(Attributes::default()),
+                attributes: Mutex::new(Attributes::default()),
             },
-            links: RefCell::new(Links::default()),
+            links: Mutex::new(Links::default()),
         })
     }
 
-    pub fn create_text(text: String) -> RcNode {
-        Rc::new(Node {
-            kind: NodeKind::Text(RefCell::new(text)),
-            links: RefCell::new(Links::default()),
+    pub fn create_text(text: String) -> ArcNode {
+        Arc::new(Node {
+            kind: NodeKind::Text(Mutex::new(text)),
+            links: Mutex::new(Links::default()),
         })
     }
 
     pub fn set_text(&self, text: &str) {
         match &self.kind {
             NodeKind::Text(self_text) => {
-                *self_text.borrow_mut() = text.to_string();
+                *self_text.lock() = text.to_string();
             }
             _ => {
                 panic!("tried to set text no something which is not a text node");
@@ -104,50 +104,50 @@ impl Node {
         }
     }
 
-    pub fn parent(&self) -> Option<RcNode> {
+    pub fn parent(&self) -> Option<ArcNode> {
         self.links
-            .borrow()
+            .lock()
             .parent
             .as_ref()
             .and_then(|parent| parent.upgrade())
     }
 
-    pub fn first_child(&self) -> Option<RcNode> {
-        self.links.borrow().first_child.clone()
+    pub fn first_child(&self) -> Option<ArcNode> {
+        self.links.lock().first_child.clone()
     }
 
-    pub fn last_child(&self) -> Option<RcNode> {
+    pub fn last_child(&self) -> Option<ArcNode> {
         self.links
-            .borrow()
+            .lock()
             .last_child
             .as_ref()
             .and_then(|weak| weak.upgrade())
     }
 
-    pub fn next_sibling(&self) -> Option<RcNode> {
-        self.links.borrow().next_sibling.clone()
+    pub fn next_sibling(&self) -> Option<ArcNode> {
+        self.links.lock().next_sibling.clone()
     }
 
-    pub fn prev_sibling(&self) -> Option<RcNode> {
+    pub fn prev_sibling(&self) -> Option<ArcNode> {
         self.links
-            .borrow()
+            .lock()
             .prev_sibling
             .as_ref()
             .and_then(|weak| weak.upgrade())
     }
 
-    pub fn append_child(self: &Rc<Self>, child: RcNode) -> RcNode {
+    pub fn append_child(self: &Arc<Self>, child: ArcNode) -> ArcNode {
         self.insert_before(child, None)
     }
 
-    pub fn insert_before(self: &Rc<Self>, child: RcNode, reference: Option<RcNode>) -> RcNode {
+    pub fn insert_before(self: &Arc<Self>, child: ArcNode, reference: Option<ArcNode>) -> ArcNode {
         child.unlink();
 
         {
-            let mut parent_links = self.links.borrow_mut();
-            let mut child_links = child.links.borrow_mut();
+            let mut parent_links = self.links.lock();
+            let mut child_links = child.links.lock();
 
-            child_links.parent = Some(Rc::downgrade(self));
+            child_links.parent = Some(Arc::downgrade(self));
 
             if let Some(reference) = reference {
                 assert!(reference.parent().unwrap().is(self));
@@ -155,22 +155,22 @@ impl Node {
                 // Set up next sibling owned pointer
                 child_links.next_sibling = Some(reference.clone());
 
-                let mut next_links = reference.links.borrow_mut();
+                let mut next_links = reference.links.lock();
 
                 match next_links.prev_sibling.take() {
                     // first child
                     None => {
-                        next_links.prev_sibling = Some(Rc::downgrade(&child));
+                        next_links.prev_sibling = Some(Arc::downgrade(&child));
                         parent_links.first_child = Some(child.clone());
                     }
                     // not first
                     Some(old_prev) => {
                         let old_prev = old_prev.upgrade().unwrap();
-                        let mut old_prev_links = old_prev.links.borrow_mut();
+                        let mut old_prev_links = old_prev.links.lock();
 
                         old_prev_links.next_sibling = Some(child.clone());
-                        next_links.prev_sibling = Some(Rc::downgrade(&child));
-                        child_links.prev_sibling = Some(Rc::downgrade(&old_prev));
+                        next_links.prev_sibling = Some(Arc::downgrade(&child));
+                        child_links.prev_sibling = Some(Arc::downgrade(&old_prev));
                     }
                 }
             } else {
@@ -181,33 +181,33 @@ impl Node {
                     .take()
                     .and_then(|child| child.upgrade())
                 {
-                    assert!(last_child.links.borrow().next_sibling.is_none());
+                    assert!(last_child.links.lock().next_sibling.is_none());
 
-                    child_links.prev_sibling = Some(Rc::downgrade(&last_child));
-                    last_child.links.borrow_mut().next_sibling = Some(child.clone());
+                    child_links.prev_sibling = Some(Arc::downgrade(&last_child));
+                    last_child.links.lock().next_sibling = Some(child.clone());
                 } else {
                     // Add the first child
                     parent_links.first_child = Some(child.clone());
-                    parent_links.last_child = Some(Rc::downgrade(&child));
+                    parent_links.last_child = Some(Arc::downgrade(&child));
                 }
 
-                parent_links.last_child = Some(Rc::downgrade(&child));
+                parent_links.last_child = Some(Arc::downgrade(&child));
             }
         }
 
         child
     }
 
-    pub fn remove_child(&self, child: RcNode) -> RcNode {
+    pub fn remove_child(&self, child: ArcNode) -> ArcNode {
         child.unlink();
         child
     }
 
     /// Unlink from current child list
     fn unlink(&self) {
-        let mut self_links = self.links.borrow_mut();
+        let mut self_links = self.links.lock();
         if let Some(parent) = self_links.parent.take().and_then(|parent| parent.upgrade()) {
-            let mut parent_links = parent.links.borrow_mut();
+            let mut parent_links = parent.links.lock();
 
             match (
                 self_links.prev_sibling.take(),
@@ -220,22 +220,22 @@ impl Node {
                 }
                 // first child:
                 (None, Some(next)) => {
-                    next.links.borrow_mut().prev_sibling = None;
+                    next.links.lock().prev_sibling = None;
                     parent_links.first_child = Some(next);
                 }
                 // last child:
                 (Some(prev), None) => {
                     let prev = prev.upgrade().unwrap();
 
-                    prev.links.borrow_mut().next_sibling = None;
-                    parent_links.last_child = Some(Rc::downgrade(&prev));
+                    prev.links.lock().next_sibling = None;
+                    parent_links.last_child = Some(Arc::downgrade(&prev));
                 }
                 // internal child:
                 (Some(prev), Some(next)) => {
                     let prev = prev.upgrade().unwrap();
 
-                    next.links.borrow_mut().prev_sibling = Some(Rc::downgrade(&prev));
-                    prev.links.borrow_mut().next_sibling = Some(next);
+                    next.links.lock().prev_sibling = Some(Arc::downgrade(&prev));
+                    prev.links.lock().next_sibling = Some(next);
                 }
             }
 
@@ -251,13 +251,13 @@ impl Drop for Node {
     // Unlink all the nodes in the direct child list
     fn drop(&mut self) {
         let mut next_sibling = {
-            let self_links = self.links.borrow_mut();
+            let self_links = self.links.lock();
             self_links.first_child.clone()
         };
 
         while let Some(sibling) = next_sibling.take() {
             next_sibling = {
-                let mut links = sibling.links.borrow_mut();
+                let mut links = sibling.links.lock();
 
                 links.parent = None;
                 links.prev_sibling = None;
@@ -278,7 +278,7 @@ impl ToString for Node {
                     buf.push('<');
                     buf.push_str(tag_name);
 
-                    for (name, value) in attributes.borrow().map.iter() {
+                    for (name, value) in attributes.lock().map.iter() {
                         buf.push(' ');
                         buf.push_str(name);
                         buf.push_str("=\"");
@@ -316,7 +316,7 @@ impl ToString for Node {
                     }
                 }
                 NodeKind::Text(text) => {
-                    buf.push_str(text.borrow().as_str());
+                    buf.push_str(text.lock().as_str());
                 }
                 NodeKind::Fragment => {
                     panic!("implement");
