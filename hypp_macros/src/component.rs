@@ -516,7 +516,10 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
         match &param.kind {
             param::ParamKind::Prop(root_ty) => {
                 let self_prop_as_ref = match root_ty {
-                    param::ParamRootType::One(_) => quote! { self.env.#ident },
+                    param::ParamRootType::One(ty) => match ty {
+                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident },
+                        param::ParamLeafType::Ref(_) => quote! { &self.env.#ident },
+                    },
                     param::ParamRootType::Option(ty) => match ty {
                         param::ParamLeafType::Owned(_) => quote! { self.env.#ident },
                         param::ParamLeafType::Ref(_) => quote! {self.env.#ident.as_deref() },

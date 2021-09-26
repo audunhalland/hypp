@@ -386,20 +386,23 @@ component! {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum E {
-    Foo,
-    Bar,
+    Foo(String),
+    Bar(&'static str),
     Baz,
 }
 
-component! {
-    Enum(e: E) {}
+component_dbg! {
+    Enum(e: &E) {}
 
     <div>
         match e {
-            E::Foo => "Foo"
-            E::Bar => <p>"Bar"</p>
+            E::Foo(arg) => { format!("Foo({})", arg) }
+            E::Bar(arg) =>
+                <p>
+                    {format!("Bar({})", arg)}
+                </p>
             E::Baz => <button>"Baz"</button>
         }
     </div>
