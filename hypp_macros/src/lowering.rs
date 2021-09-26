@@ -92,7 +92,7 @@ impl Context {
         ir::FieldIdent(index)
     }
 
-    fn next_dynamic_span_index(&mut self) -> u16 {
+    fn next_span_index(&mut self) -> u16 {
         let index = self.dynamic_span_count;
         self.dynamic_span_count += 1;
         index
@@ -400,7 +400,7 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         let expr = the_match.expr;
         let field = ctx.next_field_id();
-        let dynamic_span_type = ir::StructFieldType::DynamicSpan(ctx.next_dynamic_span_index());
+        let span_type = ir::StructFieldType::Span(ctx.next_span_index());
 
         let arms: Vec<_> = the_match
             .arms
@@ -438,7 +438,7 @@ impl BlockBuilder {
                 dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps,
                 expression: ir::Expression::Match {
-                    dynamic_span_type: dynamic_span_type.clone(),
+                    span_type: span_type.clone(),
                     expr,
                     arms,
                 },
@@ -448,7 +448,7 @@ impl BlockBuilder {
 
         self.struct_fields.push(ir::StructField {
             ident: field,
-            ty: dynamic_span_type,
+            ty: span_type,
         });
 
         Ok(())
@@ -462,7 +462,7 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         // let expr = the_for.expr;
         let field = ctx.next_field_id();
-        let list_type = ir::StructFieldType::List(field.0);
+        let span_type = ir::StructFieldType::Span(ctx.next_span_index());
 
         let expr = the_for.expression;
         let variable = the_for.binding;
@@ -501,10 +501,10 @@ impl BlockBuilder {
                 dom_depth: ir::DomDepth(ctx.current_dom_depth),
                 param_deps,
                 expression: ir::Expression::Iter {
-                    list_span: list_type.clone(),
+                    span_type: span_type.clone(),
                     expr,
                     variable,
-                    block: Box::new(inner_block),
+                    inner_block: Box::new(inner_block),
                 },
             },
             ctx,
@@ -512,7 +512,7 @@ impl BlockBuilder {
 
         self.struct_fields.push(ir::StructField {
             ident: field,
-            ty: list_type,
+            ty: span_type,
         });
 
         Ok(())

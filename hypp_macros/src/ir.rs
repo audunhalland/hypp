@@ -60,8 +60,7 @@ pub enum StructFieldType {
     DomText,
     CallbackSlot,
     Component(ComponentPath),
-    DynamicSpan(u16),
-    List(u16),
+    Span(u16),
 }
 
 // A type path representing another component
@@ -172,21 +171,21 @@ pub enum Expression {
 
     /// A match expression (something which is conditional)
     Match {
-        dynamic_span_type: StructFieldType,
+        span_type: StructFieldType,
         expr: syn::Expr,
         arms: Vec<Arm>,
     },
 
     /// An iteration expression, something which yields a variable number of spans
     Iter {
-        /// The span that will be repeated:
-        list_span: StructFieldType,
+        /// The span struct that will be repeated:
+        span_type: StructFieldType,
         /// Expression iterated over:
         expr: syn::Expr,
         /// Iteration variable (could support pattern?)
         variable: syn::Ident,
         /// Code block executed for each iteration:
-        block: Box<Block>,
+        inner_block: Box<Block>,
     },
 }
 

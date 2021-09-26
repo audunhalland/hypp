@@ -27,7 +27,7 @@ pub fn gen_patch_fn(
         mount_locals,
         mount_expr,
         patch,
-    } = compile_body(block, comp_ctx, ctx, ConstructorKind::RootSpan);
+    } = compile_body(block, comp_ctx, ctx, SpanConstructorKind::RootSpan);
 
     let fields = block
         .struct_fields
@@ -115,7 +115,7 @@ fn compile_body<'c>(
     block: &ir::Block,
     comp_ctx: &'c CompCtx,
     ctx: CodegenCtx,
-    constructor_kind: ConstructorKind<'_>,
+    constructor_kind: SpanConstructorKind<'_>,
 ) -> Body<'c> {
     enum FieldLocal {
         Let,
@@ -302,20 +302,13 @@ fn compile_body<'c>(
                 }
             }
             ir::Expression::Match {
-                dynamic_span_type,
+                span_type,
                 expr,
                 arms,
             } => {
                 let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::Match);
-                let closure = gen_match_closure(
-                    stmt,
-                    dynamic_span_type,
-                    closure_sig,
-                    expr,
-                    arms,
-                    comp_ctx,
-                    ctx,
-                );
+                let closure =
+                    gen_match_closure(stmt, span_type, closure_sig, expr, arms, comp_ctx, ctx);
 
                 let field = stmt.field.as_ref().unwrap();
                 let closure_ident = &closure.sig.ident;
@@ -360,21 +353,18 @@ fn compile_body<'c>(
     });
 
     let constructor_path = match constructor_kind {
-        ConstructorKind::RootSpan => {
+        SpanConstructorKind::RootSpan => {
             let root_span_ident = &comp_ctx.root_span_ident;
             quote! {
                 #root_span_ident
             }
         }
-        ConstructorKind::DynamicSpan {
-            dynamic_span_type,
-            variant,
-        } => {
-            let dynamic_span_ident =
-                dynamic_span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+        SpanConstructorKind::DynamicSpan { span_type, variant } => {
+            let span_ident =
+                span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
 
             quote! {
-                #dynamic_span_ident::#variant
+                #span_ident::#variant
             }
         }
     };
@@ -385,8 +375,8 @@ fn compile_body<'c>(
         .map(ir::StructField::struct_param_tokens);
 
     let phantom = match constructor_kind {
-        ConstructorKind::RootSpan => Some(quote! { __phantom: ::std::marker::PhantomData, }),
-        ConstructorKind::DynamicSpan { .. } => None,
+        SpanConstructorKind::RootSpan => Some(quote! { __phantom: ::std::marker::PhantomData, }),
+        SpanConstructorKind::DynamicSpan { .. } => None,
     };
 
     Body {
@@ -407,7 +397,7 @@ fn compile_body<'c>(
 
 fn gen_match_closure<'c>(
     statement: &ir::Statement,
-    dynamic_span_type: &ir::StructFieldType,
+    span_type: &ir::StructFieldType,
     closure_sig: ClosureSig,
     expr: &syn::Expr,
     arms: &[ir::Arm],
@@ -417,7 +407,7 @@ fn gen_match_closure<'c>(
     let field = statement.field.unwrap();
     let field_expr = FieldExpr(field, ctx);
     let dynamic_span_path_segment =
-        dynamic_span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
 
     let pattern_arms = arms.iter().map(
         |ir::Arm {
@@ -438,10 +428,7 @@ fn gen_match_closure<'c>(
                     scope: Scope::DynamicSpan,
                     ..ctx
                 },
-                ConstructorKind::DynamicSpan {
-                    dynamic_span_type,
-                    variant,
-                },
+                SpanConstructorKind::DynamicSpan { span_type, variant },
             );
 
             // Don't generate patch code if the expression is constant
@@ -485,7 +472,7 @@ fn gen_match_closure<'c>(
     };
 
     let dynamic_span_full_type =
-        dynamic_span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::TypeInStruct);
+        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::TypeInStruct);
 
     Closure {
         comp_ctx,

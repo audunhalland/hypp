@@ -71,10 +71,10 @@ impl CompCtx {
     }
 }
 
-pub enum ConstructorKind<'a> {
+pub enum SpanConstructorKind<'a> {
     RootSpan,
     DynamicSpan {
-        dynamic_span_type: &'a ir::StructFieldType,
+        span_type: &'a ir::StructFieldType,
         variant: &'a syn::Ident,
     },
 }
@@ -229,7 +229,17 @@ pub fn generate_dom_program(program: &ir::ConstDomProgram, comp_ctx: &CompCtx) -
     }
 }
 
-pub fn collect_dynamic_span_enums(
+pub fn collect_span_typedefs(
+    block: &ir::Block,
+    span_type: Option<&ir::StructFieldType>,
+    comp_ctx: &CompCtx,
+    output: &mut Vec<TokenStream>,
+) {
+    output.push(gen_fixed_span_struct(block, span_type, comp_ctx));
+    collect_stmt_span_typedefs(&block.statements, comp_ctx, output);
+}
+
+fn collect_stmt_span_typedefs(
     statements: &[ir::Statement],
     comp_ctx: &CompCtx,
     output: &mut Vec<TokenStream>,
@@ -237,33 +247,100 @@ pub fn collect_dynamic_span_enums(
     for statement in statements {
         match &statement.expression {
             ir::Expression::Match {
-                dynamic_span_type,
-                arms,
-                ..
+                span_type, arms, ..
             } => {
-                output.push(generate_dynamic_span_enum(
-                    dynamic_span_type,
+                output.push(gen_dynamic_span_enum(
+                    span_type,
                     arms,
                     statement.dom_depth,
                     comp_ctx,
                 ));
                 for arm in arms {
-                    collect_dynamic_span_enums(&arm.block.statements, comp_ctx, output);
+                    collect_stmt_span_typedefs(&arm.block.statements, comp_ctx, output);
                 }
+            }
+            ir::Expression::Iter {
+                span_type,
+                inner_block,
+                ..
+            } => {
+                collect_span_typedefs(inner_block, Some(span_type), comp_ctx, output);
             }
             _ => {}
         }
     }
 }
 
-fn generate_dynamic_span_enum(
-    dynamic_span_type: &ir::StructFieldType,
+fn gen_fixed_span_struct(
+    block: &ir::Block,
+    span_type: Option<&ir::StructFieldType>,
+    comp_ctx: &CompCtx,
+) -> TokenStream {
+    let span_ident = if let Some(span_type) = span_type {
+        span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment)
+    } else {
+        let root_span_ident = &comp_ctx.root_span_ident;
+        quote! { #root_span_ident }
+    };
+
+    let struct_field_defs = block
+        .struct_fields
+        .iter()
+        .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
+
+    let span_pass = block.gen_span_pass(
+        ir::DomDepth(0),
+        &comp_ctx,
+        CodegenCtx {
+            component_kind: comp_ctx.kind,
+            function: Function::SpanPass,
+            scope: Scope::Component,
+        },
+    );
+
+    let fn_span_erase = block
+        .gen_span_erase(CodegenCtx {
+            component_kind: comp_ctx.kind,
+            function: Function::Erase,
+            scope: Scope::Component,
+        })
+        .map(|stmts| {
+            quote! {
+                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                    #stmts
+                    self.pass(__cursor, ::hypp::SpanOp::Erase)
+                }
+            }
+        });
+
+    quote! {
+        struct #span_ident<H: ::hypp::Hypp + 'static> {
+            #(#struct_field_defs)*
+            __phantom: ::std::marker::PhantomData<H>
+        }
+
+        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #span_ident<H> {
+            fn is_anchored(&self) -> bool {
+                unimplemented!()
+            }
+
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                #span_pass
+            }
+
+            #fn_span_erase
+        }
+    }
+}
+
+fn gen_dynamic_span_enum(
+    span_type: &ir::StructFieldType,
     arms: &[ir::Arm],
     dom_depth: ir::DomDepth,
     comp_ctx: &CompCtx,
 ) -> TokenStream {
-    let dynamic_span_ident =
-        dynamic_span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment);
+    let span_ident =
+        span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment);
 
     let variant_defs = arms.iter().map(|arm| {
         let variant = &arm.variant;
@@ -354,11 +431,11 @@ fn generate_dynamic_span_enum(
     };
 
     quote! {
-        enum #dynamic_span_ident<H: ::hypp::Hypp + 'static> {
+        enum #span_ident<H: ::hypp::Hypp + 'static> {
             #(#variant_defs)*
         }
 
-        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #dynamic_span_ident<H> {
+        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #span_ident<H> {
             fn is_anchored(&self) -> bool {
                 // not anchored, by definition
                 false
@@ -399,8 +476,7 @@ impl ir::StructField {
             // mutable types
             ir::StructFieldType::Component(_)
             | ir::StructFieldType::CallbackSlot
-            | ir::StructFieldType::DynamicSpan(_)
-            | ir::StructFieldType::List(_) => quote! {
+            | ir::StructFieldType::Span(_) => quote! {
                 ref mut #ident,
             },
             // immutable types
@@ -614,21 +690,11 @@ impl ir::StructFieldType {
                     },
                 }
             }
-            Self::DynamicSpan(span_index) => {
+            Self::Span(span_index) => {
                 let ident =
                     quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
                 match format {
                     StructFieldFormat::TypeInStruct => quote! { Option<#ident #generics> },
-                    StructFieldFormat::PathSegment => quote! { #ident },
-                }
-            }
-            Self::List(list_index) => {
-                let ident =
-                    quote::format_ident!("__{}List{}", comp_ctx.component_ident, list_index);
-                match format {
-                    StructFieldFormat::TypeInStruct => {
-                        quote! { ::hypp::list::SimpleListSpan<H, #ident #generics> }
-                    }
                     StructFieldFormat::PathSegment => quote! { #ident },
                 }
             }

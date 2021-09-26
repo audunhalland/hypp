@@ -17,7 +17,7 @@ struct Component {
     dom_programs: Vec<TokenStream>,
     params: Vec<param::Param>,
     root_block: ir::Block,
-    dynamic_span_enums: Vec<TokenStream>,
+    span_typedefs: Vec<TokenStream>,
     fn_stmts: Vec<syn::Stmt>,
     methods: Vec<syn::ItemFn>,
 }
@@ -33,7 +33,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         dom_programs,
         params,
         root_block,
-        dynamic_span_enums,
+        span_typedefs,
         fn_stmts,
         methods,
     } = analyze_ast(ast);
@@ -48,7 +48,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         has_p_lifetime,
     } = gen_public_props_struct(&params, &comp_ctx);
     let env_struct = gen_env_struct(&params, &comp_ctx);
-    let root_span_struct = gen_root_span(&root_block, &comp_ctx);
     let fn_props_destructuring = gen_fn_props_destructuring(&params, &comp_ctx);
     let mount_body = gen_mount_body(&params, &comp_ctx);
     let env_locals = gen_env_locals(&params);
@@ -160,11 +159,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         #public_props_struct
         #env_struct
         #self_shim
-        #root_span_struct
 
         #(#dom_programs)*
 
-        #(#dynamic_span_enums)*
+        #(#span_typedefs)*
 
         pub struct #component_ident<H: ::hypp::Hypp + 'static> {
             #component_field_defs
@@ -227,15 +225,15 @@ fn analyze_ast(
     let mut dom_programs = vec![];
     collect_dom_programs(&root_block.statements, &comp_ctx, &mut dom_programs);
 
-    let mut dynamic_span_enums = vec![];
-    collect_dynamic_span_enums(&root_block.statements, &comp_ctx, &mut dynamic_span_enums);
+    let mut span_typedefs = vec![];
+    collect_span_typedefs(&root_block, None, &comp_ctx, &mut span_typedefs);
 
     Component {
         comp_ctx,
         dom_programs,
         params,
         root_block,
-        dynamic_span_enums,
+        span_typedefs,
         fn_stmts: vec![],
         methods,
     }
@@ -389,59 +387,6 @@ fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
         )?;
 
         #component_constructor
-    }
-}
-
-fn gen_root_span(block: &ir::Block, comp_ctx: &CompCtx) -> TokenStream {
-    let root_span_ident = &comp_ctx.root_span_ident;
-
-    let struct_field_defs = block
-        .struct_fields
-        .iter()
-        .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
-
-    let span_pass = block.gen_span_pass(
-        ir::DomDepth(0),
-        &comp_ctx,
-        CodegenCtx {
-            component_kind: comp_ctx.kind,
-            function: Function::SpanPass,
-            scope: Scope::Component,
-        },
-    );
-
-    let fn_span_erase = block
-        .gen_span_erase(CodegenCtx {
-            component_kind: comp_ctx.kind,
-            function: Function::Erase,
-            scope: Scope::Component,
-        })
-        .map(|stmts| {
-            quote! {
-                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                    #stmts
-                    self.pass(__cursor, ::hypp::SpanOp::Erase)
-                }
-            }
-        });
-
-    quote! {
-        struct #root_span_ident<H: ::hypp::Hypp + 'static> {
-            #(#struct_field_defs)*
-            __phantom: ::std::marker::PhantomData<H>
-        }
-
-        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #root_span_ident<H> {
-            fn is_anchored(&self) -> bool {
-                unimplemented!()
-            }
-
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
-                #span_pass
-            }
-
-            #fn_span_erase
-        }
     }
 }
 
