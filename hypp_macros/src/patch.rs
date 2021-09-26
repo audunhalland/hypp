@@ -255,7 +255,7 @@ fn compile_body<'c>(
 
                     patch_stmts.push(quote! {
                         if #test {
-                            #field_expr.borrow_mut().pass_props(
+                            #field_expr.get_mut().pass_props(
                                 #props_path {
                                     #(#prop_list)*
                                 },
@@ -264,7 +264,7 @@ fn compile_body<'c>(
                         } else {
                             // Nothing has changed, but the cursor must pass
                             // over the component. This should be very cheap.
-                            #field_expr.borrow_mut().pass_over(__ctx.cur);
+                            #field_expr.get_mut().pass_over(__ctx.cur);
                         }
                     });
                 }

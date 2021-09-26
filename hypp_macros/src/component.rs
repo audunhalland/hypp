@@ -79,7 +79,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             env: #env_ident,
             root_span: #root_span_ident<H>,
             anchor: H::Anchor,
-            weak_self: Option<::std::rc::Weak<::std::cell::RefCell<Self>>>
+            weak_self: Option<<H::Shared<Self> as SharedHandle<Self>>::Weak>
+
         },
     };
 
@@ -165,7 +166,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
         #(#dynamic_span_enums)*
 
-        pub struct #component_ident<H: ::hypp::Hypp> {
+        pub struct #component_ident<H: ::hypp::Hypp + 'static> {
             #component_field_defs
         }
 
@@ -177,7 +178,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             #patch_fn
         }
 
-        impl<H: ::hypp::Hypp> ::hypp::handle::ToHandle for #component_ident<H> {
+        impl<H: ::hypp::Hypp + 'static> ::hypp::handle::ToHandle for #component_ident<H> {
             type Handle = #handle_path<Self>;
         }
 
@@ -345,21 +346,21 @@ fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
     let component_constructor = if comp_ctx.kind.is_self_updatable() {
         quote! {
-            let mounted = ::std::rc::Rc::new(::std::cell::RefCell::new(#component_ident {
+            let mut handle = #component_ident {
                 env,
                 root_span: root_span.unwrap(),
                 anchor,
                 weak_self: None,
-            }));
+            }.to_handle();
 
-            let weak = ::std::rc::Rc::downgrade(&mounted);
+            let weak = handle.downgrade();
             // Bind callbacks that we collected
             binder.bind_all(weak.clone());
             // In the future, the component needs to bind new callbacks.
             // therefore it needs a self-reference:
-            mounted.borrow_mut().weak_self = Some(weak);
+            handle.get_mut().weak_self = Some(weak);
 
-            Ok(::hypp::handle::Shared::new(mounted))
+            Ok(handle)
         }
     } else {
         quote! {
@@ -425,7 +426,7 @@ fn gen_root_span(block: &ir::Block, comp_ctx: &CompCtx) -> TokenStream {
         });
 
     quote! {
-        struct #root_span_ident<H: ::hypp::Hypp> {
+        struct #root_span_ident<H: ::hypp::Hypp + 'static> {
             #(#struct_field_defs)*
             __phantom: ::std::marker::PhantomData<H>
         }

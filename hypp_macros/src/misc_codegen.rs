@@ -355,7 +355,7 @@ fn generate_dynamic_span_enum(
     };
 
     quote! {
-        enum #dynamic_span_ident<H: ::hypp::Hypp> {
+        enum #dynamic_span_ident<H: ::hypp::Hypp + 'static> {
             Erased,
             #(#variant_defs)*
         }
@@ -398,13 +398,13 @@ impl ir::StructField {
 
         match &self.ty {
             // mutable types
-            ir::StructFieldType::Component(_) | ir::StructFieldType::DynamicSpan(_) => quote! {
+            ir::StructFieldType::Component(_)
+            | ir::StructFieldType::DynamicSpan(_)
+            | ir::StructFieldType::Callback => quote! {
                 ref mut #ident,
             },
             // immutable types
-            ir::StructFieldType::DomElement
-            | ir::StructFieldType::DomText
-            | ir::StructFieldType::Callback => quote! {
+            ir::StructFieldType::DomElement | ir::StructFieldType::DomText => quote! {
                 ref #ident,
             },
         }
@@ -498,7 +498,7 @@ impl ir::Block {
                         sub_spans.push(FieldCode {
                             field: Some(field),
                             code: quote! {
-                                #field_expr.borrow_mut()
+                                #field_expr.get_mut()
                             },
                         });
                     }
@@ -550,7 +550,7 @@ impl ir::Block {
                     Some(FieldCode {
                         field: Some(field),
                         code: quote! {
-                            #field_expr.borrow_mut().release();
+                            #field_expr.get_mut().release();
                         },
                     })
                 }
@@ -599,7 +599,7 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
-            Self::Callback => quote! { ::hypp::SharedCallback<H> },
+            Self::Callback => quote! { H::Shared<H::Callback> },
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
@@ -675,7 +675,7 @@ impl ir::HandleKind {
     pub fn handle_path(&self) -> TokenStream {
         match self {
             Self::Unique => quote! { ::hypp::handle::Unique },
-            Self::Shared => quote! { ::hypp::handle::Shared },
+            Self::Shared => quote! { H::Shared },
         }
     }
 }

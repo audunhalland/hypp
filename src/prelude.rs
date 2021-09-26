@@ -8,7 +8,9 @@ pub use crate::Hypp;
 pub use crate::Span;
 
 pub use crate::handle::Handle;
+pub use crate::handle::SharedHandle;
 pub use crate::handle::ToHandle;
+pub use crate::handle::WeakHandle;
 
 pub use crate::span::AsSpan;
 

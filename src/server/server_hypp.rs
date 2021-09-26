@@ -46,6 +46,11 @@ impl Hypp for ServerHypp {
     type Anchor = ServerBuilder;
     type Builder = ServerBuilder;
 
+    type Shared<T>
+    where
+        T: 'static,
+    = std::rc::Rc<std::cell::RefCell<T>>;
+
     type Callback = ();
 
     fn mount<M: Mount<ServerHypp> + 'static>(&mut self) -> Result<(), Error> {

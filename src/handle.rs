@@ -2,6 +2,10 @@
 pub trait ToHandle: Sized {
     /// The type of handle that must be used when owning an instance of this type.
     type Handle: Handle<Self>;
+
+    fn to_handle(self) -> Self::Handle {
+        Self::Handle::new(self)
+    }
 }
 
 ///
@@ -34,26 +38,34 @@ pub trait Handle<T>: Sized {
     where
         Self: 'a;
 
+    /// Boxed version of this handle
     type Boxed;
 
-    fn borrow<'a>(&'a self) -> Self::Ref<'a>;
+    fn new(val: T) -> Self;
 
-    fn borrow_mut<'a>(&'a mut self) -> Self::RefMut<'a>;
+    fn get<'a>(&'a self) -> Self::Ref<'a>;
+    fn get_mut<'a>(&'a mut self) -> Self::RefMut<'a>;
 
     fn into_boxed(self) -> Self::Boxed;
+}
+
+pub trait SharedHandle<T>: Handle<T> + Clone {
+    type Weak: WeakHandle<T> + 'static;
+
+    fn downgrade(&self) -> Self::Weak;
+}
+
+pub trait WeakHandle<T>: Clone + Sized {
+    type Strong: SharedHandle<T> + 'static;
+
+    fn upgrade(&self) -> Option<Self::Strong>;
 }
 
 /// A unique (non-shared) handle.
 pub struct Unique<T>(T);
 
-impl<T> Unique<T> {
-    pub fn new(val: T) -> Self {
-        Self(val)
-    }
-}
-
 impl<T> Handle<T> for Unique<T> {
-    type Boxed = UniqueBoxed<T>;
+    type Boxed = Box<T>;
 
     type Ref<'a>
     where
@@ -65,22 +77,24 @@ impl<T> Handle<T> for Unique<T> {
         Self: 'a,
     = &'a mut T;
 
-    fn into_boxed(self) -> Self::Boxed {
-        UniqueBoxed(Box::new(self.0))
+    fn new(val: T) -> Self {
+        Self(val)
     }
 
-    fn borrow<'a>(&'a self) -> &'a T {
+    fn get<'a>(&'a self) -> &'a T {
         &self.0
     }
 
-    fn borrow_mut<'a>(&'a mut self) -> &'a mut T {
+    fn get_mut<'a>(&'a mut self) -> &'a mut T {
         &mut self.0
+    }
+
+    fn into_boxed(self) -> Self::Boxed {
+        Box::new(self.0)
     }
 }
 
-pub struct UniqueBoxed<C>(Box<C>);
-
-impl<T> Handle<T> for UniqueBoxed<T> {
+impl<T> Handle<T> for Box<T> {
     type Boxed = Self;
 
     type Ref<'a>
@@ -93,27 +107,24 @@ impl<T> Handle<T> for UniqueBoxed<T> {
         Self: 'a,
     = &'a mut T;
 
+    fn new(val: T) -> Self {
+        Box::new(val)
+    }
+
     fn into_boxed(self) -> Self::Boxed {
         self
     }
 
-    fn borrow<'a>(&'a self) -> &'a T {
-        &self.0
+    fn get<'a>(&'a self) -> &'a T {
+        self
     }
 
-    fn borrow_mut<'a>(&'a mut self) -> &'a mut T {
-        &mut self.0
-    }
-}
-
-/// A shared handle.
-pub struct Shared<T>(std::rc::Rc<std::cell::RefCell<T>>);
-
-impl<T> Shared<T> {
-    pub fn new(val: std::rc::Rc<std::cell::RefCell<T>>) -> Self {
-        Self(val)
+    fn get_mut<'a>(&'a mut self) -> &'a mut T {
+        self
     }
 }
+
+type Shared<T> = std::rc::Rc<std::cell::RefCell<T>>;
 
 impl<T> Handle<T> for Shared<T> {
     type Boxed = Self;
@@ -128,17 +139,105 @@ impl<T> Handle<T> for Shared<T> {
         Self: 'a,
     = std::cell::RefMut<'a, T>;
 
+    fn new(val: T) -> Self {
+        std::rc::Rc::new(std::cell::RefCell::new(val))
+    }
+
     fn into_boxed(self) -> Self::Boxed {
         // already boxed :)
         self
     }
 
-    fn borrow<'a>(&'a self) -> Self::Ref<'a> {
-        self.0.borrow()
+    fn get<'a>(&'a self) -> Self::Ref<'a> {
+        self.borrow()
     }
 
-    fn borrow_mut<'a>(&'a mut self) -> Self::RefMut<'a> {
-        self.0.borrow_mut()
+    fn get_mut<'a>(&'a mut self) -> Self::RefMut<'a> {
+        self.borrow_mut()
+    }
+}
+
+impl<T> SharedHandle<T> for Shared<T>
+where
+    T: 'static,
+{
+    type Weak = std::rc::Weak<std::cell::RefCell<T>>;
+
+    fn downgrade(&self) -> Self::Weak {
+        std::rc::Rc::downgrade(self)
+    }
+}
+
+impl<T> WeakHandle<T> for std::rc::Weak<std::cell::RefCell<T>>
+where
+    T: 'static,
+{
+    type Strong = Shared<T>;
+
+    fn upgrade(&self) -> Option<Self::Strong> {
+        self.upgrade()
+    }
+}
+
+#[cfg(feature = "server")]
+pub mod sync {
+    use parking_lot::{Mutex, MutexGuard};
+    use std::sync::{Arc, Weak};
+
+    type SyncShared<T> = Arc<Mutex<T>>;
+    type SyncWeak<T> = Weak<Mutex<T>>;
+
+    impl<T> super::Handle<T> for SyncShared<T> {
+        type Boxed = Self;
+
+        type Ref<'a>
+        where
+            Self: 'a,
+        = MutexGuard<'a, T>;
+
+        type RefMut<'a>
+        where
+            Self: 'a,
+        = MutexGuard<'a, T>;
+
+        fn new(val: T) -> Self {
+            Arc::new(Mutex::new(val))
+        }
+
+        fn get<'a>(&'a self) -> Self::Ref<'a> {
+            self.lock()
+        }
+
+        fn get_mut<'a>(&'a mut self) -> Self::RefMut<'a> {
+            self.lock()
+        }
+
+        fn into_boxed(self) -> Self::Boxed {
+            // already boxed :)
+            self
+        }
+    }
+
+    impl<T> super::SharedHandle<T> for SyncShared<T>
+    where
+        T: 'static,
+    {
+        type Weak = SyncWeak<T>;
+
+        fn downgrade(&self) -> Self::Weak {
+            std::sync::Arc::downgrade(self)
+        }
+    }
+
+    impl<T> super::WeakHandle<T> for SyncWeak<T>
+    where
+        T: 'static,
+    {
+        type Strong = SyncShared<T>;
+
+        fn upgrade(&self) -> Option<Self::Strong> {
+            self.upgrade()
+        }
     }
 }
 
@@ -155,7 +254,7 @@ mod test {
 
     impl CompA {
         fn mount() -> Unique<Self> {
-            Unique::new(CompA {})
+            CompA {}.to_handle()
         }
     }
 
@@ -181,9 +280,10 @@ mod test {
 
     impl CompB {
         fn mount() -> Shared<Self> {
-            Shared::new(std::rc::Rc::new(std::cell::RefCell::new(CompB {
+            CompB {
                 _comp_a: CompA::mount(),
-            })))
+            }
+            .to_handle()
         }
     }
 
@@ -206,18 +306,18 @@ mod test {
     #[test]
     fn test_handles_compile() {
         let mut a: <CompA as ToHandle>::Handle = CompA::mount();
-        a.borrow_mut();
+        a.get_mut();
 
         let mut a2: <<CompA as ToHandle>::Handle as Handle<CompA>>::Boxed =
             CompA::mount().into_boxed();
-        a2.borrow_mut();
+        a2.get_mut();
 
         let mut b: <CompB as ToHandle>::Handle = CompB::mount();
-        b.borrow_mut();
+        b.get_mut();
 
         let mut b2: <<CompB as ToHandle>::Handle as Handle<CompB>>::Boxed =
             CompB::mount().into_boxed();
 
-        b2.borrow_mut();
+        b2.get_mut();
     }
 }

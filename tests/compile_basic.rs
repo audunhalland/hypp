@@ -32,7 +32,7 @@ fn render_foo_server() {
         "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
     );
 
-    c.borrow_mut()
+    c.get_mut()
         .pass_props(__FooProps { is_cool: false }, &mut hypp.builder_at_body());
 
     assert_eq!(
@@ -107,7 +107,7 @@ fn render_conditional_server() {
 
     assert_eq!(hypp.render(), "<body><div/></body>");
 
-    c.borrow_mut().pass_props(
+    c.get_mut().pass_props(
         __ConditionalProps {
             hello: false,
             world: true,
@@ -118,7 +118,7 @@ fn render_conditional_server() {
     // No change:
     assert_eq!(hypp.render(), "<body><div/></body>");
 
-    c.borrow_mut().pass_props(
+    c.get_mut().pass_props(
         __ConditionalProps {
             hello: true,
             world: false,
@@ -131,7 +131,7 @@ fn render_conditional_server() {
         "<body><div><span>Hello</span><span>Universe</span></div></body>"
     );
 
-    c.borrow_mut().pass_props(
+    c.get_mut().pass_props(
         __ConditionalProps {
             hello: true,
             world: true,
@@ -144,7 +144,7 @@ fn render_conditional_server() {
         "<body><div><span>Hello</span><a>World</a></div></body>"
     );
 
-    c.borrow_mut().erase(&mut hypp.builder_at_body());
+    c.get_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -198,7 +198,7 @@ fn render_iflet_server() {
 
     assert_eq!(hypp.render(), "<body><article/></body>");
 
-    c.borrow_mut().pass_props(
+    c.get_mut().pass_props(
         __IfLetProps {
             opt_number: Some(42),
         },
@@ -207,14 +207,14 @@ fn render_iflet_server() {
 
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
-    c.borrow_mut().pass_props(
+    c.get_mut().pass_props(
         __IfLetProps { opt_number: None },
         &mut hypp.builder_at_body(),
     );
 
     assert_eq!(hypp.render(), "<body><article/></body>");
 
-    c.borrow_mut().erase(&mut hypp.builder_at_body());
+    c.get_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -255,14 +255,14 @@ fn render_fragment1() {
         "<body><div>first</div><span>second</span><p>third</p></body>"
     );
 
-    c.borrow_mut().pass_props(
+    c.get_mut().pass_props(
         __Fragment1Props { perhaps: false },
         &mut hypp.builder_at_body(),
     );
 
     assert_eq!(hypp.render(), "<body><div>first</div><p>third</p></body>");
 
-    c.borrow_mut().erase(&mut hypp.builder_at_body());
+    c.get_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -289,12 +289,12 @@ fn render_recursive_server() {
         "<body><span>3<span>2<span>1</span></span></span></body>"
     );
 
-    c.borrow_mut()
+    c.get_mut()
         .pass_props(__RecursiveProps { depth: 2 }, &mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 
-    c.borrow_mut().erase(&mut hypp.builder_at_body());
+    c.get_mut().erase(&mut hypp.builder_at_body());
 
     assert_eq!(hypp.render(), "<body/>");
 }
@@ -393,7 +393,7 @@ pub enum E {
     Baz,
 }
 
-component_dbg! {
+component! {
     Enum(e: &E) {}
 
     <div>

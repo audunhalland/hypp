@@ -43,7 +43,15 @@ pub trait Hypp: Sized {
     type Anchor: Anchor<Self>;
     type Builder: Cursor<Self>;
 
-    type Callback: Callback;
+    type Callback: Callback + 'static;
+
+    /// How to share something.
+    /// Different hypp implementations may have different thread-safety requirements.
+    type Shared<T>: handle::SharedHandle<T>
+    where
+        T: 'static;
+
+    // type SharedHandle<T>: handle::Handle<T>;
 
     /// Mount something at the root.
     fn mount<M: Mount<Self> + 'static>(&mut self) -> Result<(), Error>;
@@ -125,7 +133,7 @@ pub trait Cursor<H: Hypp> {
     /// The way this works is that we bind the H::Callback to the element,
     /// but that callback doesn't do anything yet. Later, using the Callback
     /// handle, the callback is set up to do its work.
-    fn attribute_value_callback(&mut self) -> Result<SharedCallback<H>, Error>;
+    fn attribute_value_callback(&mut self) -> Result<H::Shared<H::Callback>, Error>;
 
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
@@ -288,8 +296,6 @@ pub trait Callback {
     fn release(&mut self);
 }
 
-pub type SharedCallback<H> = std::rc::Rc<std::cell::RefCell<<H as Hypp>::Callback>>;
-
 // Bug: derive(Clone) broken
 // https://github.com/rust-lang/rust/issues/89188
 // #[derive(Clone)]
@@ -324,7 +330,7 @@ pub trait ShimTrampoline: Sized {
 /// The intention is to associate a callback with a method.
 ///
 pub trait BindCallback<H: Hypp, T: ShimTrampoline> {
-    fn bind(&mut self, callback: SharedCallback<H>, method: ShimMethod<T>);
+    fn bind(&mut self, callback: H::Shared<H::Callback>, method: ShimMethod<T>);
 }
 
 ///

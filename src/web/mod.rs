@@ -84,6 +84,11 @@ impl Hypp for WebHypp {
     type Anchor = WebBuilder;
     type Builder = WebBuilder;
 
+    type Shared<T>
+    where
+        T: 'static,
+    = std::rc::Rc<std::cell::RefCell<T>>;
+
     type Callback = callback::WebCallback;
 
     fn mount<M: Mount<WebHypp> + 'static>(&mut self) -> Result<(), Error> {
@@ -379,7 +384,7 @@ impl Cursor<WebHypp> for WebBuilder {
             };
         }
         */
-        unimplemented!("Not needed");
+        unimplemented!("Not needed?");
     }
 }
 
