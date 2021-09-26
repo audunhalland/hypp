@@ -79,9 +79,36 @@ struct Body<'c> {
 
 struct Closure<'c> {
     comp_ctx: &'c CompCtx,
-    ident: syn::Ident,
+    sig: ClosureSig,
     args: TokenStream,
     body: TokenStream,
+}
+
+struct ClosureSig {
+    ident: syn::Ident,
+    kind: ClosureKind,
+}
+
+impl ClosureSig {
+    fn from_stmt(stmt: &ir::Statement, kind: ClosureKind) -> Self {
+        let field = stmt.field.unwrap();
+
+        let ident = match kind {
+            ClosureKind::Match => quote::format_ident!("__patch_f{}", field.0),
+            ClosureKind::String => quote::format_ident!("__string_f{}", field.0),
+        };
+
+        Self { ident, kind }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ClosureKind {
+    // Closure for patching a `Match` statement
+    Match,
+
+    // Closure for producing a string value (that may use env variables)
+    String,
 }
 
 fn compile_body<'c>(
@@ -105,11 +132,6 @@ fn compile_body<'c>(
     let mut closures: Vec<Closure> = vec![];
     let mut field_inits: Vec<FieldInit> = vec![];
     let mut patch_stmts: Vec<TokenStream> = vec![];
-
-    fn next_closure_ident(closures: &[Closure]) -> syn::Ident {
-        let index = closures.len();
-        quote::format_ident!("__patch_{}", index)
-    }
 
     for stmt in &block.statements {
         match &stmt.expression {
@@ -180,11 +202,19 @@ fn compile_body<'c>(
                 let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
                 let test = stmt.param_deps.update_test_tokens();
 
+                let closure = Closure {
+                    comp_ctx,
+                    sig: ClosureSig::from_stmt(stmt, ClosureKind::String),
+                    args: quote! {},
+                    body: quote! { #expr },
+                };
+                let closure_ident = &closure.sig.ident;
+
                 field_inits.push(FieldInit {
                     local: FieldLocal::Let,
                     field_ident: &stmt.field,
                     init: quote! {
-                        __ctx.cur.text(#expr.as_ref())?;
+                        __ctx.cur.text(#closure_ident().as_ref())?;
                     },
                     post_init: None,
                 });
@@ -192,7 +222,7 @@ fn compile_body<'c>(
                 let text_update = if stmt.param_deps.is_variable() {
                     Some(quote! {
                         if #test {
-                            H::set_text(#field_expr, #expr.as_ref());
+                            H::set_text(#field_expr, #closure_ident().as_ref());
                         }
                     })
                 } else {
@@ -203,6 +233,8 @@ fn compile_body<'c>(
                     #text_update
                     __ctx.cur.move_to_following_sibling_of(#field_expr.as_node());
                 });
+
+                closures.push(closure);
             }
             ir::Expression::Component { path, props } => {
                 let prop_list: Vec<TokenStream> = props
@@ -277,12 +309,12 @@ fn compile_body<'c>(
                 let dynamic_span_ident =
                     dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
 
-                let closure_ident = next_closure_ident(&closures);
+                let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::Match);
                 let closure = gen_match_closure(
                     stmt,
                     dynamic_span_type,
                     &dynamic_span_ident,
-                    closure_ident.clone(),
+                    closure_sig,
                     expr,
                     arms,
                     comp_ctx,
@@ -290,8 +322,8 @@ fn compile_body<'c>(
                 );
 
                 let field = stmt.field.as_ref().unwrap();
+                let closure_ident = &closure.sig.ident;
 
-                closures.push(closure);
                 field_inits.push(FieldInit {
                     local: FieldLocal::LetMut,
                     field_ident: &stmt.field,
@@ -306,6 +338,7 @@ fn compile_body<'c>(
                 patch_stmts.push(quote! {
                     #closure_ident(#field, __ctx)?;
                 });
+                closures.push(closure);
             }
         }
     }
@@ -381,7 +414,7 @@ fn gen_match_closure<'c>(
     statement: &ir::Statement,
     dynamic_span_type: &ir::StructFieldType,
     dynamic_span_ident: &TokenStream,
-    closure_ident: syn::Ident,
+    closure_sig: ClosureSig,
     expr: &syn::Expr,
     arms: &[ir::Arm],
     comp_ctx: &'c CompCtx,
@@ -451,12 +484,13 @@ fn gen_match_closure<'c>(
     let body = quote! {
         match #expr {
             #(#pattern_arms)*
-        }
+        };
+        Ok(())
     };
 
     Closure {
         comp_ctx,
-        ident: closure_ident,
+        sig: closure_sig,
         args: quote! {
             mut #field: &mut #dynamic_span_ident<H>,
         },
@@ -466,15 +500,26 @@ fn gen_match_closure<'c>(
 
 impl<'c> quote::ToTokens for Closure<'c> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let ident = &self.ident;
+        let ident = &self.sig.ident;
         let args = &self.args;
         let patch_ctx_ty = &self.comp_ctx.patch_ctx_ty;
         let body = &self.body;
 
+        let ctx_arg = match self.sig.kind {
+            ClosureKind::Match => Some(quote! {
+                __ctx: &mut #patch_ctx_ty
+            }),
+            ClosureKind::String => None,
+        };
+
+        let return_type = match self.sig.kind {
+            ClosureKind::Match => Some(quote! { -> ::hypp::Void }),
+            ClosureKind::String => None,
+        };
+
         let output = quote! {
-            let #ident = |#args __ctx: &mut #patch_ctx_ty| -> ::hypp::Void {
+            let #ident = |#args #ctx_arg| #return_type {
                 #body
-                Ok(())
             };
         };
         tokens.extend(output);
