@@ -143,6 +143,18 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let handle_path = root_block.handle_kind.handle_path();
 
+    let mount_impl = if params.iter().filter(|param| param.is_prop()).count() == 0 {
+        Some(quote! {
+            impl<H: ::hypp::Hypp + 'static> ::hypp::Mount<H> for #component_ident<H> {
+                fn mount(cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                    Self::mount(#props_ident {}, cursor)
+                }
+            }
+        })
+    } else {
+        None
+    };
+
     quote! {
         #public_props_struct
         #env_struct
@@ -192,7 +204,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         }
 
         #shim_impls
-
+        #mount_impl
     }
 }
 
@@ -340,8 +352,12 @@ fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 weak_self: None,
             }));
 
-            mounted.borrow_mut().weak_self = Some(::std::rc::Rc::downgrade(&mounted));
-            binder.bind_all(&mounted.borrow().weak_self);
+            let weak = ::std::rc::Rc::downgrade(&mounted);
+            // Bind callbacks that we collected
+            binder.bind_all(weak.clone());
+            // In the future, the component needs to bind new callbacks.
+            // therefore it needs a self-reference:
+            mounted.borrow_mut().weak_self = Some(weak);
 
             Ok(::hypp::handle::Shared::new(mounted))
         }

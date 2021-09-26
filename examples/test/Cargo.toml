@@ -9,7 +9,7 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
-hypp = { path = "../../" }
+hypp = { path = "../../", features = ["web"] }
 web-sys = "0.3"
 wasm-bindgen = "0.2"
 tracing = "0.1"

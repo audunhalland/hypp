@@ -1,18 +1,32 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, ConstOpCode, Cursor, Hypp, Span};
+use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, Span};
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 mod callback;
 
+#[wasm_bindgen]
 pub struct WebHypp {
     _window: web_sys::Window,
     document: web_sys::Document,
     body: web_sys::HtmlElement,
+    mounts: Vec<Box<dyn std::any::Any>>,
+}
+
+impl Drop for WebHypp {
+    fn drop(&mut self) {
+        tracing::warn!("WebHypp dropped!");
+    }
+}
+
+#[wasm_bindgen(inline_js = "export function store_global_hypp(hypp) { window.hypp = hypp; }")]
+extern "C" {
+    fn store_global_hypp(hypp: JsValue);
 }
 
 impl WebHypp {
@@ -25,14 +39,21 @@ impl WebHypp {
             _window: window,
             document,
             body,
+            mounts: vec![],
         }
+    }
+
+    pub fn store_global(self) {
+        let js_value: JsValue = self.into();
+
+        unsafe { store_global_hypp(js_value) }
     }
 
     pub fn document(&self) -> &web_sys::Document {
         &self.document
     }
 
-    pub fn builder_at_body<'a>(&'a self) -> WebBuilder {
+    pub fn builder_at_body(&self) -> WebBuilder {
         WebBuilder {
             document: self.document.clone(),
             element: self.body.clone().dyn_into().unwrap(),
@@ -64,6 +85,15 @@ impl Hypp for WebHypp {
     type Builder = WebBuilder;
 
     type Callback = callback::WebCallback;
+
+    fn mount<M: Mount<WebHypp> + 'static>(&mut self) -> Result<(), Error> {
+        let mut builder = self.builder_at_body();
+        let mounted = M::mount(&mut builder)?;
+
+        self.mounts.push(Box::new(mounted));
+
+        Ok(())
+    }
 
     fn set_text(node: &Self::Text, text: &str) {
         node.set_data(text);
@@ -316,7 +346,7 @@ impl Cursor<WebHypp> for WebBuilder {
         self.next_child = Some(node.clone());
     }
 
-    fn skip_const_program(&mut self, program: &[ConstOpCode]) {
+    fn skip_const_program(&mut self, _program: &[ConstOpCode]) {
         /*
         for opcode in program {
             match opcode {

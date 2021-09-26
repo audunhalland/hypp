@@ -20,10 +20,6 @@ impl Param {
             ParamKind::State(_) => false,
         }
     }
-
-    pub fn is_state(&self) -> bool {
-        !self.is_prop()
-    }
 }
 
 #[derive(Clone)]

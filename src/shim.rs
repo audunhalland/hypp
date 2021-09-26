@@ -1,22 +1,22 @@
 use super::*;
 
 pub struct Binder<H: Hypp, T> {
-    rc: std::rc::Rc<std::cell::RefCell<T>>,
+    weak: std::rc::Weak<std::cell::RefCell<T>>,
     __phantom: std::marker::PhantomData<H>,
 }
 
 impl<H: Hypp, T> Binder<H, T> {
-    pub fn from_rc(rc: std::rc::Rc<std::cell::RefCell<T>>) -> Self {
+    pub fn from_weak(weak: std::rc::Weak<std::cell::RefCell<T>>) -> Self {
         Self {
-            rc,
+            weak,
             __phantom: std::marker::PhantomData,
         }
     }
 
-    pub fn from_opt_weak(weak: &Option<std::rc::Weak<std::cell::RefCell<T>>>) -> Self {
-        let rc = weak.as_ref().and_then(|weak| weak.upgrade()).unwrap();
+    pub fn from_opt_weak(opt_weak: &Option<std::rc::Weak<std::cell::RefCell<T>>>) -> Self {
+        let weak = opt_weak.as_ref().map(|weak| weak.clone()).unwrap();
         Self {
-            rc,
+            weak,
             __phantom: std::marker::PhantomData,
         }
     }
@@ -24,9 +24,12 @@ impl<H: Hypp, T> Binder<H, T> {
 
 impl<H: Hypp, T: ShimTrampoline> BindCallback<H, T> for Binder<H, T> {
     fn bind(&mut self, callback: SharedCallback<H>, method: ShimMethod<T>) {
-        let rc = self.rc.clone();
+        let weak = self.weak.clone();
 
         callback.borrow_mut().bind(Box::new(move || {
+            let rc = weak
+                .upgrade()
+                .expect("Callback invoked, but component was destroyed");
             rc.borrow_mut().shim_trampoline(method.clone());
         }));
     }
@@ -41,9 +44,9 @@ impl<H: Hypp, T: ShimTrampoline + 'static> LazyBinder<H, T> {
         Self { callbacks: vec![] }
     }
 
-    pub fn bind_all(self, weak: &Option<std::rc::Weak<std::cell::RefCell<T>>>) {
+    pub fn bind_all(self, weak: std::rc::Weak<std::cell::RefCell<T>>) {
         if !self.callbacks.is_empty() {
-            let mut binder: Binder<H, T> = Binder::from_opt_weak(weak);
+            let mut binder: Binder<H, T> = Binder::from_weak(weak);
 
             for (callback, method) in self.callbacks.into_iter() {
                 binder.bind(callback, method);

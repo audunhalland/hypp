@@ -1,4 +1,3 @@
-#![forbid(unsafe_code)]
 #![feature(generic_associated_types)]
 
 //!
@@ -7,18 +6,23 @@
 //! The philosophy is to precompile as much as we can.
 //!
 
+pub mod prelude;
+
 pub mod error;
 pub mod handle;
-pub mod server;
 pub mod shim;
 pub mod span;
 pub mod state_ref;
+
+#[cfg(feature = "web")]
 pub mod web;
 
-pub mod prelude;
+#[cfg(feature = "server")]
+pub mod server;
 
 pub use error::Error;
 pub use hypp_macros::component;
+use prelude::ToHandle;
 
 pub enum TraversalDirection {
     FirstToLast,
@@ -40,6 +44,9 @@ pub trait Hypp: Sized {
     type Builder: Cursor<Self>;
 
     type Callback: Callback;
+
+    /// Mount something at the root.
+    fn mount<M: Mount<Self> + 'static>(&mut self) -> Result<(), Error>;
 
     fn set_text(node: &Self::Text, text: &str);
 
@@ -236,6 +243,13 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
 }
 
 ///
+/// Anything that can be mounted without parameters
+///
+pub trait Mount<H: Hypp>: handle::ToHandle {
+    fn mount(cursor: &mut dyn Cursor<H>) -> Result<<Self as ToHandle>::Handle, Error>;
+}
+
+///
 /// Callback
 ///
 /// Ownership structure:
@@ -247,16 +261,16 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
 ///                            |                           |
 ///                            v                       ****************
 /// [Parent component]--> [Rc] -----> [RefCell] -----> *THIS COMPONENT*
-///                        ^                           ****************
-///                        |                               |
-///                        |                               v
-///                        |                              [Rc] <------ [wasm closure] <-- [DOM node]
-///                       [Fn] (method)                    |
-///                        ^                               v
-///                        |                            [RefCell]
-///                        |                               |
-///                        |                               v
-///                      [Box] <----- [Option B] <----- [Callback]
+///                            ^                       ****************
+///                            |                           |
+///                       [rc::Weak]                       v
+///                            ^                          [Rc] <------ [wasm closure] <-- [DOM node]
+///                            |                           |
+///                          [Fn] (method)                 v
+///                            ^                        [RefCell]
+///                            |                           |
+///                            |                           v
+///                          [Box] <--- [Option B] --- [Callback]
 /// ```
 ///
 ///

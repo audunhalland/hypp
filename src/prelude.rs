@@ -4,6 +4,7 @@ pub use crate::BindCallback;
 pub use crate::Callback;
 pub use crate::Component;
 pub use crate::Cursor;
+pub use crate::Hypp;
 pub use crate::Span;
 
 pub use crate::handle::Handle;

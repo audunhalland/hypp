@@ -42,8 +42,10 @@ hypp::component! {
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
     tracing_wasm::set_as_global_default();
-    let hypp = hypp::web::WebHypp::new();
-    App::mount(__AppProps {}, &mut hypp.builder_at_body()).unwrap();
+
+    let mut hypp = hypp::web::WebHypp::new();
+    hypp.mount::<App<_>>().unwrap();
+    hypp.store_global();
 
     Ok(())
 }

@@ -2,7 +2,7 @@ use crate::error::Error;
 
 use super::server_dom::{AttributeValue, Node, NodeKind, RcNode};
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp, Span};
+use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp, Mount, Span};
 
 impl AsNode<ServerHypp> for RcNode {
     #[inline]
@@ -13,12 +13,14 @@ impl AsNode<ServerHypp> for RcNode {
 
 pub struct ServerHypp {
     body: RcNode,
+    mounts: Vec<Box<dyn std::any::Any>>,
 }
 
 impl ServerHypp {
     pub fn new() -> Self {
         Self {
             body: Node::create_element("body"),
+            mounts: vec![],
         }
     }
 
@@ -45,6 +47,15 @@ impl Hypp for ServerHypp {
     type Builder = ServerBuilder;
 
     type Callback = ();
+
+    fn mount<M: Mount<ServerHypp> + 'static>(&mut self) -> Result<(), Error> {
+        let mut builder = self.builder_at_body();
+        let mounted = M::mount(&mut builder)?;
+
+        self.mounts.push(Box::new(mounted));
+
+        Ok(())
+    }
 
     fn set_text(node: &Self::Text, text: &str) {
         node.set_text(text);
@@ -260,7 +271,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
         self.next_child = Some(node.clone());
     }
 
-    fn skip_const_program(&mut self, program: &[ConstOpCode]) {
+    fn skip_const_program(&mut self, _program: &[ConstOpCode]) {
         /*
         for opcode in program {
             match opcode {

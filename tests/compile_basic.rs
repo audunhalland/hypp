@@ -2,8 +2,6 @@
 
 use hypp::prelude::*;
 
-use wasm_bindgen_test::*;
-
 component! {
     Foo(is_cool: bool) {}
 
@@ -22,12 +20,6 @@ component! {
             </span>
         </p>
     </div>
-}
-
-#[wasm_bindgen_test]
-fn render_foo_web() {
-    let hypp = hypp::web::WebHypp::new();
-    let _comp = Foo::mount(__FooProps { is_cool: true }, &mut hypp.builder_at_body()).unwrap();
 }
 
 #[test]
@@ -374,8 +366,7 @@ component! {
     </div>
 }
 
-component_dbg! {
-
+component! {
     ConditionalCallback(show_button: bool) {
         toggled: bool
     }
