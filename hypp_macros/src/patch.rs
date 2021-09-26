@@ -334,6 +334,7 @@ fn compile_body<'c>(
                 });
                 closures.push(closure);
             }
+            ir::Expression::Iter { .. } => {}
         }
     }
 

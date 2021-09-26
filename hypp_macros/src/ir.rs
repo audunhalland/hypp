@@ -43,7 +43,7 @@ pub enum NodeType {
     Text,
 }
 
-/// Something which is destined to be stored somewhere within the component struct,
+/// Something which is destined to be stored somewhere within the span structs,
 /// directly or indirectly
 pub struct StructField {
     pub ident: FieldIdent,
@@ -61,6 +61,7 @@ pub enum StructFieldType {
     CallbackSlot,
     Component(ComponentPath),
     DynamicSpan(u16),
+    List(u16),
 }
 
 // A type path representing another component
@@ -174,6 +175,18 @@ pub enum Expression {
         dynamic_span_type: StructFieldType,
         expr: syn::Expr,
         arms: Vec<Arm>,
+    },
+
+    /// An iteration expression, something which yields a variable number of spans
+    Iter {
+        /// The span that will be repeated:
+        list_span: StructFieldType,
+        /// Expression iterated over:
+        expr: syn::Expr,
+        /// Iteration variable (could support pattern?)
+        variable: syn::Ident,
+        /// Code block executed for each iteration:
+        block: Box<Block>,
     },
 }
 

@@ -13,14 +13,14 @@ impl<H: Hypp + 'static, S> SimpleListSpan<H, S>
 where
     S: Span<H>,
 {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             spans: vec![],
             phantom: std::marker::PhantomData,
         }
     }
 
-    fn patch<'a, I, D, F, C>(
+    pub fn patch<'a, I, D, F, C>(
         &mut self,
         mut data_iterator: I,
         mut inner_patch_fn: F,

@@ -209,7 +209,7 @@ impl BlockBuilder {
                 self.lower_component(component, scope, ctx)?
             }
             template_ast::Node::Match(the_match) => self.lower_match(the_match, scope, ctx)?,
-            template_ast::Node::For(_the_for) => {}
+            template_ast::Node::For(the_for) => self.lower_for(the_for, scope, ctx)?,
         }
 
         Ok(())
@@ -449,6 +449,70 @@ impl BlockBuilder {
         self.struct_fields.push(ir::StructField {
             ident: field,
             ty: dynamic_span_type,
+        });
+
+        Ok(())
+    }
+
+    fn lower_for<'p>(
+        &mut self,
+        the_for: template_ast::For,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) -> Result<(), LoweringError> {
+        // let expr = the_for.expr;
+        let field = ctx.next_field_id();
+        let list_type = ir::StructFieldType::List(field.0);
+
+        let expr = the_for.expression;
+        let variable = the_for.binding;
+
+        // Help dataflow analysis inside the new variable scope
+        let mut inner_scope = flow::FlowScope::with_parent(scope);
+
+        {
+            let pattern = syn::Pat::Ident(syn::PatIdent {
+                attrs: vec![],
+                by_ref: None,
+                mutability: None,
+                ident: variable.clone(),
+                subpat: None,
+            });
+
+            // expr flows into the pattern
+            inner_scope.bind_expr(&pattern, &expr);
+        }
+
+        // Compile inner code
+        let inner_block = {
+            let mut inner_builder = BlockBuilder::default();
+            inner_builder.lower_ast(*the_for.repeating_node, &inner_scope, ctx)?;
+            inner_builder.to_block(ctx)
+        };
+
+        // Param deps for the whole match expression
+        let mut param_deps = scope.lookup_params_deps_for_expr(&expr);
+        param_deps.extend(&inner_block.param_deps);
+        self.param_deps.extend(&param_deps);
+
+        self.push_statement(
+            ir::Statement {
+                field: Some(field),
+                dom_depth: ir::DomDepth(ctx.current_dom_depth),
+                param_deps,
+                expression: ir::Expression::Iter {
+                    list_span: list_type.clone(),
+                    expr,
+                    variable,
+                    block: Box::new(inner_block),
+                },
+            },
+            ctx,
+        );
+
+        self.struct_fields.push(ir::StructField {
+            ident: field,
+            ty: list_type,
         });
 
         Ok(())

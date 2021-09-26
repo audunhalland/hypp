@@ -398,8 +398,9 @@ impl ir::StructField {
         match &self.ty {
             // mutable types
             ir::StructFieldType::Component(_)
+            | ir::StructFieldType::CallbackSlot
             | ir::StructFieldType::DynamicSpan(_)
-            | ir::StructFieldType::CallbackSlot => quote! {
+            | ir::StructFieldType::List(_) => quote! {
                 ref mut #ident,
             },
             // immutable types
@@ -502,7 +503,7 @@ impl ir::Block {
                         });
                     }
                 }
-                ir::Expression::Match { .. } => {
+                ir::Expression::Match { .. } | ir::Expression::Iter { .. } => {
                     if dom_depth == 0 {
                         let field = statement.field.unwrap();
                         let mut_field_ref = MutFieldRef(field, ctx);
@@ -618,6 +619,16 @@ impl ir::StructFieldType {
                     quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
                 match format {
                     StructFieldFormat::TypeInStruct => quote! { Option<#ident #generics> },
+                    StructFieldFormat::PathSegment => quote! { #ident },
+                }
+            }
+            Self::List(list_index) => {
+                let ident =
+                    quote::format_ident!("__{}List{}", comp_ctx.component_ident, list_index);
+                match format {
+                    StructFieldFormat::TypeInStruct => {
+                        quote! { ::hypp::list::SimpleListSpan<H, #ident #generics> }
+                    }
                     StructFieldFormat::PathSegment => quote! { #ident },
                 }
             }
