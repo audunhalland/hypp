@@ -10,6 +10,7 @@ pub mod prelude;
 
 pub mod error;
 pub mod handle;
+pub mod list;
 pub mod shim;
 pub mod span;
 pub mod state_ref;
@@ -345,13 +346,38 @@ pub enum InputOrOutput<'a, T> {
     Output(&'a mut Option<T>),
 }
 
+///
+/// Something from which to acquire a cursor
+///
+pub trait GetCursor<H: Hypp> {
+    fn get_cursor(&mut self) -> &mut dyn Cursor<H>;
+}
+
+///
+/// Patching context without `bind` functionality
+///
 pub struct PatchCtx<'a, H: Hypp> {
     pub cur: &'a mut dyn Cursor<H>,
 }
 
+impl<'a, H: Hypp> GetCursor<H> for &mut PatchCtx<'a, H> {
+    fn get_cursor(&mut self) -> &mut dyn Cursor<H> {
+        self.cur
+    }
+}
+
+///
+/// Patching context _with_ `bind` functionality
+///
 pub struct PatchBindCtx<'a, H: Hypp, T: ShimTrampoline> {
     pub cur: &'a mut dyn Cursor<H>,
     pub bind: &'a mut dyn BindCallback<H, T>,
+}
+
+impl<'a, H: Hypp, T: ShimTrampoline> GetCursor<H> for &mut PatchBindCtx<'a, H, T> {
+    fn get_cursor(&mut self) -> &mut dyn Cursor<H> {
+        self.cur
+    }
 }
 
 pub type Void = Result<(), Error>;
