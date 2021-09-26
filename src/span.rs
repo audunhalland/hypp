@@ -99,3 +99,36 @@ impl<H: Hypp> Span<H> for SingleTextSpan {
         true
     }
 }
+
+/// A span which is either erased or "something"
+impl<H: Hypp, T> Span<H> for Option<T>
+where
+    T: Span<H>,
+{
+    fn is_anchored(&self) -> bool {
+        match self {
+            Some(span) => span.is_anchored(),
+            None => false,
+        }
+    }
+
+    #[tracing::instrument(skip(self, cursor))]
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+        match self {
+            Some(span) => span.pass_over(cursor),
+            None => false,
+        }
+    }
+
+    #[tracing::instrument(skip(self, cursor))]
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+        match self {
+            Some(span) => {
+                let result = span.erase(cursor);
+                *self = None;
+                result
+            }
+            None => false,
+        }
+    }
+}

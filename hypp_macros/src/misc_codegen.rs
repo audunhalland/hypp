@@ -263,7 +263,7 @@ fn generate_dynamic_span_enum(
     comp_ctx: &CompCtx,
 ) -> TokenStream {
     let dynamic_span_ident =
-        dynamic_span_type.to_tokens(comp_ctx, Scope::DynamicSpan, WithGenerics(false));
+        dynamic_span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment);
 
     let variant_defs = arms.iter().map(|arm| {
         let variant = &arm.variant;
@@ -344,7 +344,6 @@ fn generate_dynamic_span_enum(
         quote! {
             fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 match self {
-                    Self::Erased => {},
                     #(#arms)*
                 }
                 self.pass(__cursor, ::hypp::SpanOp::Erase)
@@ -356,7 +355,6 @@ fn generate_dynamic_span_enum(
 
     quote! {
         enum #dynamic_span_ident<H: ::hypp::Hypp + 'static> {
-            Erased,
             #(#variant_defs)*
         }
 
@@ -368,7 +366,6 @@ fn generate_dynamic_span_enum(
 
             fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 match self {
-                    Self::Erased => false,
                     #(#span_pass_arms)*
                 }
             }
@@ -381,7 +378,9 @@ fn generate_dynamic_span_enum(
 impl ir::StructField {
     pub fn field_def_tokens(&self, comp_ctx: &CompCtx, scope: Scope) -> TokenStream {
         let ident = &self.ident;
-        let ty = self.ty.to_tokens(comp_ctx, scope, WithGenerics(true));
+        let ty = self
+            .ty
+            .to_tokens(comp_ctx, scope, StructFieldFormat::TypeInStruct);
 
         quote! { #ident: #ty, }
     }
@@ -582,18 +581,21 @@ impl ir::ConstDomProgram {
     }
 }
 
-pub struct WithGenerics(pub bool);
+pub enum StructFieldFormat {
+    TypeInStruct,
+    PathSegment,
+}
 
 impl ir::StructFieldType {
     pub fn to_tokens(
         &self,
         comp_ctx: &CompCtx,
         scope: Scope,
-        with_generics: WithGenerics,
+        format: StructFieldFormat,
     ) -> TokenStream {
-        let generics = match with_generics.0 {
-            true => quote! { <H> },
-            false => quote! {},
+        let generics = match format {
+            StructFieldFormat::TypeInStruct => quote! { <H> },
+            StructFieldFormat::PathSegment => quote! {},
         };
 
         match self {
@@ -614,7 +616,10 @@ impl ir::StructFieldType {
             Self::DynamicSpan(span_index) => {
                 let ident =
                     quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
-                quote! { #ident #generics }
+                match format {
+                    StructFieldFormat::TypeInStruct => quote! { Option<#ident #generics> },
+                    StructFieldFormat::PathSegment => quote! { #ident },
+                }
             }
         }
     }

@@ -306,14 +306,10 @@ fn compile_body<'c>(
                 expr,
                 arms,
             } => {
-                let dynamic_span_ident =
-                    dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
-
                 let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::Match);
                 let closure = gen_match_closure(
                     stmt,
                     dynamic_span_type,
-                    &dynamic_span_ident,
                     closure_sig,
                     expr,
                     arms,
@@ -327,9 +323,7 @@ fn compile_body<'c>(
                 field_inits.push(FieldInit {
                     local: FieldLocal::LetMut,
                     field_ident: &stmt.field,
-                    init: quote! {
-                        #dynamic_span_ident::Erased;
-                    },
+                    init: quote! { None; },
                     post_init: Some(quote! {
                         #closure_ident(&mut #field, __ctx)?;
                     }),
@@ -376,7 +370,7 @@ fn compile_body<'c>(
             variant,
         } => {
             let dynamic_span_ident =
-                dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
+                dynamic_span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
 
             quote! {
                 #dynamic_span_ident::#variant
@@ -413,7 +407,6 @@ fn compile_body<'c>(
 fn gen_match_closure<'c>(
     statement: &ir::Statement,
     dynamic_span_type: &ir::StructFieldType,
-    dynamic_span_ident: &TokenStream,
     closure_sig: ClosureSig,
     expr: &syn::Expr,
     arms: &[ir::Arm],
@@ -422,6 +415,8 @@ fn gen_match_closure<'c>(
 ) -> Closure<'c> {
     let field = statement.field.unwrap();
     let field_expr = FieldExpr(field, ctx);
+    let dynamic_span_path_segment =
+        dynamic_span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
 
     let pattern_arms = arms.iter().map(
         |ir::Arm {
@@ -465,7 +460,7 @@ fn gen_match_closure<'c>(
                     #(#closures)*
 
                     match &mut #field {
-                        #dynamic_span_ident::#variant { #(#fields)* .. } => {
+                        Some(#dynamic_span_path_segment::#variant { #(#fields)* .. }) => {
                             // The matching arm (this variant corresponds to 'expr')
                             #non_const_patch
                         }
@@ -473,7 +468,7 @@ fn gen_match_closure<'c>(
                             // The non-matching arm, erase and then re-mount
                             #field_expr.erase(__ctx.cur);
                             #mount_locals
-                            *#field = #mount_expr;
+                            *#field = Some(#mount_expr);
                         }
                     }
                 },
@@ -488,11 +483,14 @@ fn gen_match_closure<'c>(
         Ok(())
     };
 
+    let dynamic_span_full_type =
+        dynamic_span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::TypeInStruct);
+
     Closure {
         comp_ctx,
         sig: closure_sig,
         args: quote! {
-            mut #field: &mut #dynamic_span_ident<H>,
+            mut #field: &mut #dynamic_span_full_type,
         },
         body,
     }
