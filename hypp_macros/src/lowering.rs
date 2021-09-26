@@ -429,6 +429,7 @@ impl BlockBuilder {
         for arm in arms.iter() {
             param_deps.extend(&arm.block.param_deps);
         }
+
         self.param_deps.extend(&param_deps);
 
         self.push_statement(

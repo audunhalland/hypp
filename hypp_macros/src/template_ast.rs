@@ -104,6 +104,10 @@ fn parse_node(input: ParseStream) -> syn::Result<Node> {
         return Ok(Node::Match(parse_if(input)?));
     }
 
+    if input.peek(syn::token::Match) {
+        return Ok(Node::Match(parse_match(input)?));
+    }
+
     if input.peek(syn::token::For) {
         return Ok(Node::For(parse_for(input)?));
     }
@@ -336,6 +340,38 @@ fn parse_else(input: ParseStream) -> syn::Result<Node> {
     } else {
         Err(lookahead.error())
     }
+}
+
+fn parse_match(input: ParseStream) -> syn::Result<Match> {
+    input.parse::<syn::token::Match>()?;
+
+    let expr = syn::Expr::parse_without_eager_brace(input)?;
+    let mut arms = vec![];
+
+    fn parse_arm(input: ParseStream) -> syn::Result<MatchArm> {
+        // BUG: This does not support OR-patterns
+        let pat: syn::Pat = input.parse()?;
+
+        // Guard
+        if input.peek(syn::token::If) {
+            panic!("Match if-guard not yet supported");
+        }
+
+        input.parse::<syn::token::FatArrow>()?;
+
+        let node = parse_node(input)?;
+
+        Ok(MatchArm { pat, node })
+    }
+
+    let content;
+    let _brace_token = syn::braced!(content in input);
+
+    while !content.is_empty() {
+        arms.push(content.call(parse_arm)?);
+    }
+
+    Ok(Match { expr, arms })
 }
 
 fn parse_for(input: ParseStream) -> syn::Result<For> {

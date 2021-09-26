@@ -385,3 +385,22 @@ component! {
         </button>
     }
 }
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum E {
+    Foo,
+    Bar,
+    Baz,
+}
+
+component! {
+    Enum(e: E) {}
+
+    <div>
+        match e {
+            E::Foo => "Foo"
+            E::Bar => <p>"Bar"</p>
+            E::Baz => <button>"Baz"</button>
+        }
+    </div>
+}

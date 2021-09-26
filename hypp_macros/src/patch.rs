@@ -189,10 +189,18 @@ fn compile_body<'c>(
                     post_init: None,
                 });
 
+                let text_update = if stmt.param_deps.is_variable() {
+                    Some(quote! {
+                        if #test {
+                            H::set_text(#field_expr, #expr.as_ref());
+                        }
+                    })
+                } else {
+                    None
+                };
+
                 patch_stmts.push(quote! {
-                    if #test {
-                        H::set_text(#field_expr, #expr.as_ref());
-                    }
+                    #text_update
                     __ctx.cur.move_to_following_sibling_of(#field_expr.as_node());
                 });
             }
@@ -265,43 +273,40 @@ fn compile_body<'c>(
                 dynamic_span_type,
                 expr,
                 arms,
-            } => match &stmt.param_deps {
-                ir::ParamDeps::Const => {}
-                _ => {
-                    let dynamic_span_ident =
-                        dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
+            } => {
+                let dynamic_span_ident =
+                    dynamic_span_type.to_tokens(comp_ctx, ctx.scope, WithGenerics(false));
 
-                    let closure_ident = next_closure_ident(&closures);
-                    let closure = gen_match_closure(
-                        stmt,
-                        dynamic_span_type,
-                        &dynamic_span_ident,
-                        closure_ident.clone(),
-                        expr,
-                        arms,
-                        comp_ctx,
-                        ctx,
-                    );
+                let closure_ident = next_closure_ident(&closures);
+                let closure = gen_match_closure(
+                    stmt,
+                    dynamic_span_type,
+                    &dynamic_span_ident,
+                    closure_ident.clone(),
+                    expr,
+                    arms,
+                    comp_ctx,
+                    ctx,
+                );
 
-                    let field = stmt.field.as_ref().unwrap();
+                let field = stmt.field.as_ref().unwrap();
 
-                    closures.push(closure);
-                    field_inits.push(FieldInit {
-                        local: FieldLocal::LetMut,
-                        field_ident: &stmt.field,
-                        init: quote! {
-                            #dynamic_span_ident::Erased;
-                        },
-                        post_init: Some(quote! {
-                            #closure_ident(&mut #field, __ctx)?;
-                        }),
-                    });
+                closures.push(closure);
+                field_inits.push(FieldInit {
+                    local: FieldLocal::LetMut,
+                    field_ident: &stmt.field,
+                    init: quote! {
+                        #dynamic_span_ident::Erased;
+                    },
+                    post_init: Some(quote! {
+                        #closure_ident(&mut #field, __ctx)?;
+                    }),
+                });
 
-                    patch_stmts.push(quote! {
-                        #closure_ident(#field, __ctx)?;
-                    });
-                }
-            },
+                patch_stmts.push(quote! {
+                    #closure_ident(#field, __ctx)?;
+                });
+            }
         }
     }
 
@@ -410,6 +415,13 @@ fn gen_match_closure<'c>(
                 },
             );
 
+            // Don't generate patch code if the expression is constant
+            let non_const_patch = if statement.param_deps.is_variable() {
+                Some(patch)
+            } else {
+                None
+            };
+
             let fields = block
                 .struct_fields
                 .iter()
@@ -422,7 +434,7 @@ fn gen_match_closure<'c>(
                     match &mut #field {
                         #dynamic_span_ident::#variant { #(#fields)* .. } => {
                             // The matching arm (this variant corresponds to 'expr')
-                            #patch
+                            #non_const_patch
                         }
                         _ => {
                             // The non-matching arm, erase and then re-mount

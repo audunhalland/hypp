@@ -113,7 +113,7 @@ pub struct Statement {
     pub expression: Expression,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ParamDeps {
     Const,
     // Dependent upon some params
@@ -123,6 +123,8 @@ pub enum ParamDeps {
 }
 
 impl ParamDeps {
+    /// Return whether this is a non-constant expression
+    /// (within the context of a component; if it is constant, it never gets patched)
     pub fn is_variable(&self) -> bool {
         match self {
             Self::Const => false,
