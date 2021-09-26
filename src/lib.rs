@@ -43,7 +43,9 @@ pub trait Hypp: Sized {
     type Anchor: Anchor<Self>;
     type Builder: Cursor<Self>;
 
-    type Callback: Callback + 'static;
+    ///
+    /// Type of
+    type CallbackSlot: CallbackSlot + 'static;
 
     /// How to share something.
     /// Different hypp implementations may have different thread-safety requirements.
@@ -133,7 +135,7 @@ pub trait Cursor<H: Hypp> {
     /// The way this works is that we bind the H::Callback to the element,
     /// but that callback doesn't do anything yet. Later, using the Callback
     /// handle, the callback is set up to do its work.
-    fn attribute_value_callback(&mut self) -> Result<H::Shared<H::Callback>, Error>;
+    fn attribute_value_callback(&mut self) -> Result<H::Shared<H::CallbackSlot>, Error>;
 
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
@@ -258,27 +260,27 @@ pub trait Mount<H: Hypp>: handle::ToHandle {
 }
 
 ///
-/// Callback
+/// Callback Slot
 ///
 /// Ownership structure:
 ///
 /// ```text
 ///
-///                       [rc::Weak] <---------------- [Option A]
-///                            |                           ^
-///                            |                           |
-///                            v                       ****************
-/// [Parent component]--> [Rc] -----> [RefCell] -----> *THIS COMPONENT*
-///                            ^                       ****************
-///                            |                           |
-///                       [rc::Weak]                       v
-///                            ^                          [Rc] <------ [wasm closure] <-- [DOM node]
-///                            |                           |
-///                          [Fn] (method)                 v
-///                            ^                        [RefCell]
-///                            |                           |
-///                            |                           v
-///                          [Box] <--- [Option B] --- [Callback]
+///                       [Handle::Weak] <------------- [Option A]
+///                             |                           ^
+///                             |                           |
+/// [  Parent   ]               v                       ****************
+/// [ Component ] -> [H::Shared] --> [RefCell/Mutex] --> *THIS COMPONENT*
+///                             ^                       ****************
+///                             |                           |
+///                       [Handle::Weak]                    v
+///                             ^                       [H::Shared] <------ [wasm/JS closure] <-- [DOM node]
+///                             |                           |
+///                           [Fn] (method)                 v
+///                             ^                      [RefCell/Mutex]
+///                             |                           |
+///                             |                           v
+///                           [Box] <-- [Option B] <-- [CallbackSlot]
 /// ```
 ///
 ///
@@ -290,9 +292,11 @@ pub trait Mount<H: Hypp>: handle::ToHandle {
 /// Releasing the references involves setting those `Option` values in the
 /// diagram to None.
 ///
-pub trait Callback {
-    fn bind(&mut self, function: Box<dyn Fn()>);
+pub trait CallbackSlot {
+    /// Bind the slot to an actual method
+    fn bind(&mut self, method: Box<dyn Fn()>);
 
+    /// Release the bound method from the slot
     fn release(&mut self);
 }
 
@@ -330,7 +334,7 @@ pub trait ShimTrampoline: Sized {
 /// The intention is to associate a callback with a method.
 ///
 pub trait BindCallback<H: Hypp, T: ShimTrampoline> {
-    fn bind(&mut self, callback: H::Shared<H::Callback>, method: ShimMethod<T>);
+    fn bind(&mut self, slot: H::Shared<H::CallbackSlot>, method: ShimMethod<T>);
 }
 
 ///

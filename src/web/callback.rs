@@ -2,14 +2,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
-use crate::Callback;
+use crate::CallbackSlot;
 
-pub struct WebCallback {
+pub struct WebCallbackSlot {
     web_closure: Option<Closure<dyn Fn()>>,
     rust_function: Option<Box<dyn Fn()>>,
 }
 
-impl WebCallback {
+impl WebCallbackSlot {
     fn call(&self) {
         let rust_function = self
             .rust_function
@@ -24,15 +24,15 @@ impl WebCallback {
     }
 }
 
-impl Drop for WebCallback {
+impl Drop for WebCallbackSlot {
     fn drop(&mut self) {
         // Logging..
         // console::log_1(&"Dropping callback!".into());
     }
 }
 
-pub fn new_callback() -> Rc<RefCell<WebCallback>> {
-    let callback = Rc::new(RefCell::new(WebCallback {
+pub fn new_callback() -> Rc<RefCell<WebCallbackSlot>> {
+    let callback = Rc::new(RefCell::new(WebCallbackSlot {
         web_closure: None,
         rust_function: None,
     }));
@@ -47,7 +47,7 @@ pub fn new_callback() -> Rc<RefCell<WebCallback>> {
     callback
 }
 
-impl Callback for WebCallback {
+impl CallbackSlot for WebCallbackSlot {
     fn bind(&mut self, function: Box<dyn Fn()>) {
         self.rust_function = Some(function);
     }

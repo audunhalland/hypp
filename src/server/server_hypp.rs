@@ -2,7 +2,7 @@ use crate::error::Error;
 
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, Callback, ConstOpCode, Cursor, Hypp, Mount, Span};
+use crate::{AsNode, CallbackSlot, ConstOpCode, Cursor, Hypp, Mount, Span};
 
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -54,7 +54,8 @@ impl Hypp for ServerHypp {
         T: 'static,
     = Arc<Mutex<T>>;
 
-    type Callback = ();
+    /// Server has no real callback slots
+    type CallbackSlot = ();
 
     fn mount<M: Mount<ServerHypp> + 'static>(&mut self) -> Result<(), Error> {
         let mut builder = self.builder_at_body();
@@ -98,7 +99,7 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
     }
 }
 
-impl Callback for () {
+impl CallbackSlot for () {
     fn bind(&mut self, _function: Box<dyn Fn()>) {}
     fn release(&mut self) {}
 }

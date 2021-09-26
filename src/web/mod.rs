@@ -89,7 +89,7 @@ impl Hypp for WebHypp {
         T: 'static,
     = std::rc::Rc<std::cell::RefCell<T>>;
 
-    type Callback = callback::WebCallback;
+    type CallbackSlot = callback::WebCallbackSlot;
 
     fn mount<M: Mount<WebHypp> + 'static>(&mut self) -> Result<(), Error> {
         let mut builder = self.builder_at_body();
@@ -278,7 +278,9 @@ impl Cursor<WebHypp> for WebBuilder {
         result
     }
 
-    fn attribute_value_callback(&mut self) -> Result<Rc<RefCell<callback::WebCallback>>, Error> {
+    fn attribute_value_callback(
+        &mut self,
+    ) -> Result<Rc<RefCell<callback::WebCallbackSlot>>, Error> {
         let attribute_name = self
             .loaded_attribute_name
             .expect("needs an attribute name loaded");

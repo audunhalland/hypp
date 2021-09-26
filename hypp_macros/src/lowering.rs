@@ -287,7 +287,7 @@ impl BlockBuilder {
 
                     self.struct_fields.push(ir::StructField {
                         ident: callback_field.clone(),
-                        ty: ir::StructFieldType::Callback,
+                        ty: ir::StructFieldType::CallbackSlot,
                     });
 
                     let callback = callback::parse_callback(expr)

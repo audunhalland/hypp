@@ -400,7 +400,7 @@ impl ir::StructField {
             // mutable types
             ir::StructFieldType::Component(_)
             | ir::StructFieldType::DynamicSpan(_)
-            | ir::StructFieldType::Callback => quote! {
+            | ir::StructFieldType::CallbackSlot => quote! {
                 ref mut #ident,
             },
             // immutable types
@@ -599,7 +599,7 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { H::Element },
             Self::DomText => quote! { H::Text },
-            Self::Callback => quote! { H::Shared<H::Callback> },
+            Self::CallbackSlot => quote! { H::Shared<H::CallbackSlot> },
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {

@@ -24,7 +24,7 @@ impl<H: Hypp, T> Binder<H, T> {
 }
 
 impl<H: Hypp, T: ShimTrampoline> BindCallback<H, T> for Binder<H, T> {
-    fn bind(&mut self, mut callback: H::Shared<H::Callback>, method: ShimMethod<T>) {
+    fn bind(&mut self, mut callback: H::Shared<H::CallbackSlot>, method: ShimMethod<T>) {
         let weak = self.weak.clone();
 
         callback.get_mut().bind(Box::new(move || {
@@ -37,27 +37,29 @@ impl<H: Hypp, T: ShimTrampoline> BindCallback<H, T> for Binder<H, T> {
 }
 
 pub struct LazyBinder<H: Hypp, T: ShimTrampoline + 'static> {
-    callbacks: Vec<(H::Shared<H::Callback>, ShimMethod<T>)>,
+    bound_slots: Vec<(H::Shared<H::CallbackSlot>, ShimMethod<T>)>,
 }
 
 impl<H: Hypp, T: ShimTrampoline + 'static> LazyBinder<H, T> {
     pub fn new() -> Self {
-        Self { callbacks: vec![] }
+        Self {
+            bound_slots: vec![],
+        }
     }
 
     pub fn bind_all(self, weak: <H::Shared<T> as SharedHandle<T>>::Weak) {
-        if !self.callbacks.is_empty() {
+        if !self.bound_slots.is_empty() {
             let mut binder: Binder<H, T> = Binder::from_weak(weak);
 
-            for (callback, method) in self.callbacks.into_iter() {
-                binder.bind(callback, method);
+            for (slot, method) in self.bound_slots.into_iter() {
+                binder.bind(slot, method);
             }
         }
     }
 }
 
 impl<H: Hypp, T: ShimTrampoline> BindCallback<H, T> for LazyBinder<H, T> {
-    fn bind(&mut self, callback: H::Shared<H::Callback>, method: ShimMethod<T>) {
-        self.callbacks.push((callback, method));
+    fn bind(&mut self, slot: H::Shared<H::CallbackSlot>, method: ShimMethod<T>) {
+        self.bound_slots.push((slot, method));
     }
 }
