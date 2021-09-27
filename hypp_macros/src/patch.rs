@@ -34,7 +34,7 @@ pub fn gen_patch_fn(
 
     quote! {
         pub fn patch<H: ::hypp::Hypp>(
-            __root: ::hypp::InputOrOutput<RootSpan<H>>,
+            __root: ::hypp::Duplex<RootSpan<H>>,
             __env: &Env,
             __updates: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
@@ -49,11 +49,11 @@ pub fn gen_patch_fn(
             #(#closures)*
 
             match __root {
-                ::hypp::InputOrOutput::Output(__root) => {
+                ::hypp::Duplex::Out(__root) => {
                     #mount_locals
                     *__root = Some(#mount_expr);
                 }
-                ::hypp::InputOrOutput::Input(RootSpan { #(#fields)* .. }) => {
+                ::hypp::Duplex::In(RootSpan { #(#fields)* .. }) => {
                     #patch
                 }
             }
@@ -555,11 +555,11 @@ fn gen_iter_item_closure<'c>(
         #(#closures)*
 
         match __span {
-            ::hypp::InputOrOutput::Output(__span) => {
+            ::hypp::Duplex::Out(__span) => {
                 #mount_locals
                 *__span = Some(#mount_expr);
             }
-            ::hypp::InputOrOutput::Input(#fixed_span_path_segment { #(#fields)* .. }) => {
+            ::hypp::Duplex::In(#fixed_span_path_segment { #(#fields)* .. }) => {
                 #patch
             }
         }
@@ -573,7 +573,7 @@ fn gen_iter_item_closure<'c>(
         comp_ctx,
         sig: closure_sig,
         args: quote! {
-            __span: ::hypp::InputOrOutput<#fixed_span_full_type>,
+            __span: ::hypp::Duplex<#fixed_span_full_type>,
             #iter_variable: &String,
             __invalidated: bool,
         },

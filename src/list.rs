@@ -28,7 +28,7 @@ where
     ) -> Result<(), crate::Error>
     where
         I: DoubleEndedIterator<Item = D>,
-        F: FnMut(InputOrOutput<S>, D, bool, &mut C) -> Result<(), crate::Error>,
+        F: FnMut(Duplex<S>, D, bool, &mut C) -> Result<(), crate::Error>,
         C: GetCursor<H> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
@@ -40,7 +40,7 @@ where
         while let Some(data_item) = next_data_item(&mut data_iterator) {
             if index < self.spans.len() {
                 inner_patch_fn(
-                    InputOrOutput::Input(&mut self.spans[index]),
+                    Duplex::In(&mut self.spans[index]),
                     data_item,
                     true, // invalidated.
                     ctx,
@@ -48,7 +48,7 @@ where
             } else {
                 let mut new_inner = None;
                 inner_patch_fn(
-                    InputOrOutput::Output(&mut new_inner),
+                    Duplex::Out(&mut new_inner),
                     data_item,
                     true, // invalidated.
                     ctx,
@@ -144,16 +144,16 @@ mod tests {
         fake_patcher: &mut FakePatcher,
         data: Vec<&'static str>,
     ) {
-        let patch_fake_span_inner = |inout: InputOrOutput<FakeSpan>,
+        let patch_fake_span_inner = |inout: Duplex<FakeSpan>,
                                      data: &'static str,
                                      _invalidated: bool,
                                      _ctx: &mut PatchCtx<ServerHypp>|
          -> Result<(), crate::Error> {
             match inout {
-                InputOrOutput::Input(span) => {
+                Duplex::In(span) => {
                     span.value = data;
                 }
-                InputOrOutput::Output(span) => {
+                Duplex::Out(span) => {
                     let generation = fake_patcher.gen_counter;
                     fake_patcher.gen_counter += 1;
                     *span = Some(FakeSpan {

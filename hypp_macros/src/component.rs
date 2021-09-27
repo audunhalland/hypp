@@ -114,7 +114,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let pass_props_patch_call = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
             #mod_ident::patch(
-                ::hypp::InputOrOutput::Input(&mut self.0.root_span),
+                ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 &__updates,
                 &mut ::hypp::PatchCtx {
@@ -125,7 +125,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         ir::ComponentKind::SelfUpdatable => quote! {
             let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
             #mod_ident::patch(
-                ::hypp::InputOrOutput::Input(&mut self.0.root_span),
+                ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 &__updates,
                 &mut ::hypp::PatchBindCtx {
@@ -521,7 +521,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 let mut cursor = self.0.anchor.create_builder();
                 let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
                 #mod_ident::patch(
-                    ::hypp::InputOrOutput::Input(&mut self.0.root_span),
+                    ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
                     &[#(#updates_array_items),*],
                     &mut ::hypp::PatchBindCtx {

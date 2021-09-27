@@ -21,13 +21,13 @@ impl<Env, Span> UniqueInner<Env, Span> {
         wrap: Wrap,
     ) -> Result<Unique<C>, crate::Error>
     where
-        Patch: Fn(InputOrOutput<Span>, &Env, &[bool], &mut PatchCtx<H>) -> Result<(), crate::Error>,
+        Patch: Fn(Duplex<Span>, &Env, &[bool], &mut PatchCtx<H>) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
     {
         let updates: [bool; 1usize] = [true; 1usize];
         let mut root_span = None;
         patch(
-            InputOrOutput::Output(&mut root_span),
+            Duplex::Out(&mut root_span),
             &env,
             &updates,
             &mut PatchCtx { cur: cursor },
@@ -48,12 +48,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
         save_weak: SaveWeak,
     ) -> Result<H::Shared<C>, crate::Error>
     where
-        Patch: Fn(
-            InputOrOutput<Span>,
-            &Env,
-            &[bool],
-            &mut PatchBindCtx<H, C>,
-        ) -> Result<(), crate::Error>,
+        Patch: Fn(Duplex<Span>, &Env, &[bool], &mut PatchBindCtx<H, C>) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
         SaveWeak: Fn(&mut C, <H::Shared<C> as SharedHandle<C>>::Weak),
     {
@@ -62,7 +57,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
         let mut binder: crate::shim::LazyBinder<H, C> = crate::shim::LazyBinder::new();
         let mut root_span = None;
         patch(
-            InputOrOutput::Output(&mut root_span),
+            Duplex::Out(&mut root_span),
             &env,
             &updates,
             &mut PatchBindCtx {

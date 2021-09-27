@@ -342,9 +342,9 @@ pub trait BindCallback<H: Hypp, T: ShimTrampoline> {
 ///
 /// A function parameter that can function dynamically as either an input or an output parameter
 ///
-pub enum InputOrOutput<'a, T> {
-    Input(&'a mut T),
-    Output(&'a mut Option<T>),
+pub enum Duplex<'a, T> {
+    In(&'a mut T),
+    Out(&'a mut Option<T>),
 }
 
 ///
