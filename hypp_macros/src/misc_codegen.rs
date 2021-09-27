@@ -33,28 +33,35 @@ pub struct CompCtx {
     pub kind: ir::ComponentKind,
     pub component_ident: syn::Ident,
     pub public_props_ident: syn::Ident,
-    pub env_ident: syn::Ident,
-    pub root_span_ident: syn::Ident,
-    pub self_shim_ident: syn::Ident,
-    pub uppercase_prefix: String,
+    pub mod_ident: syn::Ident,
 
-    pub patch_ctx_ty: TokenStream,
+    pub patch_ctx_ty_root: TokenStream,
+    pub patch_ctx_ty_inner: TokenStream,
 }
 
 impl CompCtx {
     pub fn new(component_ident: syn::Ident, kind: ir::ComponentKind) -> Self {
-        let public_props_ident = quote::format_ident!("__{}Props", component_ident);
-        let env_ident = quote::format_ident!("__{}Env", component_ident);
-        let root_span_ident = quote::format_ident!("__{}RootSpan", component_ident);
-        let self_shim_ident = quote::format_ident!("__{}Shim", component_ident);
-        let uppercase_prefix = format!("__{}", component_ident.clone().to_string().to_uppercase());
+        let comp_string = component_ident.clone().to_string();
 
-        let patch_ctx_ty = match kind {
+        let public_props_ident = quote::format_ident!("__{}Props", component_ident);
+        let mod_ident = quote::format_ident!("__{}", comp_string.to_lowercase());
+
+        let patch_ctx_ty_root = match kind {
             ir::ComponentKind::Basic => quote! {
                 ::hypp::PatchCtx<H>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::PatchBindCtx<H, Self>
+                ::hypp::PatchBindCtx<H, #component_ident<H>>
+            },
+        };
+
+        // PatchCtx type used in closures where last parameter may be inferred
+        let patch_ctx_ty_inner = match kind {
+            ir::ComponentKind::Basic => quote! {
+                ::hypp::PatchCtx<H>
+            },
+            ir::ComponentKind::SelfUpdatable => quote! {
+                ::hypp::PatchBindCtx<H, _>
             },
         };
 
@@ -62,11 +69,9 @@ impl CompCtx {
             kind,
             component_ident,
             public_props_ident,
-            env_ident,
-            root_span_ident,
-            self_shim_ident,
-            uppercase_prefix,
-            patch_ctx_ty,
+            mod_ident,
+            patch_ctx_ty_root,
+            patch_ctx_ty_inner,
         }
     }
 }
@@ -223,7 +228,7 @@ pub fn generate_dom_program(program: &ir::ConstDomProgram, comp_ctx: &CompCtx) -
     });
 
     let len = program.opcodes.len();
-    let ident = program.get_ident(comp_ctx);
+    let ident = program.get_ident();
 
     quote! {
         static #ident: [::hypp::ConstOpCode; #len] = [
@@ -282,8 +287,13 @@ fn gen_fixed_span_struct(
     let span_ident = if let Some(span_type) = span_type {
         span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment)
     } else {
-        let root_span_ident = &comp_ctx.root_span_ident;
-        quote! { #root_span_ident }
+        quote! { RootSpan }
+    };
+
+    let public = if span_type.is_none() {
+        Some(quote! { pub })
+    } else {
+        None
     };
 
     let struct_field_defs = block
@@ -317,7 +327,7 @@ fn gen_fixed_span_struct(
         });
 
     quote! {
-        struct #span_ident<H: ::hypp::Hypp + 'static> {
+        #public struct #span_ident<H: ::hypp::Hypp + 'static> {
             #(#struct_field_defs)*
             __phantom: ::std::marker::PhantomData<H>
         }
@@ -528,7 +538,7 @@ impl ir::Block {
 
             match &statement.expression {
                 ir::Expression::ConstDom(program) => {
-                    let program_ident = program.get_ident(comp_ctx);
+                    let program_ident = program.get_ident();
                     for (index, opcode) in program.opcodes.iter().enumerate() {
                         match opcode {
                             ir::DomOpCode::EnterElement(_) => {
@@ -656,8 +666,8 @@ impl ir::Block {
 }
 
 impl ir::ConstDomProgram {
-    pub fn get_ident(&self, comp_ctx: &CompCtx) -> syn::Ident {
-        quote::format_ident!("{}_PRG{}", comp_ctx.uppercase_prefix, self.id)
+    pub fn get_ident(&self) -> syn::Ident {
+        quote::format_ident!("PRG{}", self.id)
     }
 }
 
@@ -695,8 +705,7 @@ impl ir::StructFieldType {
                 }
             }
             Self::Span(span_index, span_kind) => {
-                let ident =
-                    quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
+                let ident = quote::format_ident!("Span{}", span_index);
                 match (span_kind, format) {
                     (ir::SpanKind::Enum, StructFieldFormat::TypeInStruct) => {
                         quote! { Option<#ident #generics> }

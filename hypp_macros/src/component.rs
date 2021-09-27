@@ -40,20 +40,19 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let component_ident = &comp_ctx.component_ident;
     let props_ident = &comp_ctx.public_props_ident;
-    let env_ident = &comp_ctx.env_ident;
-    let root_span_ident = &comp_ctx.root_span_ident;
+    let mod_ident = &comp_ctx.mod_ident;
 
     let PublicPropsStruct {
         tokens: public_props_struct,
         has_p_lifetime,
     } = gen_public_props_struct(&params, &comp_ctx);
-    let env_struct = gen_env_struct(&params, &comp_ctx);
+    let env_struct = gen_env_struct(&params);
     let fn_props_destructuring = gen_fn_props_destructuring(&params, &comp_ctx);
     let mount_body = gen_mount_body(&params, &comp_ctx);
     let env_locals = gen_env_locals(&params);
     let props_updater = gen_props_updater(&params);
-    let self_shim = if comp_ctx.kind.is_self_updatable() {
-        gen_self_shim(&params, &comp_ctx, methods)
+    let shim = if comp_ctx.kind.is_self_updatable() {
+        gen_shim_struct_and_impl(&params, methods)
     } else {
         quote! {}
     };
@@ -71,12 +70,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let component_field_defs = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            env: #env_ident,
-            root_span: #root_span_ident<H>,
+            env: #mod_ident::Env,
+            root_span: #mod_ident::RootSpan<H>,
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            env: #env_ident,
-            root_span: #root_span_ident<H>,
+            env: #mod_ident::Env,
+            root_span: #mod_ident::RootSpan<H>,
             anchor: H::Anchor,
             weak_self: Option<<H::Shared<Self> as SharedHandle<Self>>::Weak>
 
@@ -118,7 +117,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let pass_props_patch_call = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            Self::patch(
+            #mod_ident::patch(
                 ::hypp::InputOrOutput::Input(&mut self.root_span),
                 &self.env,
                 &__updates,
@@ -129,7 +128,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
         ir::ComponentKind::SelfUpdatable => quote! {
             let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
-            Self::patch(
+            #mod_ident::patch(
                 ::hypp::InputOrOutput::Input(&mut self.root_span),
                 &self.env,
                 &__updates,
@@ -157,53 +156,57 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     quote! {
         #public_props_struct
-        #env_struct
-        #self_shim
-
-        #(#dom_programs)*
-
-        #(#span_typedefs)*
 
         pub struct #component_ident<H: ::hypp::Hypp + 'static> {
             #component_field_defs
         }
 
-        impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
-            pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
-                #mount_body
+        mod #mod_ident {
+            use super::*;
+
+            #env_struct
+            #shim
+
+            impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
+                pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                    #mount_body
+                }
             }
+
+            impl<H: ::hypp::Hypp + 'static> ::hypp::handle::ToHandle for #component_ident<H> {
+                type Handle = #handle_path<Self>;
+            }
+
+            impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #component_ident<H> {
+                fn is_anchored(&self) -> bool {
+                    unimplemented!()
+                }
+
+                fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                    ::hypp::span::pass(&mut [&mut self.root_span], __cursor, op)
+                }
+
+                #fn_span_pass_over
+                #fn_span_erase
+            }
+
+            impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
+                type Props = #props_ident #public_props_generics;
+
+                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
+                    #props_updater
+                    #pass_props_patch_call
+                }
+            }
+
+            #(#dom_programs)*
+            #(#span_typedefs)*
+
+            #shim_impls
+            #mount_impl
 
             #patch_fn
         }
-
-        impl<H: ::hypp::Hypp + 'static> ::hypp::handle::ToHandle for #component_ident<H> {
-            type Handle = #handle_path<Self>;
-        }
-
-        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #component_ident<H> {
-            fn is_anchored(&self) -> bool {
-                unimplemented!()
-            }
-
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
-                ::hypp::span::pass(&mut [&mut self.root_span], __cursor, op)
-            }
-
-            #fn_span_pass_over
-            #fn_span_erase
-        }
-
-        impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
-            type Props = #props_ident #public_props_generics;
-
-            fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
-                #props_updater
-                #pass_props_patch_call
-            }
-        }
-
-        #shim_impls
-        #mount_impl
     }
 }
 
@@ -293,9 +296,7 @@ fn gen_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> Publi
 }
 
 /// Create the env struct that the component uses to cache internal data
-fn gen_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
-    let env_ident = &comp_ctx.env_ident;
-
+fn gen_env_struct(params: &[param::Param]) -> TokenStream {
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
         let ty = param.owned_ty_tokens();
@@ -306,7 +307,7 @@ fn gen_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     });
 
     quote! {
-        pub struct #env_ident {
+        pub struct Env {
             #(#fields)*
         }
     }
@@ -315,9 +316,9 @@ fn gen_env_struct(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 // TODO: A lot in this function is very similar for a lot
 // of components. Find a way to make a lib generic function.
 fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
+    let mod_ident = &comp_ctx.mod_ident;
     let n_params = params.iter().count();
     let component_ident = &comp_ctx.component_ident;
-    let env_ident = &comp_ctx.env_ident;
 
     let env_params = params.iter().map(param::Param::owned_struct_param_tokens);
 
@@ -371,7 +372,7 @@ fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     };
 
     quote! {
-        let env = #env_ident {
+        let env = #mod_ident::Env {
             #(#env_params)*
         };
 
@@ -380,7 +381,7 @@ fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
         #anchor_binder_locals
         let mut root_span = None;
-        Self::patch(
+        #mod_ident::patch(
             ::hypp::InputOrOutput::Output(&mut root_span),
             &env,
             &updates,
@@ -507,13 +508,7 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn gen_self_shim(
-    params: &[param::Param],
-    comp_ctx: &CompCtx,
-    methods: Vec<syn::ItemFn>,
-) -> TokenStream {
-    let shim_ident = &comp_ctx.self_shim_ident;
-
+fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) -> TokenStream {
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
         let ty = match &param.kind {
@@ -539,20 +534,19 @@ fn gen_self_shim(
 
     quote! {
         #[allow(dead_code)]
-        pub struct #shim_ident<'c> {
+        pub struct Shim<'c> {
             #(#fields)*
         }
 
-        impl<'c> #shim_ident<'c> {
+        impl<'c> Shim<'c> {
             #(#methods)*
         }
     }
 }
 
 fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
-    let n_params = params.iter().count();
     let component_ident = &comp_ctx.component_ident;
-    let shim_ident = &comp_ctx.self_shim_ident;
+    let mod_ident = &comp_ctx.mod_ident;
 
     let state_update_idents = params
         .iter()
@@ -591,13 +585,13 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
     quote! {
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for #component_ident<H> {
-            type Shim<'s> = #shim_ident<'s>;
+            type Shim<'s> = Shim<'s>;
 
             fn shim_trampoline(&mut self, method: ::hypp::ShimMethod<Self>)
             {
                 #(#updates_locals)*
 
-                let mut shim = #shim_ident {
+                let mut shim = Shim {
                     #(#env_fields)*
                 };
 
@@ -605,7 +599,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
                 let mut cursor = self.anchor.create_builder();
                 let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
-                Self::patch(
+                #mod_ident::patch(
                     ::hypp::InputOrOutput::Input(&mut self.root_span),
                     &self.env,
                     &[#(#updates_array_items),*],

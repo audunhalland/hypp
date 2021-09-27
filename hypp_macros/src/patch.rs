@@ -18,9 +18,7 @@ pub fn gen_patch_fn(
     fn_stmts: Vec<syn::Stmt>,
     ctx: CodegenCtx,
 ) -> TokenStream {
-    let env_ident = &comp_ctx.env_ident;
-    let root_span_ident = &comp_ctx.root_span_ident;
-    let patch_ctx_ty = &comp_ctx.patch_ctx_ty;
+    let patch_ctx_ty_root = &comp_ctx.patch_ctx_ty_root;
 
     let Body {
         closures,
@@ -35,11 +33,11 @@ pub fn gen_patch_fn(
         .map(ir::StructField::mut_pattern_tokens);
 
     quote! {
-        fn patch(
-            __root: ::hypp::InputOrOutput<#root_span_ident<H>>,
-            __env: &#env_ident,
+        pub fn patch<H: ::hypp::Hypp>(
+            __root: ::hypp::InputOrOutput<RootSpan<H>>,
+            __env: &Env,
             __updates: &[bool],
-            __ctx: &mut #patch_ctx_ty,
+            __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
             #env_locals
 
@@ -55,7 +53,7 @@ pub fn gen_patch_fn(
                     #mount_locals
                     *__root = Some(#mount_expr);
                 }
-                ::hypp::InputOrOutput::Input(#root_span_ident { #(#fields)* .. }) => {
+                ::hypp::InputOrOutput::Input(RootSpan { #(#fields)* .. }) => {
                     #patch
                 }
             }
@@ -142,7 +140,7 @@ fn compile_body<'c>(
     for stmt in &block.statements {
         match &stmt.expression {
             ir::Expression::ConstDom(program) => {
-                let program_ident = program.get_ident(comp_ctx);
+                let program_ident = program.get_ident();
                 let last_node_opcode = program.last_node_opcode();
 
                 field_inits.push(FieldInit {
@@ -400,10 +398,7 @@ fn compile_body<'c>(
                 }
             }
             None => {
-                let root_span_ident = &comp_ctx.root_span_ident;
-                quote! {
-                    #root_span_ident
-                }
+                quote! { RootSpan }
             }
         },
         SpanConstructorKind::DynamicSpan { span_type, variant } => {
@@ -596,12 +591,12 @@ impl<'c> quote::ToTokens for Closure<'c> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = &self.sig.ident;
         let args = &self.args;
-        let patch_ctx_ty = &self.comp_ctx.patch_ctx_ty;
+        let patch_ctx_ty_inner = &self.comp_ctx.patch_ctx_ty_inner;
         let body = &self.body;
 
         let ctx_arg = match self.sig.kind {
             ClosureKind::Match | ClosureKind::IterItem => Some(quote! {
-                __ctx: &mut #patch_ctx_ty
+                __ctx: &mut #patch_ctx_ty_inner
             }),
             ClosureKind::String => None,
         };
