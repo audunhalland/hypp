@@ -60,7 +60,13 @@ pub enum StructFieldType {
     DomText,
     CallbackSlot,
     Component(ComponentPath),
-    Span(u16),
+    Span(u16, SpanKind),
+}
+
+#[derive(Clone)]
+pub enum SpanKind {
+    RepeatedStruct,
+    Enum,
 }
 
 // A type path representing another component

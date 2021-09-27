@@ -400,7 +400,7 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         let expr = the_match.expr;
         let field = ctx.next_field_id();
-        let span_type = ir::StructFieldType::Span(ctx.next_span_index());
+        let span_type = ir::StructFieldType::Span(ctx.next_span_index(), ir::SpanKind::Enum);
 
         let arms: Vec<_> = the_match
             .arms
@@ -462,7 +462,8 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         // let expr = the_for.expr;
         let field = ctx.next_field_id();
-        let span_type = ir::StructFieldType::Span(ctx.next_span_index());
+        let span_type =
+            ir::StructFieldType::Span(ctx.next_span_index(), ir::SpanKind::RepeatedStruct);
 
         let expr = the_for.expression;
         let variable = the_for.binding;

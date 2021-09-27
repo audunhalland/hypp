@@ -476,7 +476,7 @@ impl ir::StructField {
             // mutable types
             ir::StructFieldType::Component(_)
             | ir::StructFieldType::CallbackSlot
-            | ir::StructFieldType::Span(_) => quote! {
+            | ir::StructFieldType::Span(_, _) => quote! {
                 ref mut #ident,
             },
             // immutable types
@@ -690,12 +690,17 @@ impl ir::StructFieldType {
                     },
                 }
             }
-            Self::Span(span_index) => {
+            Self::Span(span_index, span_kind) => {
                 let ident =
                     quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
-                match format {
-                    StructFieldFormat::TypeInStruct => quote! { Option<#ident #generics> },
-                    StructFieldFormat::PathSegment => quote! { #ident },
+                match (format, span_kind) {
+                    (StructFieldFormat::TypeInStruct, ir::SpanKind::Enum) => {
+                        quote! { Option<#ident #generics> }
+                    }
+                    (StructFieldFormat::TypeInStruct, ir::SpanKind::RepeatedStruct) => {
+                        quote! { hypp::list::SimpleListSpan<H, #ident #generics> }
+                    }
+                    (StructFieldFormat::PathSegment, _) => quote! { #ident },
                 }
             }
         }

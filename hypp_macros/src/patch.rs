@@ -327,7 +327,14 @@ fn compile_body<'c>(
                 });
                 closures.push(closure);
             }
-            ir::Expression::Iter { .. } => {}
+            ir::Expression::Iter { .. } => {
+                field_inits.push(FieldInit {
+                    local: FieldLocal::LetMut,
+                    field_ident: &stmt.field,
+                    init: quote! { ::hypp::list::SimpleListSpan::new(); },
+                    post_init: None,
+                });
+            }
         }
     }
 
