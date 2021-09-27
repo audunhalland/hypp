@@ -418,7 +418,8 @@ component! {
 
 component! {
     AddToList<Html>() {
-        items: Vec<String>
+        items: Vec<String>,
+        unused: bool,
     }
 
     fn add_item(&mut self) {

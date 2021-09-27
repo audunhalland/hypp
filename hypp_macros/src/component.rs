@@ -554,6 +554,20 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let component_ident = &comp_ctx.component_ident;
     let shim_ident = &comp_ctx.self_shim_ident;
 
+    let state_update_idents = params
+        .iter()
+        .map(|param| match &param.kind {
+            param::ParamKind::Prop(_) => None,
+            param::ParamKind::State(_) => Some(quote::format_ident!("update_{}", param.id)),
+        })
+        .collect::<Vec<_>>();
+
+    let updates_locals = state_update_idents.iter().map(|opt_ident| {
+        opt_ident
+            .as_ref()
+            .map(|ident| quote! { let mut #ident = false; })
+    });
+
     let env_fields = params.iter().map(|param| {
         let ident = &param.ident;
         match &param.kind {
@@ -561,13 +575,18 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 #ident: &self.env.#ident,
             },
             param::ParamKind::State(_) => {
-                let id = param.id as usize;
+                let update_ident = state_update_idents[param.id as usize].as_ref().unwrap();
 
                 quote! {
-                    #ident: ::hypp::state_ref::StateRef::new(&mut self.env.#ident, &mut __updates[#id]),
+                    #ident: ::hypp::state_ref::StateRef::new(&mut self.env.#ident, &mut #update_ident),
                 }
             }
         }
+    });
+
+    let updates_array_items = state_update_idents.iter().map(|opt_ident| match opt_ident {
+        Some(ident) => quote! { #ident },
+        None => quote! { false },
     });
 
     quote! {
@@ -576,7 +595,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
             fn shim_trampoline(&mut self, method: ::hypp::ShimMethod<Self>)
             {
-                let mut __updates: [bool; #n_params] = [false; #n_params];
+                #(#updates_locals)*
 
                 let mut shim = #shim_ident {
                     #(#env_fields)*
@@ -589,7 +608,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 Self::patch(
                     ::hypp::InputOrOutput::Input(&mut self.root_span),
                     &self.env,
-                    &__updates,
+                    &[#(#updates_array_items),*],
                     &mut ::hypp::PatchBindCtx {
                         cur: &mut cursor,
                         bind: &mut binder,
