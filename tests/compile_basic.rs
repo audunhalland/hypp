@@ -304,7 +304,7 @@ component! {
     List(_items: &[String]) {}
 
     <ul>
-    for item in items {
+    for item in _items {
         <li>{item}</li>
     }
     </ul>

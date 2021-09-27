@@ -72,7 +72,7 @@ impl CompCtx {
 }
 
 pub enum SpanConstructorKind<'a> {
-    RootSpan,
+    FixedSpan(Option<&'a ir::StructFieldType>),
     DynamicSpan {
         span_type: &'a ir::StructFieldType,
         variant: &'a syn::Ident,
@@ -194,6 +194,9 @@ pub fn collect_dom_programs(
                 for arm in arms {
                     collect_dom_programs(&arm.block.statements, comp_ctx, output);
                 }
+            }
+            ir::Expression::Iter { inner_block, .. } => {
+                collect_dom_programs(&inner_block.statements, comp_ctx, output);
             }
             _ => {}
         }
@@ -660,6 +663,7 @@ impl ir::ConstDomProgram {
 
 pub enum StructFieldFormat {
     TypeInStruct,
+    InnerType,
     PathSegment,
 }
 
@@ -671,7 +675,7 @@ impl ir::StructFieldType {
         format: StructFieldFormat,
     ) -> TokenStream {
         let generics = match format {
-            StructFieldFormat::TypeInStruct => quote! { <H> },
+            StructFieldFormat::TypeInStruct | StructFieldFormat::InnerType => quote! { <H> },
             StructFieldFormat::PathSegment => quote! {},
         };
 
@@ -693,14 +697,15 @@ impl ir::StructFieldType {
             Self::Span(span_index, span_kind) => {
                 let ident =
                     quote::format_ident!("__{}Span{}", comp_ctx.component_ident, span_index);
-                match (format, span_kind) {
-                    (StructFieldFormat::TypeInStruct, ir::SpanKind::Enum) => {
+                match (span_kind, format) {
+                    (ir::SpanKind::Enum, StructFieldFormat::TypeInStruct) => {
                         quote! { Option<#ident #generics> }
                     }
-                    (StructFieldFormat::TypeInStruct, ir::SpanKind::RepeatedStruct) => {
+                    (ir::SpanKind::RepeatedStruct, StructFieldFormat::TypeInStruct) => {
                         quote! { hypp::list::SimpleListSpan<H, #ident #generics> }
                     }
-                    (StructFieldFormat::PathSegment, _) => quote! { #ident },
+                    (_, StructFieldFormat::InnerType) => quote! { #ident #generics },
+                    (_, StructFieldFormat::PathSegment) => quote! { #ident },
                 }
             }
         }

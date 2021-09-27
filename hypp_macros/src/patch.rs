@@ -27,7 +27,7 @@ pub fn gen_patch_fn(
         mount_locals,
         mount_expr,
         patch,
-    } = compile_body(block, comp_ctx, ctx, SpanConstructorKind::RootSpan);
+    } = compile_body(block, comp_ctx, ctx, SpanConstructorKind::FixedSpan(None));
 
     let fields = block
         .struct_fields
@@ -52,7 +52,6 @@ pub fn gen_patch_fn(
                     #mount_locals
                     *__root = Some(#mount_expr);
                 }
-                // Destructure here:
                 ::hypp::InputOrOutput::Input(#root_span_ident { #(#fields)* .. }) => {
                     #patch
                 }
@@ -95,6 +94,7 @@ impl ClosureSig {
 
         let ident = match kind {
             ClosureKind::Match => quote::format_ident!("__patch_f{}", field.0),
+            ClosureKind::IterItem => quote::format_ident!("__elem_f{}", field.0),
             ClosureKind::String => quote::format_ident!("__string_f{}", field.0),
         };
 
@@ -106,6 +106,9 @@ impl ClosureSig {
 enum ClosureKind {
     // Closure for patching a `Match` statement
     Match,
+
+    // Closure for patching one span in an iteration
+    IterItem,
 
     // Closure for producing a string value (that may use env variables)
     String,
@@ -327,13 +330,38 @@ fn compile_body<'c>(
                 });
                 closures.push(closure);
             }
-            ir::Expression::Iter { .. } => {
+            ir::Expression::Iter {
+                span_type,
+                expr,
+                variable,
+                inner_block,
+                ..
+            } => {
+                let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::IterItem);
+                let closure = gen_iter_item_closure(
+                    span_type,
+                    closure_sig,
+                    variable,
+                    inner_block,
+                    comp_ctx,
+                    ctx,
+                );
+
+                let field = stmt.field.as_ref().unwrap();
+                let closure_ident = &closure.sig.ident;
+
                 field_inits.push(FieldInit {
                     local: FieldLocal::LetMut,
                     field_ident: &stmt.field,
                     init: quote! { ::hypp::list::SimpleListSpan::new(); },
-                    post_init: None,
+                    post_init: Some(quote! {
+                        #field.patch(#expr.iter(), #closure_ident, __ctx)?;
+                    }),
                 });
+                patch_stmts.push(quote! {
+                    #field.patch(#expr.iter(), #closure_ident, __ctx)?;
+                });
+                closures.push(closure);
             }
         }
     }
@@ -360,12 +388,21 @@ fn compile_body<'c>(
     });
 
     let constructor_path = match constructor_kind {
-        SpanConstructorKind::RootSpan => {
-            let root_span_ident = &comp_ctx.root_span_ident;
-            quote! {
-                #root_span_ident
+        SpanConstructorKind::FixedSpan(opt_span_type) => match opt_span_type {
+            Some(span_type) => {
+                let path_segment =
+                    span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+                quote! {
+                    #path_segment
+                }
             }
-        }
+            None => {
+                let root_span_ident = &comp_ctx.root_span_ident;
+                quote! {
+                    #root_span_ident
+                }
+            }
+        },
         SpanConstructorKind::DynamicSpan { span_type, variant } => {
             let span_ident =
                 span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
@@ -382,7 +419,9 @@ fn compile_body<'c>(
         .map(ir::StructField::struct_param_tokens);
 
     let phantom = match constructor_kind {
-        SpanConstructorKind::RootSpan => Some(quote! { __phantom: ::std::marker::PhantomData, }),
+        SpanConstructorKind::FixedSpan(_) => {
+            Some(quote! { __phantom: ::std::marker::PhantomData, })
+        }
         SpanConstructorKind::DynamicSpan { .. } => None,
     };
 
@@ -491,6 +530,64 @@ fn gen_match_closure<'c>(
     }
 }
 
+fn gen_iter_item_closure<'c>(
+    span_type: &ir::StructFieldType,
+    closure_sig: ClosureSig,
+    iter_variable: &syn::Ident,
+    inner_block: &ir::Block,
+    comp_ctx: &'c CompCtx,
+    ctx: CodegenCtx,
+) -> Closure<'c> {
+    let Body {
+        closures,
+        mount_locals,
+        mount_expr,
+        patch,
+    } = compile_body(
+        inner_block,
+        comp_ctx,
+        ctx,
+        SpanConstructorKind::FixedSpan(Some(span_type)),
+    );
+
+    let fixed_span_path_segment =
+        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+
+    let fields = inner_block
+        .struct_fields
+        .iter()
+        .map(ir::StructField::mut_pattern_tokens);
+
+    let body = quote! {
+        #(#closures)*
+
+        match __span {
+            ::hypp::InputOrOutput::Output(__span) => {
+                #mount_locals
+                *__span = Some(#mount_expr);
+            }
+            ::hypp::InputOrOutput::Input(#fixed_span_path_segment { #(#fields)* .. }) => {
+                #patch
+            }
+        }
+
+        Ok(())
+    };
+
+    let fixed_span_full_type =
+        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::InnerType);
+
+    Closure {
+        comp_ctx,
+        sig: closure_sig,
+        args: quote! {
+            __span: ::hypp::InputOrOutput<#fixed_span_full_type>,
+            #iter_variable: &String,
+        },
+        body,
+    }
+}
+
 impl<'c> quote::ToTokens for Closure<'c> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = &self.sig.ident;
@@ -499,14 +596,14 @@ impl<'c> quote::ToTokens for Closure<'c> {
         let body = &self.body;
 
         let ctx_arg = match self.sig.kind {
-            ClosureKind::Match => Some(quote! {
+            ClosureKind::Match | ClosureKind::IterItem => Some(quote! {
                 __ctx: &mut #patch_ctx_ty
             }),
             ClosureKind::String => None,
         };
 
         let return_type = match self.sig.kind {
-            ClosureKind::Match => Some(quote! { -> ::hypp::Void }),
+            ClosureKind::Match | ClosureKind::IterItem => Some(quote! { -> ::hypp::Void }),
             ClosureKind::String => None,
         };
 
