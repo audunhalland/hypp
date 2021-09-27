@@ -240,7 +240,7 @@ pub trait Span<H: Hypp> {
 /// the component's owned DOM.
 ///
 pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
-    /// The type of properties this component recieves
+    /// The type of properties this component receives
     type Props: 'p;
 
     ///

@@ -66,23 +66,23 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     };
 
     let env_expr = gen_env_expr(&params);
-    let n_params = params.iter().count();
+    let n_params = params.len();
     let mount_body = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
             ::hypp::comp::UniqueInner::mount::<_, _, _, _, #n_params>(
                 #mod_ident::#env_expr,
-                __cursor,
+                cursor,
                 #mod_ident::patch,
                 |inner| Self(inner),
             )
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner::mount::<_, _, _, 42>(
+            ::hypp::comp::SharedInner::mount::<_, _, _, #n_params>(
                 #mod_ident::#env_expr,
-                __cursor,
+                cursor,
                 #mod_ident::patch,
                 |inner| Self(inner),
-                |outer, weak| outer.0.weak_self = Some(weak),
+                |outer, weak_self| outer.0.weak_self = Some(weak_self),
             )
         },
     };
@@ -162,7 +162,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             #shim
 
             impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
-                pub fn mount(#fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                pub fn mount(#fn_props_destructuring, cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
                     #mount_body
                 }
             }
@@ -376,7 +376,7 @@ fn gen_env_locals(params: &[param::Param]) -> TokenStream {
 }
 
 fn gen_props_updater(params: &[param::Param]) -> TokenStream {
-    let n_params = params.iter().count();
+    let n_params = params.len();
 
     let checks = params.iter().filter(|param| param.is_prop()).map(|param| {
         let id = param.id as usize;
