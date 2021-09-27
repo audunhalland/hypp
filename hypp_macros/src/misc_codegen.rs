@@ -185,30 +185,26 @@ impl<'f> quote::ToTokens for FieldAssign<'f> {
     }
 }
 
-pub fn collect_dom_programs(
-    statements: &[ir::Statement],
-    comp_ctx: &CompCtx,
-    output: &mut Vec<TokenStream>,
-) {
+pub fn collect_dom_programs(statements: &[ir::Statement], output: &mut Vec<TokenStream>) {
     for statement in statements {
         match &statement.expression {
             ir::Expression::ConstDom(program) => {
-                output.push(generate_dom_program(program, comp_ctx));
+                output.push(generate_dom_program(program));
             }
             ir::Expression::Match { arms, .. } => {
                 for arm in arms {
-                    collect_dom_programs(&arm.block.statements, comp_ctx, output);
+                    collect_dom_programs(&arm.block.statements, output);
                 }
             }
             ir::Expression::Iter { inner_block, .. } => {
-                collect_dom_programs(&inner_block.statements, comp_ctx, output);
+                collect_dom_programs(&inner_block.statements, output);
             }
             _ => {}
         }
     }
 }
 
-pub fn generate_dom_program(program: &ir::ConstDomProgram, comp_ctx: &CompCtx) -> TokenStream {
+pub fn generate_dom_program(program: &ir::ConstDomProgram) -> TokenStream {
     let opcodes = program.opcodes.iter().map(|opcode| match opcode {
         ir::DomOpCode::EnterElement(lit_str) => quote! {
             ::hypp::ConstOpCode::EnterElement(#lit_str),
@@ -285,7 +281,7 @@ fn gen_fixed_span_struct(
     comp_ctx: &CompCtx,
 ) -> TokenStream {
     let span_ident = if let Some(span_type) = span_type {
-        span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment)
+        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment)
     } else {
         quote! { RootSpan }
     };
@@ -299,11 +295,10 @@ fn gen_fixed_span_struct(
     let struct_field_defs = block
         .struct_fields
         .iter()
-        .map(|field| field.field_def_tokens(&comp_ctx, Scope::Component));
+        .map(|field| field.field_def_tokens(Scope::Component));
 
     let span_pass = block.gen_span_pass(
         ir::DomDepth(0),
-        &comp_ctx,
         CodegenCtx {
             component_kind: comp_ctx.kind,
             function: Function::SpanPass,
@@ -352,8 +347,7 @@ fn gen_dynamic_span_enum(
     dom_depth: ir::DomDepth,
     comp_ctx: &CompCtx,
 ) -> TokenStream {
-    let span_ident =
-        span_type.to_tokens(comp_ctx, Scope::DynamicSpan, StructFieldFormat::PathSegment);
+    let span_ident = span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment);
 
     let variant_defs = arms.iter().map(|arm| {
         let variant = &arm.variant;
@@ -361,7 +355,7 @@ fn gen_dynamic_span_enum(
             .block
             .struct_fields
             .iter()
-            .map(|field| field.field_def_tokens(comp_ctx, Scope::DynamicSpan));
+            .map(|field| field.field_def_tokens(Scope::DynamicSpan));
 
         quote! {
             #variant {
@@ -373,7 +367,6 @@ fn gen_dynamic_span_enum(
     let span_pass_arms = arms.iter().map(|ir::Arm { variant, block, .. }| {
         let span_pass = block.gen_span_pass(
             dom_depth,
-            comp_ctx,
             CodegenCtx {
                 component_kind: comp_ctx.kind,
                 function: Function::SpanPass,
@@ -466,11 +459,9 @@ fn gen_dynamic_span_enum(
 }
 
 impl ir::StructField {
-    pub fn field_def_tokens(&self, comp_ctx: &CompCtx, scope: Scope) -> TokenStream {
+    pub fn field_def_tokens(&self, scope: Scope) -> TokenStream {
         let ident = &self.ident;
-        let ty = self
-            .ty
-            .to_tokens(comp_ctx, scope, StructFieldFormat::TypeInStruct);
+        let ty = self.ty.to_tokens(scope, StructFieldFormat::TypeInStruct);
 
         quote! { #ident: #ty, }
     }
@@ -525,12 +516,7 @@ impl ir::Block {
     ///
     /// Generate code for the Span::pass method
     ///
-    pub fn gen_span_pass(
-        &self,
-        base_dom_depth: ir::DomDepth,
-        comp_ctx: &CompCtx,
-        ctx: CodegenCtx,
-    ) -> JoinedFieldCode {
+    pub fn gen_span_pass(&self, base_dom_depth: ir::DomDepth, ctx: CodegenCtx) -> JoinedFieldCode {
         let mut sub_spans: Vec<FieldCode> = vec![];
 
         for statement in &self.statements {
@@ -678,12 +664,7 @@ pub enum StructFieldFormat {
 }
 
 impl ir::StructFieldType {
-    pub fn to_tokens(
-        &self,
-        comp_ctx: &CompCtx,
-        scope: Scope,
-        format: StructFieldFormat,
-    ) -> TokenStream {
+    pub fn to_tokens(&self, scope: Scope, format: StructFieldFormat) -> TokenStream {
         let generics = match format {
             StructFieldFormat::TypeInStruct | StructFieldFormat::InnerType => quote! { <H> },
             StructFieldFormat::PathSegment => quote! {},

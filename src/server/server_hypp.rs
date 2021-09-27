@@ -57,6 +57,10 @@ impl Hypp for ServerHypp {
     /// Server has no real callback slots
     type CallbackSlot = ();
 
+    fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
+        Arc::new(Mutex::new(value))
+    }
+
     fn mount<M: Mount<ServerHypp> + 'static>(&mut self) -> Result<(), Error> {
         let mut builder = self.builder_at_body();
         let mounted = M::mount(&mut builder)?;

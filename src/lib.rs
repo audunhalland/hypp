@@ -8,6 +8,7 @@
 
 pub mod prelude;
 
+pub mod comp;
 pub mod error;
 pub mod handle;
 pub mod list;
@@ -54,7 +55,7 @@ pub trait Hypp: Sized {
     where
         T: 'static;
 
-    // type SharedHandle<T>: handle::Handle<T>;
+    fn make_shared<T: 'static>(value: T) -> Self::Shared<T>;
 
     /// Mount something at the root.
     fn mount<M: Mount<Self> + 'static>(&mut self) -> Result<(), Error>;
@@ -238,7 +239,7 @@ pub trait Span<H: Hypp> {
 /// and that method implementation must 'pass' the cursor over
 /// the component's owned DOM.
 ///
-pub trait Component<'p, H: Hypp>: Sized + Span<H> + handle::ToHandle {
+pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// The type of properties this component recieves
     type Props: 'p;
 

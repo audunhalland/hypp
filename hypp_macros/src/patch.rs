@@ -391,8 +391,7 @@ fn compile_body<'c>(
     let constructor_path = match constructor_kind {
         SpanConstructorKind::FixedSpan(opt_span_type) => match opt_span_type {
             Some(span_type) => {
-                let path_segment =
-                    span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+                let path_segment = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
                 quote! {
                     #path_segment
                 }
@@ -402,8 +401,7 @@ fn compile_body<'c>(
             }
         },
         SpanConstructorKind::DynamicSpan { span_type, variant } => {
-            let span_ident =
-                span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+            let span_ident = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
 
             quote! {
                 #span_ident::#variant
@@ -450,8 +448,7 @@ fn gen_match_closure<'c>(
 ) -> Closure<'c> {
     let field = statement.field.unwrap();
     let field_expr = FieldExpr(field, ctx);
-    let dynamic_span_path_segment =
-        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+    let dynamic_span_path_segment = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
 
     let pattern_arms = arms.iter().map(
         |ir::Arm {
@@ -515,8 +512,7 @@ fn gen_match_closure<'c>(
         Ok(())
     };
 
-    let dynamic_span_full_type =
-        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::TypeInStruct);
+    let dynamic_span_full_type = span_type.to_tokens(ctx.scope, StructFieldFormat::TypeInStruct);
 
     Closure {
         comp_ctx,
@@ -548,8 +544,7 @@ fn gen_iter_item_closure<'c>(
         SpanConstructorKind::FixedSpan(Some(span_type)),
     );
 
-    let fixed_span_path_segment =
-        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::PathSegment);
+    let fixed_span_path_segment = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
 
     let fields = inner_block
         .struct_fields
@@ -572,8 +567,7 @@ fn gen_iter_item_closure<'c>(
         Ok(())
     };
 
-    let fixed_span_full_type =
-        span_type.to_tokens(comp_ctx, ctx.scope, StructFieldFormat::InnerType);
+    let fixed_span_full_type = span_type.to_tokens(ctx.scope, StructFieldFormat::InnerType);
 
     Closure {
         comp_ctx,

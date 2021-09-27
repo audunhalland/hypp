@@ -48,7 +48,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     } = gen_public_props_struct(&params, &comp_ctx);
     let env_struct = gen_env_struct(&params);
     let fn_props_destructuring = gen_fn_props_destructuring(&params, &comp_ctx);
-    let mount_body = gen_mount_body(&params, &comp_ctx);
     let env_locals = gen_env_locals(&params);
     let props_updater = gen_props_updater(&params);
     let shim = if comp_ctx.kind.is_self_updatable() {
@@ -56,6 +55,38 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     } else {
         quote! {}
     };
+
+    let component_inner_ty = match comp_ctx.kind {
+        ir::ComponentKind::Basic => quote! {
+            ::hypp::comp::UniqueInner<#mod_ident::Env, #mod_ident::RootSpan<H>>
+        },
+        ir::ComponentKind::SelfUpdatable => quote! {
+            ::hypp::comp::SharedInner<H, Self, #mod_ident::Env, #mod_ident::RootSpan<H>>,
+        },
+    };
+
+    let env_expr = gen_env_expr(&params);
+    let n_params = params.iter().count();
+    let mount_body = match comp_ctx.kind {
+        ir::ComponentKind::Basic => quote! {
+            ::hypp::comp::UniqueInner::mount::<_, _, _, _, #n_params>(
+                #mod_ident::#env_expr,
+                __cursor,
+                #mod_ident::patch,
+                |inner| Self(inner),
+            )
+        },
+        ir::ComponentKind::SelfUpdatable => quote! {
+            ::hypp::comp::SharedInner::mount::<_, _, _, 42>(
+                #mod_ident::#env_expr,
+                __cursor,
+                #mod_ident::patch,
+                |inner| Self(inner),
+                |outer, weak| outer.0.weak_self = Some(weak),
+            )
+        },
+    };
+
     let shim_impls = if comp_ctx.kind.is_self_updatable() {
         Some(gen_shim_impls(&params, &comp_ctx))
     } else {
@@ -66,20 +97,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         Some(quote! { <'p> })
     } else {
         None
-    };
-
-    let component_field_defs = match comp_ctx.kind {
-        ir::ComponentKind::Basic => quote! {
-            env: #mod_ident::Env,
-            root_span: #mod_ident::RootSpan<H>,
-        },
-        ir::ComponentKind::SelfUpdatable => quote! {
-            env: #mod_ident::Env,
-            root_span: #mod_ident::RootSpan<H>,
-            anchor: H::Anchor,
-            weak_self: Option<<H::Shared<Self> as SharedHandle<Self>>::Weak>
-
-        },
     };
 
     let patch_fn = crate::patch::gen_patch_fn(
@@ -94,32 +111,11 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
     );
 
-    let fn_span_pass_over = match comp_ctx.kind {
-        ir::ComponentKind::SelfUpdatable => Some(quote! {
-            fn pass_over(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                // Self updating! This component needs to store the updated anchor.
-                self.anchor = __cursor.anchor();
-                self.pass(__cursor, ::hypp::SpanOp::PassOver)
-            }
-        }),
-        ir::ComponentKind::Basic => None,
-    };
-
-    let fn_span_erase = match comp_ctx.kind {
-        ir::ComponentKind::SelfUpdatable => Some(quote! {
-            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
-                self.weak_self = None;
-                self.pass(__cursor, ::hypp::SpanOp::Erase)
-            }
-        }),
-        ir::ComponentKind::Basic => None,
-    };
-
     let pass_props_patch_call = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
             #mod_ident::patch(
-                ::hypp::InputOrOutput::Input(&mut self.root_span),
-                &self.env,
+                ::hypp::InputOrOutput::Input(&mut self.0.root_span),
+                &self.0.env,
                 &__updates,
                 &mut ::hypp::PatchCtx {
                     cur: __cursor,
@@ -127,10 +123,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             ).unwrap();
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
+            let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
             #mod_ident::patch(
-                ::hypp::InputOrOutput::Input(&mut self.root_span),
-                &self.env,
+                ::hypp::InputOrOutput::Input(&mut self.0.root_span),
+                &self.0.env,
                 &__updates,
                 &mut ::hypp::PatchBindCtx {
                     cur: __cursor,
@@ -157,9 +153,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     quote! {
         #public_props_struct
 
-        pub struct #component_ident<H: ::hypp::Hypp + 'static> {
-            #component_field_defs
-        }
+        pub struct #component_ident<H: ::hypp::Hypp + 'static>(#component_inner_ty);
 
         mod #mod_ident {
             use super::*;
@@ -179,15 +173,12 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #component_ident<H> {
                 fn is_anchored(&self) -> bool {
-                    unimplemented!()
+                    self.0.is_anchored()
                 }
 
-                fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
-                    ::hypp::span::pass(&mut [&mut self.root_span], __cursor, op)
+                fn pass(&mut self, cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                    self.0.pass(cursor, op)
                 }
-
-                #fn_span_pass_over
-                #fn_span_erase
             }
 
             impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
@@ -227,7 +218,7 @@ fn analyze_ast(
     let comp_ctx = CompCtx::new(ident, component_kind);
 
     let mut dom_programs = vec![];
-    collect_dom_programs(&root_block.statements, &comp_ctx, &mut dom_programs);
+    collect_dom_programs(&root_block.statements, &mut dom_programs);
 
     let mut span_typedefs = vec![];
     collect_span_typedefs(&root_block, None, &comp_ctx, &mut span_typedefs);
@@ -313,82 +304,12 @@ fn gen_env_struct(params: &[param::Param]) -> TokenStream {
     }
 }
 
-// TODO: A lot in this function is very similar for a lot
-// of components. Find a way to make a lib generic function.
-fn gen_mount_body(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
-    let mod_ident = &comp_ctx.mod_ident;
-    let n_params = params.iter().count();
-    let component_ident = &comp_ctx.component_ident;
-
+fn gen_env_expr(params: &[param::Param]) -> TokenStream {
     let env_params = params.iter().map(param::Param::owned_struct_param_tokens);
-
-    let anchor_binder_locals = if comp_ctx.kind.is_self_updatable() {
-        Some(quote! {
-            let anchor = __cursor.anchor();
-            let mut binder: ::hypp::shim::LazyBinder<H, Self> = ::hypp::shim::LazyBinder::new();
-        })
-    } else {
-        None
-    };
-
-    let patch_ctx_arg = if comp_ctx.kind.is_self_updatable() {
-        quote! {
-            ::hypp::PatchBindCtx {
-                cur: __cursor,
-                bind: &mut binder,
-            }
-        }
-    } else {
-        quote! {
-            ::hypp::PatchCtx { cur: __cursor }
-        }
-    };
-
-    let component_constructor = if comp_ctx.kind.is_self_updatable() {
-        quote! {
-            let mut handle = #component_ident {
-                env,
-                root_span: root_span.unwrap(),
-                anchor,
-                weak_self: None,
-            }.to_handle();
-
-            let weak = handle.downgrade();
-            // Bind callbacks that we collected
-            binder.bind_all(weak.clone());
-            // In the future, the component needs to bind new callbacks.
-            // therefore it needs a self-reference:
-            handle.get_mut().weak_self = Some(weak);
-
-            Ok(handle)
-        }
-    } else {
-        quote! {
-            Ok(::hypp::handle::Unique::new(#component_ident {
-                env,
-                root_span: root_span.unwrap(),
-            }))
-        }
-    };
-
     quote! {
-        let env = #mod_ident::Env {
+        Env {
             #(#env_params)*
-        };
-
-        // When mounting, everything is "out of date"!
-        let updates: [bool; #n_params] = [true; #n_params];
-
-        #anchor_binder_locals
-        let mut root_span = None;
-        #mod_ident::patch(
-            ::hypp::InputOrOutput::Output(&mut root_span),
-            &env,
-            &updates,
-            &mut #patch_ctx_arg
-        )?;
-
-        #component_constructor
+        }
     }
 }
 
@@ -465,26 +386,26 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
             param::ParamKind::Prop(root_ty) => {
                 let self_prop_as_ref = match root_ty {
                     param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident },
-                        param::ParamLeafType::Ref(_) => quote! { &self.env.#ident },
+                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident },
+                        param::ParamLeafType::Ref(_) => quote! { &self.0.env.#ident },
                     },
                     param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident },
-                        param::ParamLeafType::Ref(_) => quote! {self.env.#ident.as_deref() },
+                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident },
+                        param::ParamLeafType::Ref(_) => quote! {self.0.env.#ident.as_deref() },
                     },
                 };
 
                 let write = match root_ty {
                     param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident = #ident; },
+                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident = #ident; },
                         param::ParamLeafType::Ref(_) => quote! {
-                            self.env.#ident = #ident.to_owned();
+                            self.0.env.#ident = #ident.to_owned();
                         },
                     },
                     param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.env.#ident = #ident; },
+                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident = #ident; },
                         param::ParamLeafType::Ref(_) => quote! {
-                            self.env.#ident = #ident.map(|val| val.to_owned());
+                            self.0.env.#ident = #ident.map(|val| val.to_owned());
                         },
                     },
                 };
@@ -566,13 +487,13 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
         let ident = &param.ident;
         match &param.kind {
             param::ParamKind::Prop(_) => quote! {
-                #ident: &self.env.#ident,
+                #ident: &self.0.env.#ident,
             },
             param::ParamKind::State(_) => {
                 let update_ident = state_update_idents[param.id as usize].as_ref().unwrap();
 
                 quote! {
-                    #ident: ::hypp::state_ref::StateRef::new(&mut self.env.#ident, &mut #update_ident),
+                    #ident: ::hypp::state_ref::StateRef::new(&mut self.0.env.#ident, &mut #update_ident),
                 }
             }
         }
@@ -597,11 +518,11 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
                 method.0(&mut shim);
 
-                let mut cursor = self.anchor.create_builder();
-                let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.weak_self);
+                let mut cursor = self.0.anchor.create_builder();
+                let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
                 #mod_ident::patch(
-                    ::hypp::InputOrOutput::Input(&mut self.root_span),
-                    &self.env,
+                    ::hypp::InputOrOutput::Input(&mut self.0.root_span),
+                    &self.0.env,
                     &[#(#updates_array_items),*],
                     &mut ::hypp::PatchBindCtx {
                         cur: &mut cursor,

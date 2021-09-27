@@ -91,6 +91,10 @@ impl Hypp for WebHypp {
 
     type CallbackSlot = callback::WebCallbackSlot;
 
+    fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
+        Rc::new(RefCell::new(value))
+    }
+
     fn mount<M: Mount<WebHypp> + 'static>(&mut self) -> Result<(), Error> {
         let mut builder = self.builder_at_body();
         let mounted = M::mount(&mut builder)?;
