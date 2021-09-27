@@ -503,7 +503,7 @@ impl ir::ParamDeps {
                 });
 
                 quote! {
-                    #(#clauses)||*
+                    __invalidated || #(#clauses)||*
                 }
             }
             Self::All => quote! { true },

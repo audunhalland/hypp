@@ -24,11 +24,11 @@ where
         &mut self,
         mut data_iterator: I,
         mut inner_patch_fn: F,
-        mut ctx: &mut C,
+        ctx: &mut C,
     ) -> Result<(), crate::Error>
     where
         I: DoubleEndedIterator<Item = D>,
-        F: FnMut(InputOrOutput<S>, D, &mut C) -> Result<(), crate::Error>,
+        F: FnMut(InputOrOutput<S>, D, bool, &mut C) -> Result<(), crate::Error>,
         C: GetCursor<H> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
@@ -39,10 +39,20 @@ where
 
         while let Some(data_item) = next_data_item(&mut data_iterator) {
             if index < self.spans.len() {
-                inner_patch_fn(InputOrOutput::Input(&mut self.spans[index]), data_item, ctx)?;
+                inner_patch_fn(
+                    InputOrOutput::Input(&mut self.spans[index]),
+                    data_item,
+                    true, // invalidated.
+                    ctx,
+                )?;
             } else {
                 let mut new_inner = None;
-                inner_patch_fn(InputOrOutput::Output(&mut new_inner), data_item, ctx)?;
+                inner_patch_fn(
+                    InputOrOutput::Output(&mut new_inner),
+                    data_item,
+                    true, // invalidated.
+                    ctx,
+                )?;
                 self.spans.push(new_inner.unwrap());
             }
             index += 1;
@@ -136,6 +146,7 @@ mod tests {
     ) {
         let patch_fake_span_inner = |inout: InputOrOutput<FakeSpan>,
                                      data: &'static str,
+                                     _invalidated: bool,
                                      ctx: &mut PatchCtx<ServerHypp>|
          -> Result<(), crate::Error> {
             match inout {

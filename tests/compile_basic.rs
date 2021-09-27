@@ -299,7 +299,6 @@ fn render_recursive_server() {
     assert_eq!(hypp.render(), "<body/>");
 }
 
-// doesn't work yet
 component! {
     List(_items: &[String]) {}
 

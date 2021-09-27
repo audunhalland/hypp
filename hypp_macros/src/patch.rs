@@ -45,6 +45,9 @@ pub fn gen_patch_fn(
 
             #(#fn_stmts)*
 
+            // closures may shadow this variable
+            let __invalidated = false;
+
             #(#closures)*
 
             match __root {
@@ -583,6 +586,7 @@ fn gen_iter_item_closure<'c>(
         args: quote! {
             __span: ::hypp::InputOrOutput<#fixed_span_full_type>,
             #iter_variable: &String,
+            __invalidated: bool,
         },
         body,
     }
