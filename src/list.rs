@@ -24,11 +24,11 @@ where
         &mut self,
         mut data_iterator: I,
         mut inner_patch_fn: F,
-        mut ctx: C,
+        mut ctx: &mut C,
     ) -> Result<(), crate::Error>
     where
         I: DoubleEndedIterator<Item = D>,
-        F: FnMut(InputOrOutput<S>, D) -> Result<(), crate::Error>,
+        F: FnMut(InputOrOutput<S>, D, &mut C) -> Result<(), crate::Error>,
         C: GetCursor<H> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
@@ -39,10 +39,10 @@ where
 
         while let Some(data_item) = next_data_item(&mut data_iterator) {
             if index < self.spans.len() {
-                inner_patch_fn(InputOrOutput::Input(&mut self.spans[index]), data_item)?;
+                inner_patch_fn(InputOrOutput::Input(&mut self.spans[index]), data_item, ctx)?;
             } else {
                 let mut new_inner = None;
-                inner_patch_fn(InputOrOutput::Output(&mut new_inner), data_item)?;
+                inner_patch_fn(InputOrOutput::Output(&mut new_inner), data_item, ctx)?;
                 self.spans.push(new_inner.unwrap());
             }
             index += 1;
@@ -134,24 +134,26 @@ mod tests {
         fake_patcher: &mut FakePatcher,
         data: Vec<&'static str>,
     ) {
-        let patch_fake_span_inner =
-            |inout: InputOrOutput<FakeSpan>, data: &'static str| -> Result<(), crate::Error> {
-                match inout {
-                    InputOrOutput::Input(span) => {
-                        span.value = data;
-                    }
-                    InputOrOutput::Output(span) => {
-                        let generation = fake_patcher.gen_counter;
-                        fake_patcher.gen_counter += 1;
-                        *span = Some(FakeSpan {
-                            generation,
-                            value: data,
-                        });
-                    }
+        let patch_fake_span_inner = |inout: InputOrOutput<FakeSpan>,
+                                     data: &'static str,
+                                     ctx: &mut PatchCtx<ServerHypp>|
+         -> Result<(), crate::Error> {
+            match inout {
+                InputOrOutput::Input(span) => {
+                    span.value = data;
                 }
+                InputOrOutput::Output(span) => {
+                    let generation = fake_patcher.gen_counter;
+                    fake_patcher.gen_counter += 1;
+                    *span = Some(FakeSpan {
+                        generation,
+                        value: data,
+                    });
+                }
+            }
 
-                Ok(())
-            };
+            Ok(())
+        };
 
         let mut patch_ctx = PatchCtx { cur: cursor };
         list_span

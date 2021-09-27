@@ -360,7 +360,7 @@ pub struct PatchCtx<'a, H: Hypp> {
     pub cur: &'a mut dyn Cursor<H>,
 }
 
-impl<'a, H: Hypp> GetCursor<H> for &mut PatchCtx<'a, H> {
+impl<'a, H: Hypp> GetCursor<H> for PatchCtx<'a, H> {
     fn get_cursor(&mut self) -> &mut dyn Cursor<H> {
         self.cur
     }
@@ -374,7 +374,7 @@ pub struct PatchBindCtx<'a, H: Hypp, T: ShimTrampoline> {
     pub bind: &'a mut dyn BindCallback<H, T>,
 }
 
-impl<'a, H: Hypp, T: ShimTrampoline> GetCursor<H> for &mut PatchBindCtx<'a, H, T> {
+impl<'a, H: Hypp, T: ShimTrampoline> GetCursor<H> for PatchBindCtx<'a, H, T> {
     fn get_cursor(&mut self) -> &mut dyn Cursor<H> {
         self.cur
     }
