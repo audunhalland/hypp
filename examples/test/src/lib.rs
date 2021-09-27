@@ -14,7 +14,7 @@ hypp::component! {
         *self.toggled = !*self.toggled;
     }
 
-    <Headline toggled={toggled} />
+    <Headline toggled={*toggled} />
     <div>
         <button on_click={Self::handle_click}>
         if toggled {

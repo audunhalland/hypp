@@ -371,7 +371,6 @@ component! {
     }
 }
 
-// Experimentation with new surface syntax
 component! {
     Toggle<Html>(prop1: bool, prop2: &str) {
         toggled: bool,
@@ -415,6 +414,30 @@ component! {
             }
         </button>
     }
+}
+
+component! {
+    AddToList<Html>() {
+        items: Vec<String>
+    }
+
+    fn add_item(&mut self) {
+        let count = self.items.len();
+        self.items.push(format!("Item {}", count));
+    }
+
+    <div>
+        <button on_click={Self::add_item}>"Add item"</button>
+        if items.is_empty() {
+            "No items"
+        } else {
+            <ul>
+                for item in items {
+                    <li>{item}</li>
+                }
+            </ul>
+        }
+    </div>
 }
 
 #[derive(Clone, Eq, PartialEq)]

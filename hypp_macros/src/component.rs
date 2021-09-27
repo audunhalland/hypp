@@ -443,7 +443,7 @@ fn gen_env_locals(params: &[param::Param]) -> TokenStream {
             },
             param::ParamKind::State(_) => quote! {
                 // err... take reference maybe?
-                let #ident = __env.#ident;
+                let #ident = &__env.#ident;
             },
         }
     });
