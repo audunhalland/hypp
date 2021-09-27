@@ -300,13 +300,45 @@ fn render_recursive_server() {
 }
 
 component! {
-    List(_items: &[String]) {}
+    List(items: &[String]) {}
 
     <ul>
-    for item in _items {
+    for item in items {
         <li>{item}</li>
     }
     </ul>
+}
+
+#[test]
+fn render_list() {
+    let hypp = hypp::server::ServerHypp::new();
+    let strings1 = ["foo".to_string(), "bar".to_string()];
+    let strings2 = ["bar".to_string(), "baz".to_string()];
+
+    let mut c = List::mount(
+        __ListProps { items: &strings1 },
+        &mut hypp.builder_at_body(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        hypp.render(),
+        "<body><ul><li>foo</li><li>bar</li></ul></body>"
+    );
+
+    c.get_mut().pass_props(
+        __ListProps { items: &strings2 },
+        &mut hypp.builder_at_body(),
+    );
+
+    assert_eq!(
+        hypp.render(),
+        "<body><ul><li>bar</li><li>baz</li></ul></body>"
+    );
+
+    c.get_mut().erase(&mut hypp.builder_at_body());
+
+    assert_eq!(hypp.render(), "<body/>");
 }
 
 component! {

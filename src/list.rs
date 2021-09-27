@@ -147,7 +147,7 @@ mod tests {
         let patch_fake_span_inner = |inout: InputOrOutput<FakeSpan>,
                                      data: &'static str,
                                      _invalidated: bool,
-                                     ctx: &mut PatchCtx<ServerHypp>|
+                                     _ctx: &mut PatchCtx<ServerHypp>|
          -> Result<(), crate::Error> {
             match inout {
                 InputOrOutput::Input(span) => {
