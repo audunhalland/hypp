@@ -4,12 +4,14 @@
 
 use syn::parse::{Parse, ParseStream};
 
+use crate::namespace::Namespace;
 use crate::param;
 use crate::param::ParamKind;
 use crate::template_ast;
 
 pub struct Component {
     pub ident: syn::Ident,
+    pub namespace: Namespace,
     pub params: Vec<param::Param>,
     pub methods: Vec<syn::ItemFn>,
     pub template: template_ast::Node,
@@ -18,6 +20,7 @@ pub struct Component {
 impl Parse for Component {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = input.parse()?;
+        let namespace = input.parse()?;
 
         let props_content;
         syn::parenthesized!(props_content in input);
@@ -49,10 +52,27 @@ impl Parse for Component {
 
         Ok(Self {
             ident,
+            namespace,
             params,
             methods,
             template,
         })
+    }
+}
+
+impl Parse for Namespace {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        input.parse::<syn::token::Lt>()?;
+        let ident: syn::Ident = input.parse()?;
+        input.parse::<syn::token::Gt>()?;
+
+        match ident.to_string().as_ref() {
+            "Html" => Ok(Self::Html),
+            other => Err(syn::Error::new(
+                ident.span(),
+                format!("Unrecognized namespace {}", other),
+            )),
+        }
     }
 }
 

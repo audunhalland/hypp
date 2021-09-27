@@ -11,6 +11,7 @@ use syn::spanned::Spanned;
 use crate::callback;
 use crate::flow;
 use crate::ir;
+use crate::namespace::TraversalDirection;
 use crate::param;
 use crate::template_ast;
 
@@ -18,15 +19,6 @@ use crate::template_ast;
 pub enum LoweringError {
     InvalidCallback(proc_macro2::Span),
     InvalidAttribute(proc_macro2::Span),
-}
-
-// Which direction lowering will lower children,
-// affecting the generated code.
-// It will be constant for a specific implementation of Hypp.
-#[allow(unused)]
-pub enum TraversalDirection {
-    FirstToLast,
-    LastToFirst,
 }
 
 // Minimum size of programs to directly skip when

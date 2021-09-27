@@ -210,13 +210,14 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 fn analyze_ast(
     component_ast::Component {
         ident,
+        namespace,
         params,
         methods,
         template,
     }: component_ast::Component,
 ) -> Component {
     let (component_kind, root_block) =
-        lowering::lower_root_node(template, lowering::TraversalDirection::LastToFirst, &params)
+        lowering::lower_root_node(template, namespace.traversal_direction(), &params)
             .expect("Compile error: Lowering problem");
 
     // Root idents which are used as prefixes for every global ident generated:

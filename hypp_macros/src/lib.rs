@@ -11,10 +11,14 @@ mod flow;
 mod ir;
 mod lowering;
 mod misc_codegen;
+mod namespace;
 mod param;
 mod patch;
 mod template_ast;
 
+///
+/// HTML component.
+///
 #[proc_macro]
 pub fn component(input: TokenStream) -> proc_macro::TokenStream {
     let output =
@@ -23,6 +27,9 @@ pub fn component(input: TokenStream) -> proc_macro::TokenStream {
     TokenStream::from(output)
 }
 
+///
+/// HTML component, with a debug-printout of the generated code.
+///
 #[proc_macro]
 pub fn component_dbg(input: TokenStream) -> proc_macro::TokenStream {
     let output =

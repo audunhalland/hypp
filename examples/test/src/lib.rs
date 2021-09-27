@@ -5,7 +5,7 @@ use hypp::prelude::*;
 use wasm_bindgen::prelude::*;
 
 hypp::component! {
-    App() {
+    App<Html>() {
         toggled: bool,
     }
 
@@ -27,7 +27,7 @@ hypp::component! {
 }
 
 hypp::component! {
-    Headline(toggled: bool) {}
+    Headline<Html>(toggled: bool) {}
 
     <div>
         if toggled {

@@ -3,7 +3,7 @@
 use hypp::prelude::*;
 
 component! {
-    Foo(is_cool: bool) {}
+    Foo<Html>(is_cool: bool) {}
 
     // let label = if is_cool { "cool" } else { "dull" };
 
@@ -45,20 +45,20 @@ mod inside {
     use super::*;
 
     component! {
-        P1(text: &str) {}
+        P1<Html>(text: &str) {}
 
         <p>{text}</p>
     }
 
     component! {
-        P2() {}
+        P2<Html>() {}
 
         <p>"static"</p>
     }
 }
 
 component! {
-    Baz() {}
+    Baz<Html>() {}
 
     <div>
         // En kommentar
@@ -79,7 +79,7 @@ fn render_baz_server() {
 }
 
 component! {
-    Conditional(hello: bool, world: bool) {}
+    Conditional<Html>(hello: bool, world: bool) {}
 
     <div>
         if hello {
@@ -150,7 +150,7 @@ fn render_conditional_server() {
 }
 
 component! {
-    ConditionalWithVariableText(hello: bool, yo: &str) {}
+    ConditionalWithVariableText<Html>(hello: bool, yo: &str) {}
 
     <div>
     if hello {
@@ -160,7 +160,7 @@ component! {
 }
 
 component! {
-    ConditionalWithComponent(hello: bool) {}
+    ConditionalWithComponent<Html>(hello: bool) {}
 
     <div>
     if hello {
@@ -170,13 +170,13 @@ component! {
 }
 
 component! {
-    ITakeANumber(number: u32) {}
+    ITakeANumber<Html>(number: u32) {}
 
     "num"
 }
 
 component! {
-    IfLet(opt_number: Option<u32>) {}
+    IfLet<Html>(opt_number: Option<u32>) {}
 
     <article>
         if let Some(number) = opt_number {
@@ -220,7 +220,7 @@ fn render_iflet_server() {
 }
 
 component! {
-    OptionString(opt_str: Option<&str>) {}
+    OptionString<Html>(opt_str: Option<&str>) {}
 
     <article>
         if let Some(str) = opt_str {
@@ -230,7 +230,7 @@ component! {
 }
 
 component! {
-    Fragment1(perhaps: bool) {}
+    Fragment1<Html>(perhaps: bool) {}
 
     <div>"first"</div>
     if perhaps {
@@ -268,7 +268,7 @@ fn render_fragment1() {
 }
 
 component! {
-    Recursive(depth: usize) {}
+    Recursive<Html>(depth: usize) {}
 
     <span>
         {format!("{}", depth)}
@@ -300,7 +300,7 @@ fn render_recursive_server() {
 }
 
 component! {
-    List(items: &[String]) {}
+    List<Html>(items: &[String]) {}
 
     <ul>
     for item in items {
@@ -342,7 +342,7 @@ fn render_list() {
 }
 
 component! {
-    TopLevelConditional(lol: bool, text: &str) {}
+    TopLevelConditional<Html>(lol: bool, text: &str) {}
 
     if lol {
         {text}
@@ -352,17 +352,17 @@ component! {
 }
 
 component! {
-    StringProp1(arg: &str) {}
+    StringProp1<Html>(arg: &str) {}
     <p>{arg}</p>
 }
 
 component! {
-    StringProp2(arg: &str) {}
+    StringProp2<Html>(arg: &str) {}
     <div>{arg}</div>
 }
 
 component! {
-    ConditionalStringProp(arg: &str, draw_one: bool) {}
+    ConditionalStringProp<Html>(arg: &str, draw_one: bool) {}
 
     if draw_one {
         <StringProp1 arg={arg} />
@@ -373,7 +373,7 @@ component! {
 
 // Experimentation with new surface syntax
 component! {
-    Toggle(prop1: bool, prop2: &str) {
+    Toggle<Html>(prop1: bool, prop2: &str) {
         toggled: bool,
     }
 
@@ -398,7 +398,7 @@ component! {
 }
 
 component! {
-    ConditionalCallback(show_button: bool) {
+    ConditionalCallback<Html>(show_button: bool) {
         toggled: bool
     }
 
@@ -425,7 +425,7 @@ pub enum E {
 }
 
 component! {
-    Enum(e: &E) {}
+    Enum<Html>(e: &E) {}
 
     <div>
         match e {
