@@ -33,9 +33,9 @@ pub fn gen_patch_fn(
         .map(ir::StructField::mut_pattern_tokens);
 
     quote! {
-        pub fn patch<H: ::hypp::Hypp>(
-            __root: ::hypp::Duplex<RootSpan<H>>,
-            __env: &Env,
+        pub fn __patch<H: ::hypp::Hypp>(
+            __root: ::hypp::Duplex<__RootSpan<H>>,
+            __env: &__Env,
             __updates: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
@@ -53,7 +53,7 @@ pub fn gen_patch_fn(
                     #mount_locals
                     *__root = Some(#mount_expr);
                 }
-                ::hypp::Duplex::In(RootSpan { #(#fields)* .. }) => {
+                ::hypp::Duplex::In(__RootSpan { #(#fields)* .. }) => {
                     #patch
                 }
             }
@@ -147,7 +147,7 @@ fn compile_body<'c>(
                     local: FieldLocal::Let,
                     field_ident: &stmt.field,
                     init: match last_node_opcode {
-                        Some(ir::DomOpCode::EnterElement(_) | ir::DomOpCode::ExitElement) => {
+                        Some(ir::DomOpCode::Enter(_) | ir::DomOpCode::Exit) => {
                             quote! {
                                 __ctx.cur.const_exec_element(&#program_ident)?;
                             }
@@ -166,10 +166,10 @@ fn compile_body<'c>(
 
                         let field_expr = FieldExpr(*field, ctx);
                         match last_node_opcode {
-                            Some(ir::DomOpCode::EnterElement(_)) => quote! {
+                            Some(ir::DomOpCode::Enter(_)) => quote! {
                                 __ctx.cur.move_to_children_of(&#field_expr);
                             },
-                            Some(ir::DomOpCode::ExitElement | ir::DomOpCode::Text(_)) => quote! {
+                            Some(ir::DomOpCode::Exit | ir::DomOpCode::Text(_)) => quote! {
                                 __ctx.cur.move_to_following_sibling_of(#field_expr.as_node());
                             },
                             _ => panic!(),
@@ -397,7 +397,7 @@ fn compile_body<'c>(
                 }
             }
             None => {
-                quote! { RootSpan }
+                quote! { __RootSpan }
             }
         },
         SpanConstructorKind::DynamicSpan { span_type, variant } => {

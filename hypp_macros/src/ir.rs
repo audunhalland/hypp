@@ -205,29 +205,29 @@ pub struct ConstDomProgram {
 impl ConstDomProgram {
     pub fn last_node_opcode(&self) -> Option<&DomOpCode> {
         self.opcodes.iter().rev().find(|opcode| match opcode {
-            DomOpCode::EnterElement(_) => true,
-            DomOpCode::AttrName(_) => false,
-            DomOpCode::AttrTextValue(_) => false,
+            DomOpCode::Enter(_) => true,
+            DomOpCode::Attr(_) => false,
+            DomOpCode::AttrText(_) => false,
             DomOpCode::Text(_) => true,
-            DomOpCode::ExitElement => true,
+            DomOpCode::Exit => true,
         })
     }
 
     pub fn last_node_type(&self) -> Option<NodeType> {
         self.last_node_opcode().and_then(|opcode| match opcode {
-            DomOpCode::EnterElement(_) | DomOpCode::ExitElement => Some(NodeType::Element),
-            DomOpCode::AttrName(_) | DomOpCode::AttrTextValue(_) => None,
+            DomOpCode::Enter(_) | DomOpCode::Exit => Some(NodeType::Element),
+            DomOpCode::Attr(_) | DomOpCode::AttrText(_) => None,
             DomOpCode::Text(_) => Some(NodeType::Text),
         })
     }
 }
 
 pub enum DomOpCode {
-    EnterElement(syn::LitStr),
-    AttrName(syn::LitStr),
-    AttrTextValue(syn::LitStr),
+    Enter(syn::LitStr),
+    Attr(syn::LitStr),
+    AttrText(syn::LitStr),
     Text(syn::LitStr),
-    ExitElement,
+    Exit,
 }
 
 /// An arm of a conditional

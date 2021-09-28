@@ -59,10 +59,10 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let component_inner_ty = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            ::hypp::comp::UniqueInner<#mod_ident::Env, #mod_ident::RootSpan<H>>
+            ::hypp::comp::UniqueInner<#mod_ident::__Env, #mod_ident::__RootSpan<H>>
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner<H, Self, #mod_ident::Env, #mod_ident::RootSpan<H>>,
+            ::hypp::comp::SharedInner<H, Self, #mod_ident::__Env, #mod_ident::__RootSpan<H>>,
         },
     };
 
@@ -71,17 +71,17 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let mount_body = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
             ::hypp::comp::UniqueInner::mount::<_, _, _, _, _, #n_params>(
-                #mod_ident::#env_expr,
+                #env_expr,
                 cursor,
-                #mod_ident::patch,
+                __patch,
                 |inner| Self(inner),
             )
         },
         ir::ComponentKind::SelfUpdatable => quote! {
             ::hypp::comp::SharedInner::mount::<_, _, _, _, #n_params>(
-                #mod_ident::#env_expr,
+                #env_expr,
                 cursor,
-                #mod_ident::patch,
+                __patch,
                 |inner| Self(inner),
                 |outer, weak_self| outer.0.weak_self = Some(weak_self),
             )
@@ -114,7 +114,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let pass_props_patch_call = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            #mod_ident::patch(
+            __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 &__updates,
@@ -125,7 +125,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         },
         ir::ComponentKind::SelfUpdatable => quote! {
             let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
-            #mod_ident::patch(
+            __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 &__updates,
@@ -304,7 +304,7 @@ fn gen_env_struct(params: &[param::Param]) -> TokenStream {
     });
 
     quote! {
-        pub struct Env {
+        pub struct __Env {
             #(#fields)*
         }
     }
@@ -313,7 +313,7 @@ fn gen_env_struct(params: &[param::Param]) -> TokenStream {
 fn gen_env_expr(params: &[param::Param]) -> TokenStream {
     let env_params = params.iter().map(param::Param::owned_struct_param_tokens);
     quote! {
-        Env {
+        __Env {
             #(#env_params)*
         }
     }
@@ -461,11 +461,11 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
 
     quote! {
         #[allow(dead_code)]
-        pub struct Shim<'c> {
+        pub struct __Shim<'c> {
             #(#fields)*
         }
 
-        impl<'c> Shim<'c> {
+        impl<'c> __Shim<'c> {
             #(#methods)*
         }
     }
@@ -473,7 +473,6 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
 
 fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let component_ident = &comp_ctx.component_ident;
-    let mod_ident = &comp_ctx.mod_ident;
 
     let state_update_idents = params
         .iter()
@@ -512,13 +511,13 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
     quote! {
         impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for #component_ident<H> {
-            type Shim<'s> = Shim<'s>;
+            type Shim<'s> = __Shim<'s>;
 
             fn shim_trampoline(&mut self, method: ::hypp::ShimMethod<Self>)
             {
                 #(#updates_locals)*
 
-                let mut shim = Shim {
+                let mut shim = __Shim {
                     #(#env_fields)*
                 };
 
@@ -526,7 +525,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
                 let mut cursor = self.0.anchor.create_cursor();
                 let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
-                #mod_ident::patch(
+                __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
                     &[#(#updates_array_items),*],

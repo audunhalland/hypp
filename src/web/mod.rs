@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Span, TemplNS};
+use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Span, StaticName, TemplNS};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -298,8 +298,71 @@ impl Cursor<WebHypp> for WebBuilder {
         // The next child is the node itself (so the cursor points before that node)
         self.next_child = Some(node.clone());
     }
+}
 
-    fn skip_const_program(&mut self, _program: &[ConstOpCode]) {
+impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
+    fn const_exec_element(
+        &mut self,
+        program: &[ConstOpCode<NS>],
+    ) -> Result<web_sys::Element, Error> {
+        let mut result = Err(Error::NoProgram);
+
+        for opcode in program {
+            match opcode {
+                ConstOpCode::Enter(etype) => {
+                    result = Ok(self.enter_element(etype.static_name())?);
+                }
+                ConstOpCode::Attr(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttrText(value) => {
+                    self.set_attribute(value)?;
+                }
+                ConstOpCode::Text(text) => {
+                    self.text(text)?;
+                }
+                ConstOpCode::Exit => {
+                    result = Ok(self.exit_element()?);
+                }
+                ConstOpCode::Erase(etype) => {
+                    result = Ok(self.remove_element(etype.static_name())?);
+                }
+            };
+        }
+
+        result
+    }
+
+    fn const_exec_text(&mut self, program: &[ConstOpCode<NS>]) -> Result<web_sys::Text, Error> {
+        let mut result = Err(Error::NoProgram);
+
+        for opcode in program {
+            match opcode {
+                ConstOpCode::Enter(tag_name) => {
+                    self.enter_element(tag_name.static_name())?;
+                }
+                ConstOpCode::Attr(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttrText(value) => {
+                    self.set_attribute(value)?;
+                }
+                ConstOpCode::Text(text) => {
+                    result = Ok(self.text(text)?);
+                }
+                ConstOpCode::Exit => {
+                    self.exit_element()?;
+                }
+                ConstOpCode::Erase(etype) => {
+                    self.remove_element(etype.static_name())?;
+                }
+            };
+        }
+
+        result
+    }
+
+    fn skip_const_program(&mut self, _program: &[ConstOpCode<NS>]) {
         /*
         for opcode in program {
             match opcode {
@@ -333,66 +396,6 @@ impl Cursor<WebHypp> for WebBuilder {
         }
         */
         unimplemented!("Not needed?");
-    }
-}
-
-impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
-    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Element, Error> {
-        let mut result = Err(Error::NoProgram);
-
-        for opcode in program {
-            match opcode {
-                ConstOpCode::EnterElement(tag_name) => {
-                    result = Ok(self.enter_element(tag_name)?);
-                }
-                ConstOpCode::AttributeName(name) => {
-                    self.loaded_attribute_name = Some(name);
-                }
-                ConstOpCode::AttributeTextValue(value) => {
-                    self.set_attribute(value)?;
-                }
-                ConstOpCode::Text(text) => {
-                    self.text(text)?;
-                }
-                ConstOpCode::ExitElement => {
-                    result = Ok(self.exit_element()?);
-                }
-                ConstOpCode::RemoveElement(tag_name) => {
-                    result = Ok(self.remove_element(tag_name)?);
-                }
-            };
-        }
-
-        result
-    }
-
-    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Text, Error> {
-        let mut result = Err(Error::NoProgram);
-
-        for opcode in program {
-            match opcode {
-                ConstOpCode::EnterElement(tag_name) => {
-                    self.enter_element(tag_name)?;
-                }
-                ConstOpCode::AttributeName(name) => {
-                    self.loaded_attribute_name = Some(name);
-                }
-                ConstOpCode::AttributeTextValue(value) => {
-                    self.set_attribute(value)?;
-                }
-                ConstOpCode::Text(text) => {
-                    result = Ok(self.text(text)?);
-                }
-                ConstOpCode::ExitElement => {
-                    self.exit_element()?;
-                }
-                ConstOpCode::RemoveElement(tag_name) => {
-                    self.remove_element(tag_name)?;
-                }
-            };
-        }
-
-        result
     }
 }
 

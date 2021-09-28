@@ -215,7 +215,7 @@ impl BlockBuilder {
     ) -> Result<(), LoweringError> {
         let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
 
-        self.push_dom_opcode(ir::DomOpCode::EnterElement(tag_name.clone()), ctx);
+        self.push_dom_opcode(ir::DomOpCode::Enter(tag_name.clone()), ctx);
 
         for attr in element.attrs {
             self.lower_attr(attr, ctx)?;
@@ -236,7 +236,7 @@ impl BlockBuilder {
             }
         }
 
-        self.push_dom_opcode(ir::DomOpCode::ExitElement, ctx);
+        self.push_dom_opcode(ir::DomOpCode::Exit, ctx);
         ctx.current_dom_depth -= 1;
 
         Ok(())
@@ -252,8 +252,8 @@ impl BlockBuilder {
         match attr.value {
             template_ast::AttrValue::ImplicitTrue => {
                 let attr_value = syn::LitStr::new("true", attr.ident.span());
-                self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
-                self.push_dom_opcode(ir::DomOpCode::AttrTextValue(attr_value), ctx);
+                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name), ctx);
+                self.push_dom_opcode(ir::DomOpCode::AttrText(attr_value), ctx);
                 Ok(())
             }
             template_ast::AttrValue::Literal(lit) => {
@@ -262,8 +262,8 @@ impl BlockBuilder {
                     // BUG: Debug formatting
                     lit => syn::LitStr::new(&format!("{:?}", lit), attr.ident.span()),
                 };
-                self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
-                self.push_dom_opcode(ir::DomOpCode::AttrTextValue(value_lit), ctx);
+                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name), ctx);
+                self.push_dom_opcode(ir::DomOpCode::AttrText(value_lit), ctx);
                 Ok(())
             }
             template_ast::AttrValue::Expr(expr) => match attr_name.value().as_ref() {
@@ -272,7 +272,7 @@ impl BlockBuilder {
                     ctx.callback_count += 1;
 
                     // First push the attribute name into const program:
-                    self.push_dom_opcode(ir::DomOpCode::AttrName(attr_name), ctx);
+                    self.push_dom_opcode(ir::DomOpCode::Attr(attr_name), ctx);
 
                     // Callback must be stored, because it must release ref counts on unmount.
                     let callback_field = ctx.next_field_id();

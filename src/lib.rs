@@ -91,19 +91,19 @@ pub trait AsNode<H: Hypp> {
 /// may be "allocated" in static memory.
 ///
 #[derive(Debug)]
-pub enum ConstOpCode {
+pub enum ConstOpCode<NS: TemplNS> {
     /// Enter an element at the current location, and return it.
     /// The cursor position moves into that element's first child.
     /// The "return value" of this opcode is the element produced.
-    EnterElement(&'static str),
+    Enter(NS::EType),
 
     /// Moves the cursor to a specific attribute name within the current element.
     /// This opcode has no return value, and has no effect on the return value of the whole program.
-    AttributeName(&'static str),
+    Attr(&'static str),
 
     /// Define text-based attribute value on the current attribute.
     /// This opcode has no return value, and has no effect on the return value of the whole program.
-    AttributeTextValue(&'static str),
+    AttrText(&'static str),
 
     /// Define a text node. The cursor moves past this text.
     /// The "return value" of this opcode is the text node produced.
@@ -112,13 +112,13 @@ pub enum ConstOpCode {
     /// Exit the current element, advancing the cursor position to
     /// the element's next sibling.
     /// The "return value" of this opcode is the element just exited.
-    ExitElement,
+    Exit,
 
     /// Remove the element at the current cursor position.
     /// The element's name must match the tag name passed.
     /// The cursor moves to point at the next sibling.
     /// The "return value" of this opcode is the element that has been removed.
-    RemoveElement(&'static str),
+    Erase(NS::EType),
 }
 
 ///
@@ -164,21 +164,21 @@ pub trait Cursor<H: Hypp> {
     fn remove_element(&mut self, tag_name: &'static str) -> Result<H::Element, Error>;
 
     fn remove_text(&mut self) -> Result<H::Text, Error>;
-
-    /// Advance the cursor, according to the const program passed.
-    /// Don't mutate anything.
-    /// The DOM described by the program must match the actual DOM.
-    fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
 pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
     /// Execute a series of opcodes.
     /// The last node opcode must produce an element.
-    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
+    fn const_exec_element(&mut self, program: &[ConstOpCode<NS>]) -> Result<H::Element, Error>;
 
     /// Execute a series of opcodes.
     /// The last node opcode must produce a text node.
-    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
+    fn const_exec_text(&mut self, program: &[ConstOpCode<NS>]) -> Result<H::Text, Error>;
+
+    /// Advance the cursor, according to the const program passed.
+    /// Don't mutate anything.
+    /// The DOM described by the program must match the actual DOM.
+    fn skip_const_program(&mut self, program: &[ConstOpCode<NS>]);
 }
 
 pub trait Anchor<H: Hypp> {

@@ -1,4 +1,4 @@
-use crate::{ConstOpCode, Cursor, Hypp, Span, SpanOp};
+use crate::{ConstOpCode, Cursor, Hypp, Span, SpanOp, TemplNS};
 
 pub trait AsSpan: Sized {
     type Target;
@@ -39,7 +39,7 @@ pub fn pass<H: Hypp>(
 #[derive(Debug)]
 pub struct SpanAdapter<'a, T>(pub &'a T);
 
-impl AsSpan for ConstOpCode {
+impl<NS: TemplNS> AsSpan for ConstOpCode<NS> {
     type Target = Self;
 
     fn as_span<'a>(&'a self) -> SpanAdapter<'a, Self> {
@@ -47,21 +47,21 @@ impl AsSpan for ConstOpCode {
     }
 }
 
-impl<'c> SpanAdapter<'c, ConstOpCode> {
+impl<'c, NS: TemplNS> SpanAdapter<'c, ConstOpCode<NS>> {
     fn is_node(&self) -> bool {
         match &self.0 {
-            ConstOpCode::EnterElement(_) | ConstOpCode::ExitElement | ConstOpCode::Text(_) => true,
+            ConstOpCode::Enter(_) | ConstOpCode::Exit | ConstOpCode::Text(_) => true,
             _ => false,
         }
     }
 }
 
-impl<'a, H: Hypp> Span<H> for SpanAdapter<'a, ConstOpCode> {
+impl<'a, H: Hypp, NS: TemplNS> Span<H> for SpanAdapter<'a, ConstOpCode<NS>> {
     fn is_anchored(&self) -> bool {
         self.is_node()
     }
 
-    #[tracing::instrument(skip(cursor))]
+    // #[tracing::instrument(skip(cursor))]
     fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         if self.is_node() {
             cursor.move_to_following_sibling().unwrap();
@@ -71,7 +71,7 @@ impl<'a, H: Hypp> Span<H> for SpanAdapter<'a, ConstOpCode> {
         }
     }
 
-    #[tracing::instrument(skip(cursor))]
+    // #[tracing::instrument(skip(cursor))]
     fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         if self.is_node() {
             cursor.remove_node().unwrap();

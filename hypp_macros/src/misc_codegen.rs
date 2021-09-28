@@ -213,20 +213,20 @@ pub fn collect_dom_programs(statements: &[ir::Statement], output: &mut Vec<Token
 
 pub fn generate_dom_program(program: &ir::ConstDomProgram) -> TokenStream {
     let opcodes = program.opcodes.iter().map(|opcode| match opcode {
-        ir::DomOpCode::EnterElement(lit_str) => quote! {
-            ::hypp::ConstOpCode::EnterElement(#lit_str),
+        ir::DomOpCode::Enter(lit_str) => quote! {
+            ::hypp::ConstOpCode::Enter(#lit_str),
         },
-        ir::DomOpCode::AttrName(name) => quote! {
-            ::hypp::ConstOpCode::AttributeName(#name),
+        ir::DomOpCode::Attr(name) => quote! {
+            ::hypp::ConstOpCode::Attr(#name),
         },
-        ir::DomOpCode::AttrTextValue(value) => quote! {
-            ::hypp::ConstOpCode::AttributeTextValue(#value),
+        ir::DomOpCode::AttrText(value) => quote! {
+            ::hypp::ConstOpCode::AttrText(#value),
         },
         ir::DomOpCode::Text(lit_str) => quote! {
             ::hypp::ConstOpCode::Text(#lit_str),
         },
-        ir::DomOpCode::ExitElement => quote! {
-            ::hypp::ConstOpCode::ExitElement,
+        ir::DomOpCode::Exit => quote! {
+            ::hypp::ConstOpCode::Exit,
         },
     });
 
@@ -234,7 +234,7 @@ pub fn generate_dom_program(program: &ir::ConstDomProgram) -> TokenStream {
     let ident = program.get_ident();
 
     quote! {
-        static #ident: [::hypp::ConstOpCode; #len] = [
+        static #ident: [::hypp::ConstOpCode<__NS>; #len] = [
             #(#opcodes)*
         ];
     }
@@ -290,7 +290,7 @@ fn gen_fixed_span_struct(
     let span_ident = if let Some(span_type) = span_type {
         span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment)
     } else {
-        quote! { RootSpan }
+        quote! { __RootSpan }
     };
 
     let public = if span_type.is_none() {
@@ -534,7 +534,7 @@ impl ir::Block {
                     let program_ident = program.get_ident();
                     for (index, opcode) in program.opcodes.iter().enumerate() {
                         match opcode {
-                            ir::DomOpCode::EnterElement(_) => {
+                            ir::DomOpCode::Enter(_) => {
                                 if dom_depth == 0 {
                                     sub_spans.push(FieldCode {
                                         field: None,
@@ -555,7 +555,7 @@ impl ir::Block {
                                     });
                                 }
                             }
-                            ir::DomOpCode::ExitElement => {
+                            ir::DomOpCode::Exit => {
                                 dom_depth -= 1;
                             }
                             _ => {}
@@ -693,7 +693,7 @@ impl ir::StructFieldType {
                 }
             }
             Self::Span(span_index, span_kind) => {
-                let ident = quote::format_ident!("Span{}", span_index);
+                let ident = quote::format_ident!("__Span{}", span_index);
                 match (span_kind, format) {
                     (ir::SpanKind::Enum, StructFieldFormat::TypeInStruct) => {
                         quote! { Option<#ident #generics> }
