@@ -47,7 +47,7 @@ impl Hypp for ServerHypp {
     type Text = ArcNode;
 
     type Anchor = ServerBuilder;
-    type Builder = ServerBuilder;
+    type Cursor = ServerBuilder;
 
     type Shared<T>
     where
@@ -92,12 +92,12 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+    fn pass_over(&mut self, cursor: &mut ServerBuilder) -> bool {
         cursor.move_to_following_sibling_of(&self.0);
         true
     }
 
-    fn erase(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
+    fn erase(&mut self, cursor: &mut ServerBuilder) -> bool {
         cursor.remove_node().unwrap();
         true
     }
@@ -318,7 +318,7 @@ impl Cursor<ServerHypp> for ServerBuilder {
 }
 
 impl crate::Anchor<ServerHypp> for ServerBuilder {
-    fn create_builder(&self) -> ServerBuilder {
+    fn create_cursor(&self) -> ServerBuilder {
         self.clone()
     }
 }

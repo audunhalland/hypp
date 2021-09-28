@@ -9,11 +9,7 @@ pub trait AsSpan: Sized {
 pub struct SingleTextSpan;
 
 #[tracing::instrument(skip(spans, cursor), fields(len = spans.len()))]
-pub fn pass<H: Hypp>(
-    spans: &mut [&mut dyn Span<H>],
-    cursor: &mut dyn Cursor<H>,
-    op: SpanOp,
-) -> bool {
+pub fn pass<H: Hypp>(spans: &mut [&mut dyn Span<H>], cursor: &mut H::Cursor, op: SpanOp) -> bool {
     match op {
         SpanOp::PassOver => {
             let mut result = false;
@@ -62,7 +58,7 @@ impl<'a, H: Hypp> Span<H> for SpanAdapter<'a, ConstOpCode> {
     }
 
     #[tracing::instrument(skip(cursor))]
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
         if self.is_node() {
             cursor.move_to_following_sibling().unwrap();
             true
@@ -72,7 +68,7 @@ impl<'a, H: Hypp> Span<H> for SpanAdapter<'a, ConstOpCode> {
     }
 
     #[tracing::instrument(skip(cursor))]
-    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
         if self.is_node() {
             cursor.remove_node().unwrap();
             true
@@ -88,13 +84,13 @@ impl<H: Hypp> Span<H> for SingleTextSpan {
     }
 
     #[tracing::instrument(skip(self, cursor))]
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
         cursor.move_to_following_sibling().unwrap();
         true
     }
 
     #[tracing::instrument(skip(self, cursor))]
-    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
         cursor.remove_node().unwrap();
         true
     }
@@ -113,7 +109,7 @@ where
     }
 
     #[tracing::instrument(skip(self, cursor))]
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
         match self {
             Some(span) => span.pass_over(cursor),
             None => false,
@@ -121,7 +117,7 @@ where
     }
 
     #[tracing::instrument(skip(self, cursor))]
-    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
         match self {
             Some(span) => {
                 let result = span.erase(cursor);

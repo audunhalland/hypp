@@ -16,7 +16,7 @@ pub struct SharedInner<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> {
 impl<Env, Span> UniqueInner<Env, Span> {
     pub fn mount<H: Hypp, C, Patch, Wrap, const U: usize>(
         env: Env,
-        cursor: &mut dyn Cursor<H>,
+        cursor: &mut H::Cursor,
         patch: Patch,
         wrap: Wrap,
     ) -> Result<Unique<C>, crate::Error>
@@ -42,7 +42,7 @@ impl<Env, Span> UniqueInner<Env, Span> {
 impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, Env, Span> {
     pub fn mount<Patch, Wrap, SaveWeak, const U: usize>(
         env: Env,
-        cursor: &mut dyn Cursor<H>,
+        cursor: &mut H::Cursor,
         patch: Patch,
         wrap: Wrap,
         save_weak: SaveWeak,
@@ -83,7 +83,7 @@ impl<H: Hypp + 'static, Env, S: Span<H>> Span<H> for UniqueInner<Env, S> {
         self.root_span.is_anchored()
     }
 
-    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+    fn pass(&mut self, cursor: &mut H::Cursor, op: SpanOp) -> bool {
         self.root_span.pass(cursor, op)
     }
 }
@@ -95,17 +95,17 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, S: Span<H>> Span<H>
         self.root_span.is_anchored()
     }
 
-    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+    fn pass(&mut self, cursor: &mut H::Cursor, op: SpanOp) -> bool {
         self.root_span.pass(cursor, op)
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
         // Self updating! This component needs to store the updated anchor.
         self.anchor = cursor.anchor();
         self.pass(cursor, SpanOp::PassOver)
     }
 
-    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
         self.weak_self = None;
         self.pass(cursor, SpanOp::Erase)
     }

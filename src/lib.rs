@@ -12,6 +12,7 @@ pub mod comp;
 pub mod error;
 pub mod handle;
 pub mod list;
+pub mod namespace;
 pub mod shim;
 pub mod span;
 pub mod state_ref;
@@ -43,7 +44,7 @@ pub trait Hypp: Sized {
 
     /// An immutable variant of the cursor:
     type Anchor: Anchor<Self>;
-    type Builder: Cursor<Self>;
+    type Cursor: Cursor<Self>;
 
     ///
     /// Type of
@@ -64,6 +65,11 @@ pub trait Hypp: Sized {
 
     fn traversal_direction() -> TraversalDirection;
 }
+
+///
+/// A node namespace
+///
+pub trait Namespace {}
 
 ///
 /// "upcast" a DOM node of a specific type to its generic type
@@ -169,7 +175,7 @@ pub trait Cursor<H: Hypp> {
 
 pub trait Anchor<H: Hypp> {
     /// Create a builder at the anchor position
-    fn create_builder(&self) -> H::Builder;
+    fn create_cursor(&self) -> H::Cursor;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -205,7 +211,7 @@ pub trait Span<H: Hypp> {
     /// This method is reserved for the specific pass methods below.
     /// It exists so that a Span impl can implement pass generically,
     /// if it constists only of sub spans.
-    fn pass(&mut self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
+    fn pass(&mut self, _cursor: &mut H::Cursor, _op: SpanOp) -> bool {
         false
     }
 
@@ -215,7 +221,7 @@ pub trait Span<H: Hypp> {
     /// The direction of the pass must in accordance with Hypp implementation.
     ///
     /// The method must return whether it was able to pass anything.
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
         self.pass(cursor, SpanOp::PassOver)
     }
 
@@ -228,7 +234,7 @@ pub trait Span<H: Hypp> {
     /// This method is also the opportunity for components to unnest allocated
     /// resources leading to circular references.
     ///
-    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
         self.pass(cursor, SpanOp::Erase)
     }
 }
@@ -251,14 +257,14 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// When the method returns, the cursor must point to the end of the component,
     /// what direction to take is determined by H.
     ///
-    fn pass_props(&mut self, props: Self::Props, cursor: &mut dyn Cursor<H>);
+    fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor);
 }
 
 ///
 /// Anything that can be mounted without parameters
 ///
 pub trait Mount<H: Hypp>: handle::ToHandle {
-    fn mount(cursor: &mut dyn Cursor<H>) -> Result<<Self as ToHandle>::Handle, Error>;
+    fn mount(cursor: &mut H::Cursor) -> Result<<Self as ToHandle>::Handle, Error>;
 }
 
 ///
@@ -351,18 +357,18 @@ pub enum Duplex<'a, T> {
 /// Something from which to acquire a cursor
 ///
 pub trait GetCursor<H: Hypp> {
-    fn get_cursor(&mut self) -> &mut dyn Cursor<H>;
+    fn get_cursor(&mut self) -> &mut H::Cursor;
 }
 
 ///
 /// Patching context without `bind` functionality
 ///
 pub struct PatchCtx<'a, H: Hypp> {
-    pub cur: &'a mut dyn Cursor<H>,
+    pub cur: &'a mut H::Cursor,
 }
 
 impl<'a, H: Hypp> GetCursor<H> for PatchCtx<'a, H> {
-    fn get_cursor(&mut self) -> &mut dyn Cursor<H> {
+    fn get_cursor(&mut self) -> &mut H::Cursor {
         self.cur
     }
 }
@@ -371,12 +377,12 @@ impl<'a, H: Hypp> GetCursor<H> for PatchCtx<'a, H> {
 /// Patching context _with_ `bind` functionality
 ///
 pub struct PatchBindCtx<'a, H: Hypp, T: ShimTrampoline> {
-    pub cur: &'a mut dyn Cursor<H>,
+    pub cur: &'a mut H::Cursor,
     pub bind: &'a mut dyn BindCallback<H, T>,
 }
 
 impl<'a, H: Hypp, T: ShimTrampoline> GetCursor<H> for PatchBindCtx<'a, H, T> {
-    fn get_cursor(&mut self) -> &mut dyn Cursor<H> {
+    fn get_cursor(&mut self) -> &mut H::Cursor {
         self.cur
     }
 }

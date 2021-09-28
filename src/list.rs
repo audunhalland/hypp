@@ -78,7 +78,7 @@ where
         false
     }
 
-    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
+    fn pass(&mut self, cursor: &mut H::Cursor, op: SpanOp) -> bool {
         if self.spans.is_empty() {
             false
         } else {
@@ -92,11 +92,11 @@ where
         }
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
         self.pass(cursor, SpanOp::PassOver)
     }
 
-    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
+    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
         let result = self.pass(cursor, SpanOp::Erase);
         self.spans.clear();
         result
@@ -119,7 +119,7 @@ mod tests {
             false
         }
 
-        fn pass(&mut self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
+        fn pass(&mut self, _cursor: &mut H::Cursor, _op: SpanOp) -> bool {
             false
         }
     }
@@ -140,7 +140,7 @@ mod tests {
 
     fn patch_fake(
         list_span: &mut SimpleListSpan<ServerHypp, FakeSpan>,
-        cursor: &mut dyn Cursor<ServerHypp>,
+        cursor: &mut <ServerHypp as Hypp>::Cursor,
         fake_patcher: &mut FakePatcher,
         data: Vec<&'static str>,
     ) {

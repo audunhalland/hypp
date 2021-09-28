@@ -82,7 +82,7 @@ impl Hypp for WebHypp {
     type Text = web_sys::Text;
 
     type Anchor = WebBuilder;
-    type Builder = WebBuilder;
+    type Cursor = WebBuilder;
 
     type Shared<T>
     where
@@ -142,12 +142,12 @@ impl<'a> Span<WebHypp> for SpanAdapter<'a, web_sys::Node> {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+    fn pass_over(&mut self, cursor: &mut WebBuilder) -> bool {
         cursor.move_to_following_sibling_of(&self.0);
         true
     }
 
-    fn erase(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
+    fn erase(&mut self, cursor: &mut WebBuilder) -> bool {
         cursor.remove_node().unwrap();
         true
     }
@@ -438,7 +438,7 @@ impl NodeExt for web_sys::Node {
 }
 
 impl crate::Anchor<WebHypp> for WebBuilder {
-    fn create_builder(&self) -> WebBuilder {
+    fn create_cursor(&self) -> WebBuilder {
         self.clone()
     }
 }

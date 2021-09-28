@@ -141,7 +141,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let mount_impl = if params.iter().filter(|param| param.is_prop()).count() == 0 {
         Some(quote! {
             impl<H: ::hypp::Hypp + 'static> ::hypp::Mount<H> for #component_ident<H> {
-                fn mount(cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                fn mount(cursor: &mut H::Cursor) -> Result<#handle_path<Self>, ::hypp::Error> {
                     Self::mount(#props_ident {}, cursor)
                 }
             }
@@ -162,7 +162,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             #shim
 
             impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
-                pub fn mount(#fn_props_destructuring, cursor: &mut dyn ::hypp::Cursor<H>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                pub fn mount(#fn_props_destructuring, cursor: &mut H::Cursor) -> Result<#handle_path<Self>, ::hypp::Error> {
                     #mount_body
                 }
             }
@@ -176,7 +176,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                     self.0.is_anchored()
                 }
 
-                fn pass(&mut self, cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                fn pass(&mut self, cursor: &mut H::Cursor, op: ::hypp::SpanOp) -> bool {
                     self.0.pass(cursor, op)
                 }
             }
@@ -184,7 +184,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
                 type Props = #props_ident #public_props_generics;
 
-                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut dyn ::hypp::Cursor<H>) {
+                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut H::Cursor) {
                     #props_updater
                     #pass_props_patch_call
                 }
@@ -518,7 +518,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
                 method.0(&mut shim);
 
-                let mut cursor = self.0.anchor.create_builder();
+                let mut cursor = self.0.anchor.create_cursor();
                 let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
                 #mod_ident::patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),

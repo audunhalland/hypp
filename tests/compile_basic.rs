@@ -1,6 +1,7 @@
 #![feature(generic_associated_types)]
 
 use hypp::prelude::*;
+use hypp::server::ServerHypp;
 
 component! {
     Foo<Html>(is_cool: bool) {}
@@ -24,8 +25,9 @@ component! {
 
 #[test]
 fn render_foo_server() {
-    let hypp = hypp::server::ServerHypp::new();
-    let mut c = Foo::mount(__FooProps { is_cool: true }, &mut hypp.builder_at_body()).unwrap();
+    let hypp = ServerHypp::new();
+    let mut c = Foo::<ServerHypp>::mount(__FooProps { is_cool: true }, &mut hypp.builder_at_body())
+        .unwrap();
 
     assert_eq!(
         hypp.render(),
@@ -69,8 +71,8 @@ component! {
 
 #[test]
 fn render_baz_server() {
-    let hypp = hypp::server::ServerHypp::new();
-    Baz::mount(__BazProps {}, &mut hypp.builder_at_body()).unwrap();
+    let hypp = ServerHypp::new();
+    Baz::<ServerHypp>::mount(__BazProps {}, &mut hypp.builder_at_body()).unwrap();
 
     assert_eq!(
         &hypp.render(),
@@ -95,8 +97,8 @@ component! {
 
 #[test]
 fn render_conditional_server() {
-    let hypp = hypp::server::ServerHypp::new();
-    let mut c = Conditional::mount(
+    let hypp = ServerHypp::new();
+    let mut c = Conditional::<ServerHypp>::mount(
         __ConditionalProps {
             hello: false,
             world: false,
@@ -190,7 +192,7 @@ fn render_iflet_server() {
     use hypp::*;
 
     let hypp = hypp::server::ServerHypp::new();
-    let mut c = IfLet::mount(
+    let mut c = IfLet::<ServerHypp>::mount(
         __IfLetProps { opt_number: None },
         &mut hypp.builder_at_body(),
     )
@@ -244,7 +246,7 @@ fn render_fragment1() {
     use hypp::*;
 
     let hypp = hypp::server::ServerHypp::new();
-    let mut c = Fragment1::mount(
+    let mut c = Fragment1::<ServerHypp>::mount(
         __Fragment1Props { perhaps: true },
         &mut hypp.builder_at_body(),
     )
@@ -282,7 +284,8 @@ component! {
 fn render_recursive_server() {
     let hypp = hypp::server::ServerHypp::new();
     let mut c =
-        Recursive::mount(__RecursiveProps { depth: 3 }, &mut hypp.builder_at_body()).unwrap();
+        Recursive::<ServerHypp>::mount(__RecursiveProps { depth: 3 }, &mut hypp.builder_at_body())
+            .unwrap();
 
     assert_eq!(
         hypp.render(),
@@ -315,7 +318,7 @@ fn render_list() {
     let strings1 = ["foo".to_string(), "bar".to_string()];
     let strings2 = ["bar".to_string(), "baz".to_string()];
 
-    let mut c = List::mount(
+    let mut c = List::<ServerHypp>::mount(
         __ListProps { items: &strings1 },
         &mut hypp.builder_at_body(),
     )

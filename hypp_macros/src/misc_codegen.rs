@@ -314,7 +314,7 @@ fn gen_fixed_span_struct(
         })
         .map(|stmts| {
             quote! {
-                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                fn erase(&mut self, __cursor: &mut H::Cursor) -> bool {
                     #stmts
                     self.pass(__cursor, ::hypp::SpanOp::Erase)
                 }
@@ -332,7 +332,7 @@ fn gen_fixed_span_struct(
                 unimplemented!()
             }
 
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut H::Cursor, op: ::hypp::SpanOp) -> bool {
                 #span_pass
             }
 
@@ -425,7 +425,7 @@ fn gen_dynamic_span_enum(
     {
         let arms = span_erase_arms.iter().map(|(_, arm)| arm);
         quote! {
-            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+            fn erase(&mut self, __cursor: &mut H::Cursor) -> bool {
                 match self {
                     #(#arms)*
                 }
@@ -447,7 +447,7 @@ fn gen_dynamic_span_enum(
                 false
             }
 
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut H::Cursor, op: ::hypp::SpanOp) -> bool {
                 match self {
                     #(#span_pass_arms)*
                 }
@@ -599,7 +599,7 @@ impl ir::Block {
                 .filter_map(|span| Some(span.field?.0))
                 .collect(),
             code: quote! {
-                ::hypp::span::pass(
+                ::hypp::span::pass::<H>(
                     &mut [#(#sub_spans),*],
                     __cursor,
                     op
