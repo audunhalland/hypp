@@ -5,6 +5,7 @@ pub use crate::CallbackSlot;
 pub use crate::Component;
 pub use crate::Cursor;
 pub use crate::Hypp;
+pub use crate::NSCursor;
 pub use crate::Span;
 
 pub use crate::handle::Handle;

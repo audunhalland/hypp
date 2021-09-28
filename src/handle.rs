@@ -244,7 +244,7 @@ pub mod sync {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Component, Cursor, Hypp, Span};
+    use crate::{Component, Hypp, Span};
 
     struct LolProps<'p> {
         _prop: &'p str,
@@ -272,7 +272,7 @@ mod test {
         type Props = LolProps<'p>;
         type NS = crate::ns::Html;
 
-        fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor) {}
+        fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
     struct CompB {
@@ -302,7 +302,7 @@ mod test {
         type Props = LolProps<'p>;
         type NS = crate::ns::Html;
 
-        fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor) {}
+        fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
     #[test]

@@ -14,14 +14,14 @@ pub struct SharedInner<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> {
 }
 
 impl<Env, Span> UniqueInner<Env, Span> {
-    pub fn mount<H: Hypp, C, Patch, Wrap, const U: usize>(
+    pub fn mount<H: Hypp, NS: TemplNS, C, Patch, Wrap, const U: usize>(
         env: Env,
-        cursor: &mut H::Cursor,
+        cursor: &mut H::Cursor<NS>,
         patch: Patch,
         wrap: Wrap,
     ) -> Result<Unique<C>, crate::Error>
     where
-        Patch: Fn(Duplex<Span>, &Env, &[bool], &mut PatchCtx<H>) -> Result<(), crate::Error>,
+        Patch: Fn(Duplex<Span>, &Env, &[bool], &mut PatchCtx<H, NS>) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
     {
         let updates: [bool; 1usize] = [true; 1usize];
@@ -40,15 +40,20 @@ impl<Env, Span> UniqueInner<Env, Span> {
 }
 
 impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, Env, Span> {
-    pub fn mount<Patch, Wrap, SaveWeak, const U: usize>(
+    pub fn mount<NS: TemplNS, Patch, Wrap, SaveWeak, const U: usize>(
         env: Env,
-        cursor: &mut H::Cursor,
+        cursor: &mut H::Cursor<NS>,
         patch: Patch,
         wrap: Wrap,
         save_weak: SaveWeak,
     ) -> Result<H::Shared<C>, crate::Error>
     where
-        Patch: Fn(Duplex<Span>, &Env, &[bool], &mut PatchBindCtx<H, C>) -> Result<(), crate::Error>,
+        Patch: Fn(
+            Duplex<Span>,
+            &Env,
+            &[bool],
+            &mut PatchBindCtx<H, NS, C>,
+        ) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
         SaveWeak: Fn(&mut C, <H::Shared<C> as SharedHandle<C>>::Weak),
     {
@@ -83,7 +88,7 @@ impl<H: Hypp + 'static, Env, S: Span<H>> Span<H> for UniqueInner<Env, S> {
         self.root_span.is_anchored()
     }
 
-    fn pass(&mut self, cursor: &mut H::Cursor, op: SpanOp) -> bool {
+    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
         self.root_span.pass(cursor, op)
     }
 }
@@ -95,17 +100,17 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, S: Span<H>> Span<H>
         self.root_span.is_anchored()
     }
 
-    fn pass(&mut self, cursor: &mut H::Cursor, op: SpanOp) -> bool {
+    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
         self.root_span.pass(cursor, op)
     }
 
-    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         // Self updating! This component needs to store the updated anchor.
         self.anchor = cursor.anchor();
         self.pass(cursor, SpanOp::PassOver)
     }
 
-    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.weak_self = None;
         self.pass(cursor, SpanOp::Erase)
     }

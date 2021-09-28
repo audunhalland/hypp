@@ -4,6 +4,12 @@ impl crate::TemplNS for Html {
     type EType = &'static str;
 }
 
+impl crate::StaticName for &'static str {
+    fn static_name(&self) -> &'static str {
+        self
+    }
+}
+
 #[cfg(test)]
 mod experiment {
     use crate::TemplNS;
@@ -52,10 +58,10 @@ mod experiment {
     struct B;
 
     impl TemplNS for A {
-        type EType = u32;
+        type EType = &'static str;
     }
     impl TemplNS for B {
-        type EType = String;
+        type EType = &'static str;
     }
 
     trait Process<S: Sys> {
@@ -73,7 +79,7 @@ mod experiment {
         type NS = A;
 
         fn process(&self, cur: &mut S::Cursor<Self::NS>) {
-            cur.add(32);
+            cur.add("lol");
             // now try to process comp2...
             S::enter_ns::<A, <Comp2 as Process<S>>::NS, _>(cur, |cur| {
                 <Comp2 as Process<S>>::process(&self.comp2, cur)
@@ -85,7 +91,7 @@ mod experiment {
         type NS = B;
 
         fn process(&self, cur: &mut S::Cursor<Self::NS>) {
-            cur.add("lol".to_string());
+            cur.add("bar");
         }
     }
 }

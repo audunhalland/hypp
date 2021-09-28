@@ -70,7 +70,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let n_params = params.len();
     let mount_body = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            ::hypp::comp::UniqueInner::mount::<_, _, _, _, #n_params>(
+            ::hypp::comp::UniqueInner::mount::<_, _, _, _, _, #n_params>(
                 #mod_ident::#env_expr,
                 cursor,
                 #mod_ident::patch,
@@ -78,7 +78,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
             )
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner::mount::<_, _, _, #n_params>(
+            ::hypp::comp::SharedInner::mount::<_, _, _, _, #n_params>(
                 #mod_ident::#env_expr,
                 cursor,
                 #mod_ident::patch,
@@ -141,8 +141,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
     let mount_impl = if params.iter().filter(|param| param.is_prop()).count() == 0 {
         Some(quote! {
-            impl<H: ::hypp::Hypp + 'static> ::hypp::Mount<H> for #component_ident<H> {
-                fn mount(cursor: &mut H::Cursor) -> Result<#handle_path<Self>, ::hypp::Error> {
+            impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Mount<'p, H> for #component_ident<H> {
+                fn mount(cursor: &mut H::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
                     Self::mount(#props_ident {}, cursor)
                 }
             }
@@ -159,11 +159,15 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         mod #mod_ident {
             use super::*;
 
+            // Probably shouldn't do this, because it could shadow users' types
+            type __NS = #hypp_ns;
+
+            // Also the simple names of these may shadow.. Should use underscore
             #env_struct
             #shim
 
             impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
-                pub fn mount(#fn_props_destructuring, cursor: &mut H::Cursor) -> Result<#handle_path<Self>, ::hypp::Error> {
+                pub fn mount(#fn_props_destructuring, cursor: &mut H::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
                     #mount_body
                 }
             }
@@ -177,16 +181,16 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
                     self.0.is_anchored()
                 }
 
-                fn pass(&mut self, cursor: &mut H::Cursor, op: ::hypp::SpanOp) -> bool {
+                fn pass(&mut self, cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                     self.0.pass(cursor, op)
                 }
             }
 
             impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
                 type Props = #props_ident #public_props_generics;
-                type NS = #hypp_ns;
+                type NS = __NS;
 
-                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut H::Cursor) {
+                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut H::Cursor<Self::NS>) {
                     #props_updater
                     #pass_props_patch_call
                 }

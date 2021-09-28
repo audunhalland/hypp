@@ -54,20 +54,20 @@ impl CompCtx {
 
         let patch_ctx_ty_root = match kind {
             ir::ComponentKind::Basic => quote! {
-                ::hypp::PatchCtx<H>
+                ::hypp::PatchCtx<H, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::PatchBindCtx<H, #component_ident<H>>
+                ::hypp::PatchBindCtx<H, __NS, #component_ident<H>>
             },
         };
 
         // PatchCtx type used in closures where last parameter may be inferred
         let patch_ctx_ty_inner = match kind {
             ir::ComponentKind::Basic => quote! {
-                ::hypp::PatchCtx<H>
+                ::hypp::PatchCtx<H, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::PatchBindCtx<H, _>
+                ::hypp::PatchBindCtx<H, __NS, _>
             },
         };
 
@@ -321,7 +321,7 @@ fn gen_fixed_span_struct(
         })
         .map(|stmts| {
             quote! {
-                fn erase(&mut self, __cursor: &mut H::Cursor) -> bool {
+                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                     #stmts
                     self.pass(__cursor, ::hypp::SpanOp::Erase)
                 }
@@ -339,7 +339,7 @@ fn gen_fixed_span_struct(
                 unimplemented!()
             }
 
-            fn pass(&mut self, __cursor: &mut H::Cursor, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 #span_pass
             }
 
@@ -432,7 +432,7 @@ fn gen_dynamic_span_enum(
     {
         let arms = span_erase_arms.iter().map(|(_, arm)| arm);
         quote! {
-            fn erase(&mut self, __cursor: &mut H::Cursor) -> bool {
+            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
                 match self {
                     #(#arms)*
                 }
@@ -454,7 +454,7 @@ fn gen_dynamic_span_enum(
                 false
             }
 
-            fn pass(&mut self, __cursor: &mut H::Cursor, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
                 match self {
                     #(#span_pass_arms)*
                 }
@@ -699,7 +699,7 @@ impl ir::StructFieldType {
                         quote! { Option<#ident #generics> }
                     }
                     (ir::SpanKind::RepeatedStruct, StructFieldFormat::TypeInStruct) => {
-                        quote! { hypp::list::SimpleListSpan<H, #ident #generics> }
+                        quote! { hypp::list::SimpleListSpan<H, __NS, #ident #generics> }
                     }
                     (_, StructFieldFormat::InnerType) => quote! { #ident #generics },
                     (_, StructFieldFormat::PathSegment) => quote! { #ident },

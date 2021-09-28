@@ -2,7 +2,7 @@ use crate::error::Error;
 
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, CallbackSlot, ConstOpCode, Cursor, Hypp, Mount, Span};
+use crate::{AsNode, CallbackSlot, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Span, TemplNS};
 
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ impl Hypp for ServerHypp {
     type Text = ArcNode;
 
     type Anchor = ServerBuilder;
-    type Cursor = ServerBuilder;
+    type Cursor<NS: TemplNS> = ServerBuilder;
 
     type Shared<T>
     where
@@ -61,7 +61,7 @@ impl Hypp for ServerHypp {
         Arc::new(Mutex::new(value))
     }
 
-    fn mount<M: Mount<ServerHypp> + 'static>(&mut self) -> Result<(), Error> {
+    fn mount<'p, M: Mount<'p, ServerHypp> + 'static>(&mut self) -> Result<(), Error> {
         let mut builder = self.builder_at_body();
         let mounted = M::mount(&mut builder)?;
 
@@ -92,12 +92,12 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut ServerBuilder) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
         cursor.move_to_following_sibling_of(&self.0);
         true
     }
 
-    fn erase(&mut self, cursor: &mut ServerBuilder) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<ServerHypp>) -> bool {
         cursor.remove_node().unwrap();
         true
     }
@@ -189,52 +189,6 @@ impl Cursor<ServerHypp> for ServerBuilder {
         self.clone()
     }
 
-    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<ArcNode, Error> {
-        let mut result = Err(Error::NoProgram);
-
-        for opcode in program {
-            match opcode {
-                ConstOpCode::EnterElement(tag_name) => {
-                    result = Ok(self.enter_element(tag_name));
-                }
-                ConstOpCode::AttributeName(name) => {
-                    self.loaded_attribute_name = Some(name);
-                }
-                ConstOpCode::AttributeTextValue(value) => {
-                    let attribute_name = self
-                        .loaded_attribute_name
-                        .expect("Should call AttributeName before setting attribute value");
-
-                    match &self.element.kind {
-                        NodeKind::Element { attributes, .. } => {
-                            attributes
-                                .lock()
-                                .map
-                                .insert(attribute_name, AttributeValue::Static(value));
-                            self.loaded_attribute_name = None;
-                        }
-                        _ => return Err(Error::SetAttribute),
-                    };
-                }
-                ConstOpCode::Text(text) => {
-                    result = Ok(self.text(text));
-                }
-                ConstOpCode::ExitElement => {
-                    result = Ok(self.exit_element());
-                }
-                ConstOpCode::RemoveElement(tag_name) => {
-                    result = Ok(self.remove_element(tag_name)?);
-                }
-            };
-        }
-
-        result
-    }
-
-    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<ArcNode, Error> {
-        self.const_exec_element(program)
-    }
-
     fn attribute_value_callback(&mut self) -> Result<Arc<Mutex<()>>, Error> {
         // Callbacks do nothing on the server
         Ok(Arc::new(Mutex::new(())))
@@ -317,8 +271,56 @@ impl Cursor<ServerHypp> for ServerBuilder {
     }
 }
 
+impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
+    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<ArcNode, Error> {
+        let mut result = Err(Error::NoProgram);
+
+        for opcode in program {
+            match opcode {
+                ConstOpCode::EnterElement(tag_name) => {
+                    result = Ok(self.enter_element(tag_name));
+                }
+                ConstOpCode::AttributeName(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttributeTextValue(value) => {
+                    let attribute_name = self
+                        .loaded_attribute_name
+                        .expect("Should call AttributeName before setting attribute value");
+
+                    match &self.element.kind {
+                        NodeKind::Element { attributes, .. } => {
+                            attributes
+                                .lock()
+                                .map
+                                .insert(attribute_name, AttributeValue::Static(value));
+                            self.loaded_attribute_name = None;
+                        }
+                        _ => return Err(Error::SetAttribute),
+                    };
+                }
+                ConstOpCode::Text(text) => {
+                    result = Ok(self.text(text));
+                }
+                ConstOpCode::ExitElement => {
+                    result = Ok(self.exit_element());
+                }
+                ConstOpCode::RemoveElement(tag_name) => {
+                    result = Ok(self.remove_element(tag_name)?);
+                }
+            };
+        }
+
+        result
+    }
+
+    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<ArcNode, Error> {
+        <ServerBuilder as NSCursor<ServerHypp, NS>>::const_exec_element(self, program)
+    }
+}
+
 impl crate::Anchor<ServerHypp> for ServerBuilder {
-    fn create_cursor(&self) -> ServerBuilder {
+    fn create_cursor<NS>(&self) -> ServerBuilder {
         self.clone()
     }
 }

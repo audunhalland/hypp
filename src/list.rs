@@ -4,19 +4,21 @@ use crate::*;
 /// A dynamic span which is a dynamically repeating list of a given sub span.
 /// This implementation does not use keyeing for moving elements around.
 ///
-pub struct SimpleListSpan<H: Hypp, S> {
+pub struct SimpleListSpan<H: Hypp, NS: TemplNS, S> {
     spans: Vec<S>,
-    phantom: std::marker::PhantomData<H>,
+    p1: std::marker::PhantomData<H>,
+    p2: std::marker::PhantomData<NS>,
 }
 
-impl<H: Hypp + 'static, S> SimpleListSpan<H, S>
+impl<H: Hypp + 'static, NS: TemplNS, S> SimpleListSpan<H, NS, S>
 where
     S: Span<H>,
 {
     pub fn new() -> Self {
         Self {
             spans: vec![],
-            phantom: std::marker::PhantomData,
+            p1: std::marker::PhantomData,
+            p2: std::marker::PhantomData,
         }
     }
 
@@ -29,7 +31,7 @@ where
     where
         I: DoubleEndedIterator<Item = D>,
         F: FnMut(Duplex<S>, D, bool, &mut C) -> Result<(), crate::Error>,
-        C: GetCursor<H> + 'a,
+        C: GetCursor<H, NS> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
             TraversalDirection::FirstToLast => I::next,
@@ -69,7 +71,7 @@ where
     }
 }
 
-impl<H, S> Span<H> for SimpleListSpan<H, S>
+impl<H, NS: TemplNS, S> Span<H> for SimpleListSpan<H, NS, S>
 where
     H: Hypp,
     S: Span<H>,
@@ -78,7 +80,7 @@ where
         false
     }
 
-    fn pass(&mut self, cursor: &mut H::Cursor, op: SpanOp) -> bool {
+    fn pass(&mut self, cursor: &mut dyn Cursor<H>, op: SpanOp) -> bool {
         if self.spans.is_empty() {
             false
         } else {
@@ -92,11 +94,11 @@ where
         }
     }
 
-    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::PassOver)
     }
 
-    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         let result = self.pass(cursor, SpanOp::Erase);
         self.spans.clear();
         result
@@ -106,6 +108,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ns::Html;
     use crate::server::ServerHypp;
 
     #[derive(Eq, PartialEq, Debug)]
@@ -119,7 +122,7 @@ mod tests {
             false
         }
 
-        fn pass(&mut self, _cursor: &mut H::Cursor, _op: SpanOp) -> bool {
+        fn pass(&mut self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
             false
         }
     }
@@ -139,15 +142,15 @@ mod tests {
     }
 
     fn patch_fake(
-        list_span: &mut SimpleListSpan<ServerHypp, FakeSpan>,
-        cursor: &mut <ServerHypp as Hypp>::Cursor,
+        list_span: &mut SimpleListSpan<ServerHypp, Html, FakeSpan>,
+        cursor: &mut <ServerHypp as Hypp>::Cursor<Html>,
         fake_patcher: &mut FakePatcher,
         data: Vec<&'static str>,
     ) {
         let patch_fake_span_inner = |inout: Duplex<FakeSpan>,
                                      data: &'static str,
                                      _invalidated: bool,
-                                     _ctx: &mut PatchCtx<ServerHypp>|
+                                     _ctx: &mut PatchCtx<ServerHypp, Html>|
          -> Result<(), crate::Error> {
             match inout {
                 Duplex::In(span) => {
@@ -176,7 +179,7 @@ mod tests {
     fn simple_list_span() {
         let hypp = ServerHypp::new();
         let mut builder = hypp.builder_at_body();
-        let mut list_span: SimpleListSpan<ServerHypp, FakeSpan> = SimpleListSpan::new();
+        let mut list_span: SimpleListSpan<ServerHypp, Html, FakeSpan> = SimpleListSpan::new();
         let mut fake_patcher = FakePatcher { gen_counter: 0 };
 
         patch_fake(

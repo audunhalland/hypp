@@ -44,7 +44,7 @@ pub trait Hypp: Sized {
 
     /// An immutable variant of the cursor:
     type Anchor: Anchor<Self>;
-    type Cursor: Cursor<Self>;
+    type Cursor<NS: TemplNS>: NSCursor<Self, NS> + Cursor<Self>;
 
     ///
     /// Type of
@@ -59,7 +59,7 @@ pub trait Hypp: Sized {
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T>;
 
     /// Mount something at the root.
-    fn mount<M: Mount<Self> + 'static>(&mut self) -> Result<(), Error>;
+    fn mount<'p, M: Mount<'p, Self> + 'static>(&mut self) -> Result<(), Error>;
 
     fn set_text(node: &Self::Text, text: &str);
 
@@ -70,7 +70,11 @@ pub trait Hypp: Sized {
 /// A namespace in which a component template can pick names
 ///
 pub trait TemplNS: Sized + 'static {
-    type EType;
+    type EType: StaticName;
+}
+
+pub trait StaticName {
+    fn static_name(&self) -> &'static str;
 }
 
 ///
@@ -133,14 +137,6 @@ pub trait Cursor<H: Hypp> {
     /// Create a storable anchor at the current position.
     fn anchor(&self) -> H::Anchor;
 
-    /// Execute a series of opcodes.
-    /// The last node opcode must produce an element.
-    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
-
-    /// Execute a series of opcodes.
-    /// The last node opcode must produce a text node.
-    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
-
     /// Set up a callback bound to the current attribute.
     /// The way this works is that we bind the H::Callback to the element,
     /// but that callback doesn't do anything yet. Later, using the Callback
@@ -175,9 +171,19 @@ pub trait Cursor<H: Hypp> {
     fn skip_const_program(&mut self, program: &[ConstOpCode]);
 }
 
+pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
+    /// Execute a series of opcodes.
+    /// The last node opcode must produce an element.
+    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<H::Element, Error>;
+
+    /// Execute a series of opcodes.
+    /// The last node opcode must produce a text node.
+    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<H::Text, Error>;
+}
+
 pub trait Anchor<H: Hypp> {
     /// Create a builder at the anchor position
-    fn create_cursor(&self) -> H::Cursor;
+    fn create_cursor<NS: TemplNS>(&self) -> H::Cursor<NS>;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -213,7 +219,7 @@ pub trait Span<H: Hypp> {
     /// This method is reserved for the specific pass methods below.
     /// It exists so that a Span impl can implement pass generically,
     /// if it constists only of sub spans.
-    fn pass(&mut self, _cursor: &mut H::Cursor, _op: SpanOp) -> bool {
+    fn pass(&mut self, _cursor: &mut dyn Cursor<H>, _op: SpanOp) -> bool {
         false
     }
 
@@ -223,7 +229,7 @@ pub trait Span<H: Hypp> {
     /// The direction of the pass must in accordance with Hypp implementation.
     ///
     /// The method must return whether it was able to pass anything.
-    fn pass_over(&mut self, cursor: &mut H::Cursor) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::PassOver)
     }
 
@@ -236,7 +242,7 @@ pub trait Span<H: Hypp> {
     /// This method is also the opportunity for components to unnest allocated
     /// resources leading to circular references.
     ///
-    fn erase(&mut self, cursor: &mut H::Cursor) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
         self.pass(cursor, SpanOp::Erase)
     }
 }
@@ -261,14 +267,14 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// When the method returns, the cursor must point to the end of the component,
     /// what direction to take is determined by H.
     ///
-    fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor);
+    fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor<Self::NS>);
 }
 
 ///
 /// Anything that can be mounted without parameters
 ///
-pub trait Mount<H: Hypp>: handle::ToHandle {
-    fn mount(cursor: &mut H::Cursor) -> Result<<Self as ToHandle>::Handle, Error>;
+pub trait Mount<'p, H: Hypp>: handle::ToHandle + Component<'p, H> {
+    fn mount(cursor: &mut H::Cursor<Self::NS>) -> Result<<Self as ToHandle>::Handle, Error>;
 }
 
 ///
@@ -360,19 +366,19 @@ pub enum Duplex<'a, T> {
 ///
 /// Something from which to acquire a cursor
 ///
-pub trait GetCursor<H: Hypp> {
-    fn get_cursor(&mut self) -> &mut H::Cursor;
+pub trait GetCursor<H: Hypp, NS: TemplNS> {
+    fn get_cursor(&mut self) -> &mut H::Cursor<NS>;
 }
 
 ///
 /// Patching context without `bind` functionality
 ///
-pub struct PatchCtx<'a, H: Hypp> {
-    pub cur: &'a mut H::Cursor,
+pub struct PatchCtx<'a, H: Hypp, NS: TemplNS> {
+    pub cur: &'a mut H::Cursor<NS>,
 }
 
-impl<'a, H: Hypp> GetCursor<H> for PatchCtx<'a, H> {
-    fn get_cursor(&mut self) -> &mut H::Cursor {
+impl<'a, H: Hypp, NS: TemplNS> GetCursor<H, NS> for PatchCtx<'a, H, NS> {
+    fn get_cursor(&mut self) -> &mut H::Cursor<NS> {
         self.cur
     }
 }
@@ -380,13 +386,13 @@ impl<'a, H: Hypp> GetCursor<H> for PatchCtx<'a, H> {
 ///
 /// Patching context _with_ `bind` functionality
 ///
-pub struct PatchBindCtx<'a, H: Hypp, T: ShimTrampoline> {
-    pub cur: &'a mut H::Cursor,
+pub struct PatchBindCtx<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> {
+    pub cur: &'a mut H::Cursor<NS>,
     pub bind: &'a mut dyn BindCallback<H, T>,
 }
 
-impl<'a, H: Hypp, T: ShimTrampoline> GetCursor<H> for PatchBindCtx<'a, H, T> {
-    fn get_cursor(&mut self) -> &mut H::Cursor {
+impl<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> GetCursor<H, NS> for PatchBindCtx<'a, H, NS, T> {
+    fn get_cursor(&mut self) -> &mut H::Cursor<NS> {
         self.cur
     }
 }

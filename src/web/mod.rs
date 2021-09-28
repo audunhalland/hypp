@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, Span};
+use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Span, TemplNS};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -82,7 +82,7 @@ impl Hypp for WebHypp {
     type Text = web_sys::Text;
 
     type Anchor = WebBuilder;
-    type Cursor = WebBuilder;
+    type Cursor<NS: TemplNS> = WebBuilder;
 
     type Shared<T>
     where
@@ -95,7 +95,7 @@ impl Hypp for WebHypp {
         Rc::new(RefCell::new(value))
     }
 
-    fn mount<M: Mount<WebHypp> + 'static>(&mut self) -> Result<(), Error> {
+    fn mount<'p, M: Mount<'p, WebHypp> + 'static>(&mut self) -> Result<(), Error> {
         let mut builder = self.builder_at_body();
         let mounted = M::mount(&mut builder)?;
 
@@ -142,12 +142,12 @@ impl<'a> Span<WebHypp> for SpanAdapter<'a, web_sys::Node> {
         true
     }
 
-    fn pass_over(&mut self, cursor: &mut WebBuilder) -> bool {
+    fn pass_over(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.move_to_following_sibling_of(&self.0);
         true
     }
 
-    fn erase(&mut self, cursor: &mut WebBuilder) -> bool {
+    fn erase(&mut self, cursor: &mut dyn Cursor<WebHypp>) -> bool {
         cursor.remove_node().unwrap();
         true
     }
@@ -222,64 +222,6 @@ impl WebBuilder {
 impl Cursor<WebHypp> for WebBuilder {
     fn anchor(&self) -> WebBuilder {
         self.clone()
-    }
-
-    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Element, Error> {
-        let mut result = Err(Error::NoProgram);
-
-        for opcode in program {
-            match opcode {
-                ConstOpCode::EnterElement(tag_name) => {
-                    result = Ok(self.enter_element(tag_name)?);
-                }
-                ConstOpCode::AttributeName(name) => {
-                    self.loaded_attribute_name = Some(name);
-                }
-                ConstOpCode::AttributeTextValue(value) => {
-                    self.set_attribute(value)?;
-                }
-                ConstOpCode::Text(text) => {
-                    self.text(text)?;
-                }
-                ConstOpCode::ExitElement => {
-                    result = Ok(self.exit_element()?);
-                }
-                ConstOpCode::RemoveElement(tag_name) => {
-                    result = Ok(self.remove_element(tag_name)?);
-                }
-            };
-        }
-
-        result
-    }
-
-    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Text, Error> {
-        let mut result = Err(Error::NoProgram);
-
-        for opcode in program {
-            match opcode {
-                ConstOpCode::EnterElement(tag_name) => {
-                    self.enter_element(tag_name)?;
-                }
-                ConstOpCode::AttributeName(name) => {
-                    self.loaded_attribute_name = Some(name);
-                }
-                ConstOpCode::AttributeTextValue(value) => {
-                    self.set_attribute(value)?;
-                }
-                ConstOpCode::Text(text) => {
-                    result = Ok(self.text(text)?);
-                }
-                ConstOpCode::ExitElement => {
-                    self.exit_element()?;
-                }
-                ConstOpCode::RemoveElement(tag_name) => {
-                    self.remove_element(tag_name)?;
-                }
-            };
-        }
-
-        result
     }
 
     fn attribute_value_callback(
@@ -394,6 +336,66 @@ impl Cursor<WebHypp> for WebBuilder {
     }
 }
 
+impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
+    fn const_exec_element(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Element, Error> {
+        let mut result = Err(Error::NoProgram);
+
+        for opcode in program {
+            match opcode {
+                ConstOpCode::EnterElement(tag_name) => {
+                    result = Ok(self.enter_element(tag_name)?);
+                }
+                ConstOpCode::AttributeName(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttributeTextValue(value) => {
+                    self.set_attribute(value)?;
+                }
+                ConstOpCode::Text(text) => {
+                    self.text(text)?;
+                }
+                ConstOpCode::ExitElement => {
+                    result = Ok(self.exit_element()?);
+                }
+                ConstOpCode::RemoveElement(tag_name) => {
+                    result = Ok(self.remove_element(tag_name)?);
+                }
+            };
+        }
+
+        result
+    }
+
+    fn const_exec_text(&mut self, program: &[ConstOpCode]) -> Result<web_sys::Text, Error> {
+        let mut result = Err(Error::NoProgram);
+
+        for opcode in program {
+            match opcode {
+                ConstOpCode::EnterElement(tag_name) => {
+                    self.enter_element(tag_name)?;
+                }
+                ConstOpCode::AttributeName(name) => {
+                    self.loaded_attribute_name = Some(name);
+                }
+                ConstOpCode::AttributeTextValue(value) => {
+                    self.set_attribute(value)?;
+                }
+                ConstOpCode::Text(text) => {
+                    result = Ok(self.text(text)?);
+                }
+                ConstOpCode::ExitElement => {
+                    self.exit_element()?;
+                }
+                ConstOpCode::RemoveElement(tag_name) => {
+                    self.remove_element(tag_name)?;
+                }
+            };
+        }
+
+        result
+    }
+}
+
 impl From<wasm_bindgen::JsValue> for Error {
     fn from(_js_error: wasm_bindgen::JsValue) -> Self {
         Error::JsError
@@ -438,7 +440,7 @@ impl NodeExt for web_sys::Node {
 }
 
 impl crate::Anchor<WebHypp> for WebBuilder {
-    fn create_cursor(&self) -> WebBuilder {
+    fn create_cursor<NS>(&self) -> WebBuilder {
         self.clone()
     }
 }
