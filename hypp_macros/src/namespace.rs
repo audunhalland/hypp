@@ -1,3 +1,6 @@
+use proc_macro2::TokenStream;
+use quote::quote;
+
 pub enum Namespace {
     Html,
 }
@@ -15,6 +18,12 @@ impl Namespace {
     pub fn traversal_direction(&self) -> TraversalDirection {
         match self {
             Self::Html => TraversalDirection::LastToFirst,
+        }
+    }
+
+    pub fn hypp_ns(&self) -> TokenStream {
+        quote! {
+            ::hypp::ns::Html
         }
     }
 }

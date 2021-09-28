@@ -12,7 +12,7 @@ pub mod comp;
 pub mod error;
 pub mod handle;
 pub mod list;
-pub mod namespace;
+pub mod ns;
 pub mod shim;
 pub mod span;
 pub mod state_ref;
@@ -67,9 +67,11 @@ pub trait Hypp: Sized {
 }
 
 ///
-/// A node namespace
+/// A namespace in which a component template can pick names
 ///
-pub trait Namespace {}
+pub trait TemplNS: Sized + 'static {
+    type EType;
+}
 
 ///
 /// "upcast" a DOM node of a specific type to its generic type
@@ -239,15 +241,17 @@ pub trait Span<H: Hypp> {
     }
 }
 
-/// The component trait.
+/// The Component trait.
 ///
 /// The term 'pass' is used when there's a cursor method parameter,
 /// and that method implementation must 'pass' the cursor over
-/// the component's owned DOM.
+/// the component's current span.
 ///
 pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// The type of properties this component receives
     type Props: 'p;
+
+    type NS: TemplNS;
 
     ///
     /// Set new props on the component instance, causing an immediate, synchronous

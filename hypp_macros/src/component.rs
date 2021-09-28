@@ -41,6 +41,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
     let component_ident = &comp_ctx.component_ident;
     let props_ident = &comp_ctx.public_props_ident;
     let mod_ident = &comp_ctx.mod_ident;
+    let hypp_ns = comp_ctx.namespace.hypp_ns();
 
     let PublicPropsStruct {
         tokens: public_props_struct,
@@ -183,6 +184,7 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
                 type Props = #props_ident #public_props_generics;
+                type NS = #hypp_ns;
 
                 fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut H::Cursor) {
                     #props_updater
@@ -215,7 +217,7 @@ fn analyze_ast(
             .expect("Compile error: Lowering problem");
 
     // Root idents which are used as prefixes for every global ident generated:
-    let comp_ctx = CompCtx::new(ident, component_kind);
+    let comp_ctx = CompCtx::new(ident, component_kind, namespace);
 
     let mut dom_programs = vec![];
     collect_dom_programs(&root_block.statements, &mut dom_programs);

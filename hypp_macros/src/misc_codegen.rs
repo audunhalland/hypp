@@ -6,6 +6,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::ir;
+use crate::namespace;
 use crate::param;
 
 #[derive(Copy, Clone)]
@@ -30,17 +31,22 @@ pub struct CodegenCtx {
 
 /// Context for one whole component
 pub struct CompCtx {
-    pub kind: ir::ComponentKind,
     pub component_ident: syn::Ident,
+    pub kind: ir::ComponentKind,
     pub public_props_ident: syn::Ident,
-    pub mod_ident: syn::Ident,
+    pub namespace: namespace::Namespace,
 
+    pub mod_ident: syn::Ident,
     pub patch_ctx_ty_root: TokenStream,
     pub patch_ctx_ty_inner: TokenStream,
 }
 
 impl CompCtx {
-    pub fn new(component_ident: syn::Ident, kind: ir::ComponentKind) -> Self {
+    pub fn new(
+        component_ident: syn::Ident,
+        kind: ir::ComponentKind,
+        namespace: namespace::Namespace,
+    ) -> Self {
         let comp_string = component_ident.clone().to_string();
 
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
@@ -66,8 +72,9 @@ impl CompCtx {
         };
 
         Self {
-            kind,
             component_ident,
+            kind,
+            namespace,
             public_props_ident,
             mod_ident,
             patch_ctx_ty_root,

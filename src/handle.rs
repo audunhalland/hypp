@@ -270,6 +270,7 @@ mod test {
 
     impl<'p, H: Hypp> Component<'p, H> for CompA {
         type Props = LolProps<'p>;
+        type NS = crate::ns::Html;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor) {}
     }
@@ -299,6 +300,7 @@ mod test {
 
     impl<'p, H: Hypp> Component<'p, H> for CompB {
         type Props = LolProps<'p>;
+        type NS = crate::ns::Html;
 
         fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor) {}
     }
