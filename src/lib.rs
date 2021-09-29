@@ -70,7 +70,11 @@ pub trait Hypp: Sized {
 /// A namespace in which a component template can pick names
 ///
 pub trait TemplNS: Sized + 'static {
-    type EType: StaticName;
+    /// Type of an 'element' or container in this namespace
+    type EType: StaticName + 'static;
+
+    /// Type of an 'attribute' - a property sent to an element in this namespace
+    type AType: StaticName + 'static;
 }
 
 pub trait StaticName {
@@ -99,7 +103,7 @@ pub enum ConstOpCode<NS: TemplNS> {
 
     /// Moves the cursor to a specific attribute name within the current element.
     /// This opcode has no return value, and has no effect on the return value of the whole program.
-    Attr(&'static str),
+    Attr(NS::AType),
 
     /// Define text-based attribute value on the current attribute.
     /// This opcode has no return value, and has no effect on the return value of the whole program.

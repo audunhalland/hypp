@@ -312,8 +312,8 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
                 ConstOpCode::Enter(etype) => {
                     result = Ok(self.enter_element(etype.static_name())?);
                 }
-                ConstOpCode::Attr(name) => {
-                    self.loaded_attribute_name = Some(name);
+                ConstOpCode::Attr(atype) => {
+                    self.loaded_attribute_name = Some(atype.static_name());
                 }
                 ConstOpCode::AttrText(value) => {
                     self.set_attribute(value)?;
@@ -338,11 +338,11 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
 
         for opcode in program {
             match opcode {
-                ConstOpCode::Enter(tag_name) => {
-                    self.enter_element(tag_name.static_name())?;
+                ConstOpCode::Enter(etype) => {
+                    self.enter_element(etype.static_name())?;
                 }
-                ConstOpCode::Attr(name) => {
-                    self.loaded_attribute_name = Some(name);
+                ConstOpCode::Attr(atype) => {
+                    self.loaded_attribute_name = Some(atype.static_name());
                 }
                 ConstOpCode::AttrText(value) => {
                     self.set_attribute(value)?;

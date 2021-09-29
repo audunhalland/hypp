@@ -250,8 +250,8 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
                 ConstOpCode::Enter(etype) => {
                     result = Ok(self.enter_element(etype.static_name()));
                 }
-                ConstOpCode::Attr(name) => {
-                    self.loaded_attribute_name = Some(name);
+                ConstOpCode::Attr(atype) => {
+                    self.loaded_attribute_name = Some(atype.static_name());
                 }
                 ConstOpCode::AttrText(value) => {
                     let attribute_name = self

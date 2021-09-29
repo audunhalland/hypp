@@ -2,6 +2,7 @@ pub struct Html;
 
 impl crate::TemplNS for Html {
     type EType = &'static str;
+    type AType = &'static str;
 }
 
 impl crate::StaticName for &'static str {
@@ -59,9 +60,11 @@ mod experiment {
 
     impl TemplNS for A {
         type EType = &'static str;
+        type AType = &'static str;
     }
     impl TemplNS for B {
         type EType = &'static str;
+        type AType = &'static str;
     }
 
     trait Process<S: Sys> {
