@@ -389,7 +389,7 @@ component! {
         }
     </div>
     <div>
-        <button on_click={Self::handle_click}>
+        <button onClick={Self::handle_click}>
             if toggled {
                 "Toggled"
             } else {
@@ -409,7 +409,7 @@ component! {
     }
 
     if show_button {
-        <button on_click={Self::handle_click}>
+        <button onClick={Self::handle_click}>
             if toggled {
                 "Toggled"
             } else {
@@ -431,7 +431,7 @@ component! {
     }
 
     <div>
-        <button on_click={Self::add_item}>"Add item"</button>
+        <button onClick={Self::add_item}>"Add item"</button>
         if items.is_empty() {
             "No items"
         } else {

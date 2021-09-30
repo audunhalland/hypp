@@ -10,6 +10,7 @@ description = "Implementation of #[component]"
 syn = { version = "1.0.75", features = ["full", "extra-traits"] }
 quote = "1.0.9"
 proc-macro2 = "1.0.24"
+web-ns = { git = "https://github.com/audunhalland/web-ns" }
 
 [dev-dependencies]
 maplit = "1"

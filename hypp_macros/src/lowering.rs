@@ -11,14 +11,14 @@ use syn::spanned::Spanned;
 use crate::callback;
 use crate::flow;
 use crate::ir;
-use crate::namespace::TraversalDirection;
+use crate::namespace::*;
 use crate::param;
 use crate::template_ast;
 
 #[derive(Debug)]
 pub enum LoweringError {
     InvalidCallback(proc_macro2::Span),
-    InvalidAttribute(proc_macro2::Span),
+    InvalidAttribute(NSAttrName, proc_macro2::Span),
 }
 
 // Minimum size of programs to directly skip when
@@ -213,12 +213,13 @@ impl BlockBuilder {
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
     ) -> Result<(), LoweringError> {
-        let tag_name = syn::LitStr::new(&element.tag_name.to_string(), element.tag_name.span());
-
-        self.push_dom_opcode(ir::DomOpCode::Enter(tag_name.clone()), ctx);
+        self.push_dom_opcode(
+            ir::DomOpCode::Enter(element.ns_name.name.opcode_value()),
+            ctx,
+        );
 
         for attr in element.attrs {
-            self.lower_attr(attr, ctx)?;
+            self.lower_element_attr(attr, ctx)?;
         }
 
         ctx.current_dom_depth += 1;
@@ -242,17 +243,17 @@ impl BlockBuilder {
         Ok(())
     }
 
-    fn lower_attr<'p>(
+    fn lower_element_attr<'p>(
         &mut self,
-        attr: template_ast::Attr,
+        attr: template_ast::Attr<NSName<NSAttrName>>,
         ctx: &mut Context,
     ) -> Result<(), LoweringError> {
-        let attr_name = syn::LitStr::new(&attr.ident.to_string(), attr.ident.span());
+        let attr_opcode_value = attr.name.name.opcode_value();
 
         match attr.value {
             template_ast::AttrValue::ImplicitTrue => {
-                let attr_value = syn::LitStr::new("true", attr.ident.span());
-                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name), ctx);
+                let attr_value = syn::LitStr::new("true", proc_macro2::Span::mixed_site());
+                self.push_dom_opcode(ir::DomOpCode::Attr(attr_opcode_value), ctx);
                 self.push_dom_opcode(ir::DomOpCode::AttrText(attr_value), ctx);
                 Ok(())
             }
@@ -260,19 +261,19 @@ impl BlockBuilder {
                 let value_lit = match lit {
                     syn::Lit::Str(lit_str) => lit_str,
                     // BUG: Debug formatting
-                    lit => syn::LitStr::new(&format!("{:?}", lit), attr.ident.span()),
+                    lit => syn::LitStr::new(&format!("{:?}", lit), proc_macro2::Span::mixed_site()),
                 };
-                self.push_dom_opcode(ir::DomOpCode::Attr(attr_name), ctx);
+                self.push_dom_opcode(ir::DomOpCode::Attr(attr_opcode_value), ctx);
                 self.push_dom_opcode(ir::DomOpCode::AttrText(value_lit), ctx);
                 Ok(())
             }
-            template_ast::AttrValue::Expr(expr) => match attr_name.value().as_ref() {
+            template_ast::AttrValue::Expr(expr) => match attr.name.name {
                 // Hack: need some better way to do this.. :)
-                "on_click" => {
+                NSAttrName::Html(web_ns::html5::HtmlAttr::Onclick) => {
                     ctx.callback_count += 1;
 
                     // First push the attribute name into const program:
-                    self.push_dom_opcode(ir::DomOpCode::Attr(attr_name), ctx);
+                    self.push_dom_opcode(ir::DomOpCode::Attr(attr_opcode_value), ctx);
 
                     // Callback must be stored, because it must release ref counts on unmount.
                     let callback_field = ctx.next_field_id();
@@ -297,7 +298,7 @@ impl BlockBuilder {
                     );
                     Ok(())
                 }
-                _ => Err(LoweringError::InvalidAttribute(expr.span())),
+                attr_name => Err(LoweringError::InvalidAttribute(attr_name, expr.span())),
             },
         }
     }

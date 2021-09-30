@@ -71,14 +71,14 @@ pub trait Hypp: Sized {
 ///
 pub trait TemplNS: Sized + 'static {
     /// Type of an 'element' or container in this namespace
-    type EType: StaticName + 'static;
+    type EType: Name + 'static;
 
     /// Type of an 'attribute' - a property sent to an element in this namespace
-    type AType: StaticName + 'static;
+    type AType: Name + 'static;
 }
 
-pub trait StaticName {
-    fn static_name(&self) -> &'static str;
+pub trait Name {
+    fn name(&self) -> &str;
 }
 
 ///
@@ -173,16 +173,19 @@ pub trait Cursor<H: Hypp> {
 pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
     /// Execute a series of opcodes.
     /// The last node opcode must produce an element.
-    fn const_exec_element(&mut self, program: &[ConstOpCode<NS>]) -> Result<H::Element, Error>;
+    fn const_exec_element(
+        &mut self,
+        program: &'static [ConstOpCode<NS>],
+    ) -> Result<H::Element, Error>;
 
     /// Execute a series of opcodes.
     /// The last node opcode must produce a text node.
-    fn const_exec_text(&mut self, program: &[ConstOpCode<NS>]) -> Result<H::Text, Error>;
+    fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<H::Text, Error>;
 
     /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.
     /// The DOM described by the program must match the actual DOM.
-    fn skip_const_program(&mut self, program: &[ConstOpCode<NS>]);
+    fn skip_const_program(&mut self, program: &'static [ConstOpCode<NS>]);
 }
 
 pub trait Anchor<H: Hypp> {

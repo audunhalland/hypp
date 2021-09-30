@@ -11,6 +11,7 @@ mod flow;
 mod ir;
 mod lowering;
 mod misc_codegen;
+mod name;
 mod namespace;
 mod param;
 mod patch;

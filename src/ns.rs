@@ -1,12 +1,26 @@
+use web_ns::LocalName;
+
 pub struct Html;
 
 impl crate::TemplNS for Html {
-    type EType = &'static str;
-    type AType = &'static str;
+    type EType = web_ns::html5::HtmlTag;
+    type AType = web_ns::html5::HtmlAttr;
 }
 
-impl crate::StaticName for &'static str {
-    fn static_name(&self) -> &'static str {
+impl crate::Name for web_ns::html5::HtmlTag {
+    fn name(&self) -> &str {
+        self.local_name()
+    }
+}
+
+impl crate::Name for web_ns::html5::HtmlAttr {
+    fn name(&self) -> &str {
+        self.local_name()
+    }
+}
+
+impl crate::Name for &'static str {
+    fn name(&self) -> &'static str {
         self
     }
 }

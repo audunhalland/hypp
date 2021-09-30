@@ -48,7 +48,8 @@ impl Parse for Component {
             methods.push(input.parse::<syn::ItemFn>()?);
         }
 
-        let template = template_ast::parse_at_least_one(input)?;
+        let template =
+            template_ast::TemplateParser::for_namespace(namespace).parse_at_least_one(input)?;
 
         Ok(Self {
             ident,

@@ -172,7 +172,7 @@ pub enum Expression {
     /// A component instantiation
     Component {
         path: ComponentPath,
-        props: Vec<template_ast::Attr>,
+        props: Vec<template_ast::Attr<syn::Ident>>,
     },
 
     /// A match expression (something which is conditional)
@@ -223,8 +223,8 @@ impl ConstDomProgram {
 }
 
 pub enum DomOpCode {
-    Enter(syn::LitStr),
-    Attr(syn::LitStr),
+    Enter(syn::Expr),
+    Attr(syn::Expr),
     AttrText(syn::LitStr),
     Text(syn::LitStr),
     Exit,

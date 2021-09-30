@@ -244,7 +244,7 @@ fn compile_body<'c>(
                 let prop_list: Vec<TokenStream> = props
                     .iter()
                     .map(|attr| {
-                        let ident = &attr.ident;
+                        let ident = &attr.name;
                         match &attr.value {
                             template_ast::AttrValue::ImplicitTrue => quote! {
                                 #ident: true,

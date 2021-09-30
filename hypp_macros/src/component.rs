@@ -217,8 +217,8 @@ fn analyze_ast(
     }: component_ast::Component,
 ) -> Component {
     let (component_kind, root_block) =
-        lowering::lower_root_node(template, namespace.traversal_direction(), &params)
-            .expect("Compile error: Lowering problem");
+        lowering::lower_root_node(template, namespace.traversal_direction(), &params).unwrap();
+    // .expect("Compile error: Lowering problem");
 
     // Root idents which are used as prefixes for every global ident generated:
     let comp_ctx = CompCtx::new(ident, component_kind, namespace);

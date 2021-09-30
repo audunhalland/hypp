@@ -3,7 +3,7 @@ use crate::error::Error;
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{
-    AsNode, CallbackSlot, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Span, StaticName, TemplNS,
+    AsNode, CallbackSlot, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Name, Span, TemplNS,
 };
 
 use parking_lot::Mutex;
@@ -242,16 +242,19 @@ impl Cursor<ServerHypp> for ServerBuilder {
 }
 
 impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
-    fn const_exec_element(&mut self, program: &[ConstOpCode<NS>]) -> Result<ArcNode, Error> {
+    fn const_exec_element(
+        &mut self,
+        program: &'static [ConstOpCode<NS>],
+    ) -> Result<ArcNode, Error> {
         let mut result = Err(Error::NoProgram);
 
         for opcode in program {
             match opcode {
                 ConstOpCode::Enter(etype) => {
-                    result = Ok(self.enter_element(etype.static_name()));
+                    result = Ok(self.enter_element(etype.name()));
                 }
                 ConstOpCode::Attr(atype) => {
-                    self.loaded_attribute_name = Some(atype.static_name());
+                    self.loaded_attribute_name = Some(atype.name());
                 }
                 ConstOpCode::AttrText(value) => {
                     let attribute_name = self
@@ -276,7 +279,7 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
                     result = Ok(self.exit_element());
                 }
                 ConstOpCode::Erase(etype) => {
-                    result = Ok(self.remove_element(etype.static_name())?);
+                    result = Ok(self.remove_element(etype.name())?);
                 }
             };
         }
@@ -284,7 +287,7 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
         result
     }
 
-    fn const_exec_text(&mut self, program: &[ConstOpCode<NS>]) -> Result<ArcNode, Error> {
+    fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<ArcNode, Error> {
         <ServerBuilder as NSCursor<ServerHypp, NS>>::const_exec_element(self, program)
     }
 

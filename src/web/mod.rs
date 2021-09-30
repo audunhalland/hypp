@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Span, StaticName, TemplNS};
+use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Name, Span, TemplNS};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -303,17 +303,17 @@ impl Cursor<WebHypp> for WebBuilder {
 impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
     fn const_exec_element(
         &mut self,
-        program: &[ConstOpCode<NS>],
+        program: &'static [ConstOpCode<NS>],
     ) -> Result<web_sys::Element, Error> {
         let mut result = Err(Error::NoProgram);
 
         for opcode in program {
             match opcode {
                 ConstOpCode::Enter(etype) => {
-                    result = Ok(self.enter_element(etype.static_name())?);
+                    result = Ok(self.enter_element(etype.name())?);
                 }
                 ConstOpCode::Attr(atype) => {
-                    self.loaded_attribute_name = Some(atype.static_name());
+                    self.loaded_attribute_name = Some(atype.name());
                 }
                 ConstOpCode::AttrText(value) => {
                     self.set_attribute(value)?;
@@ -325,7 +325,7 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
                     result = Ok(self.exit_element()?);
                 }
                 ConstOpCode::Erase(etype) => {
-                    result = Ok(self.remove_element(etype.static_name())?);
+                    result = Ok(self.remove_element(etype.name())?);
                 }
             };
         }
@@ -333,16 +333,19 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
         result
     }
 
-    fn const_exec_text(&mut self, program: &[ConstOpCode<NS>]) -> Result<web_sys::Text, Error> {
+    fn const_exec_text(
+        &mut self,
+        program: &'static [ConstOpCode<NS>],
+    ) -> Result<web_sys::Text, Error> {
         let mut result = Err(Error::NoProgram);
 
         for opcode in program {
             match opcode {
                 ConstOpCode::Enter(etype) => {
-                    self.enter_element(etype.static_name())?;
+                    self.enter_element(etype.name())?;
                 }
                 ConstOpCode::Attr(atype) => {
-                    self.loaded_attribute_name = Some(atype.static_name());
+                    self.loaded_attribute_name = Some(atype.name());
                 }
                 ConstOpCode::AttrText(value) => {
                     self.set_attribute(value)?;
@@ -354,7 +357,7 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
                     self.exit_element()?;
                 }
                 ConstOpCode::Erase(etype) => {
-                    self.remove_element(etype.static_name())?;
+                    self.remove_element(etype.name())?;
                 }
             };
         }
