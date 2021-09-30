@@ -6,20 +6,12 @@
 /// together with other code. The only reason to split a block would the
 /// presence of conditionals.
 ///
-use syn::spanned::Spanned;
-
 use crate::callback;
 use crate::flow;
 use crate::ir;
 use crate::namespace::*;
 use crate::param;
 use crate::template_ast;
-
-#[derive(Debug)]
-pub enum LoweringError {
-    InvalidCallback(proc_macro2::Span),
-    InvalidAttribute(NSAttrName, proc_macro2::Span),
-}
 
 // Minimum size of programs to directly skip when
 // generating patch code.
@@ -31,7 +23,7 @@ pub fn lower_root_node(
     root: template_ast::Node,
     direction: TraversalDirection,
     params: &[param::Param],
-) -> Result<(ir::ComponentKind, ir::Block), LoweringError> {
+) -> Result<(ir::ComponentKind, ir::Block), syn::Error> {
     let mut root_builder = BlockBuilder::default();
 
     let mut ctx = Context {
@@ -41,11 +33,21 @@ pub fn lower_root_node(
         callback_count: 0,
         current_dom_depth: 0,
         direction,
+        errors: vec![],
     };
 
     let scope = flow::FlowScope::from_params(params);
 
     root_builder.lower_ast(root, &scope, &mut ctx)?;
+
+    if !ctx.errors.is_empty() {
+        let mut errors = ctx.errors.into_iter();
+        let mut error = errors.next().unwrap();
+        while let Some(next_error) = errors.next() {
+            error.combine(next_error);
+        }
+        return Err(error);
+    }
 
     let mut root_block = root_builder.to_block(&mut ctx);
 
@@ -69,6 +71,8 @@ pub struct Context {
     current_dom_depth: u16,
 
     direction: TraversalDirection,
+
+    errors: Vec<syn::Error>,
 }
 
 impl Context {
@@ -180,18 +184,22 @@ impl BlockBuilder {
         node: template_ast::Node,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
+    ) -> Result<(), syn::Error> {
         match node {
             template_ast::Node::Element(element) => self.lower_element(element, scope, ctx)?,
             template_ast::Node::Fragment(nodes) => match ctx.direction {
                 TraversalDirection::FirstToLast => {
                     for node in nodes {
-                        self.lower_ast(node, scope, ctx)?;
+                        if let Err(error) = self.lower_ast(node, scope, ctx) {
+                            ctx.errors.push(error);
+                        }
                     }
                 }
                 TraversalDirection::LastToFirst => {
                     for node in nodes.into_iter().rev() {
-                        self.lower_ast(node, scope, ctx)?;
+                        if let Err(error) = self.lower_ast(node, scope, ctx) {
+                            ctx.errors.push(error);
+                        }
                     }
                 }
             },
@@ -212,14 +220,19 @@ impl BlockBuilder {
         element: template_ast::Element,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
+    ) -> Result<(), syn::Error> {
         self.push_dom_opcode(
-            ir::DomOpCode::Enter(element.ns_name.name.opcode_value()),
+            (
+                ir::DomOpCodeKind::Enter(element.ns_name.opcode_value()),
+                element.ns_name.ident.span(),
+            ),
             ctx,
         );
 
         for attr in element.attrs {
-            self.lower_element_attr(attr, ctx)?;
+            if let Err(error) = self.lower_element_attr(attr, ctx) {
+                ctx.errors.push(error);
+            }
         }
 
         ctx.current_dom_depth += 1;
@@ -227,17 +240,21 @@ impl BlockBuilder {
         match ctx.direction {
             TraversalDirection::FirstToLast => {
                 for child in element.children {
-                    self.lower_ast(child, scope, ctx)?;
+                    if let Err(error) = self.lower_ast(child, scope, ctx) {
+                        ctx.errors.push(error);
+                    }
                 }
             }
             TraversalDirection::LastToFirst => {
                 for child in element.children.into_iter().rev() {
-                    self.lower_ast(child, scope, ctx)?;
+                    if let Err(error) = self.lower_ast(child, scope, ctx) {
+                        ctx.errors.push(error);
+                    }
                 }
             }
         }
 
-        self.push_dom_opcode(ir::DomOpCode::Exit, ctx);
+        self.push_dom_opcode((ir::DomOpCodeKind::Exit, element.ns_name.ident.span()), ctx);
         ctx.current_dom_depth -= 1;
 
         Ok(())
@@ -247,33 +264,40 @@ impl BlockBuilder {
         &mut self,
         attr: template_ast::Attr<NSName<NSAttrName>>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
-        let attr_opcode_value = attr.name.name.opcode_value();
+    ) -> Result<(), syn::Error> {
+        let attr_opcode_value = attr.name.opcode_value();
+        let span = attr.name.ident.span();
 
-        match attr.value {
-            template_ast::AttrValue::ImplicitTrue => {
-                let attr_value = syn::LitStr::new("true", proc_macro2::Span::mixed_site());
-                self.push_dom_opcode(ir::DomOpCode::Attr(attr_opcode_value), ctx);
-                self.push_dom_opcode(ir::DomOpCode::AttrText(attr_value), ctx);
-                Ok(())
-            }
-            template_ast::AttrValue::Literal(lit) => {
-                let value_lit = match lit {
-                    syn::Lit::Str(lit_str) => lit_str,
-                    // BUG: Debug formatting
-                    lit => syn::LitStr::new(&format!("{:?}", lit), proc_macro2::Span::mixed_site()),
-                };
-                self.push_dom_opcode(ir::DomOpCode::Attr(attr_opcode_value), ctx);
-                self.push_dom_opcode(ir::DomOpCode::AttrText(value_lit), ctx);
-                Ok(())
-            }
-            template_ast::AttrValue::Expr(expr) => match attr.name.name {
-                // Hack: need some better way to do this.. :)
-                NSAttrName::Html(web_ns::html5::HtmlAttr::Onclick) => {
+        match attr.name.name.kind() {
+            NSAttrKind::Misc => match attr.value {
+                template_ast::AttrValue::ImplicitTrue => {
+                    let attr_value = syn::LitStr::new("true", proc_macro2::Span::mixed_site());
+                    self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
+                    self.push_dom_opcode((ir::DomOpCodeKind::AttrText(attr_value), span), ctx);
+                    Ok(())
+                }
+                template_ast::AttrValue::Literal(lit) => {
+                    let value_lit = match lit {
+                        syn::Lit::Str(lit_str) => lit_str,
+                        // BUG: Debug formatting
+                        lit => {
+                            syn::LitStr::new(&format!("{:?}", lit), proc_macro2::Span::mixed_site())
+                        }
+                    };
+                    self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
+                    self.push_dom_opcode((ir::DomOpCodeKind::AttrText(value_lit), span), ctx);
+                    Ok(())
+                }
+                template_ast::AttrValue::Expr(_) => {
+                    panic!("lol")
+                }
+            },
+            NSAttrKind::Callback => match attr.value {
+                template_ast::AttrValue::Expr(expr) => {
                     ctx.callback_count += 1;
 
                     // First push the attribute name into const program:
-                    self.push_dom_opcode(ir::DomOpCode::Attr(attr_opcode_value), ctx);
+                    self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
 
                     // Callback must be stored, because it must release ref counts on unmount.
                     let callback_field = ctx.next_field_id();
@@ -283,8 +307,7 @@ impl BlockBuilder {
                         ty: ir::StructFieldType::CallbackSlot,
                     });
 
-                    let callback = callback::parse_callback(expr)
-                        .map_err(|syn_err| LoweringError::InvalidCallback(syn_err.span()))?;
+                    let callback = callback::parse_callback(expr)?;
 
                     // Break the DOM program to produce a callback here:
                     self.push_statement(
@@ -298,7 +321,7 @@ impl BlockBuilder {
                     );
                     Ok(())
                 }
-                attr_name => Err(LoweringError::InvalidAttribute(attr_name, expr.span())),
+                _ => panic!(),
             },
         }
     }
@@ -307,8 +330,9 @@ impl BlockBuilder {
         &mut self,
         text: template_ast::Text,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
-        self.push_dom_opcode(ir::DomOpCode::Text(text.0), ctx);
+    ) -> Result<(), syn::Error> {
+        let span = text.0.span();
+        self.push_dom_opcode((ir::DomOpCodeKind::Text(text.0), span), ctx);
         Ok(())
     }
 
@@ -317,7 +341,7 @@ impl BlockBuilder {
         expr: syn::Expr,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
+    ) -> Result<(), syn::Error> {
         let node_field = ctx.next_field_id();
 
         self.struct_fields.push(ir::StructField {
@@ -346,7 +370,7 @@ impl BlockBuilder {
         component: template_ast::Component,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
+    ) -> Result<(), syn::Error> {
         let field = ctx.next_field_id();
 
         let component_path = ir::ComponentPath::new(component.type_path);
@@ -390,7 +414,7 @@ impl BlockBuilder {
         the_match: template_ast::Match,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
+    ) -> Result<(), syn::Error> {
         let expr = the_match.expr;
         let field = ctx.next_field_id();
         let span_type = ir::StructFieldType::Span(ctx.next_span_index(), ir::SpanKind::Enum);
@@ -415,7 +439,7 @@ impl BlockBuilder {
                     block: arm_builder.to_block(ctx),
                 })
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<syn::Result<Vec<_>>>()?;
 
         // Param deps for the whole match expression
         let mut param_deps = scope.lookup_params_deps_for_expr(&expr);
@@ -452,7 +476,7 @@ impl BlockBuilder {
         the_for: template_ast::For,
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
-    ) -> Result<(), LoweringError> {
+    ) -> Result<(), syn::Error> {
         // let expr = the_for.expr;
         let field = ctx.next_field_id();
         let span_type =

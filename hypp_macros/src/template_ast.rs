@@ -193,9 +193,11 @@ impl TemplateParser {
                 let attrs = attrs
                     .into_iter()
                     .map(|attr| {
+                        let ident_string = attr.name.to_string();
+                        let span = attr.name.span();
                         let name = ns_name
                             .name
-                            .parse_attr_name(attr.name.to_string(), attr.name.span())?;
+                            .parse_attr_name(attr.name, ident_string, span)?;
 
                         Ok(Attr {
                             name,

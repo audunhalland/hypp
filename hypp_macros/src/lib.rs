@@ -23,7 +23,7 @@ mod template_ast;
 #[proc_macro]
 pub fn component(input: TokenStream) -> proc_macro::TokenStream {
     let output =
-        component::generate_component(syn::parse_macro_input!(input as component_ast::Component));
+        component::generate_component(syn::parse_macro_input!(input as component::Component));
 
     TokenStream::from(output)
 }
@@ -34,7 +34,7 @@ pub fn component(input: TokenStream) -> proc_macro::TokenStream {
 #[proc_macro]
 pub fn component_dbg(input: TokenStream) -> proc_macro::TokenStream {
     let output =
-        component::generate_component(syn::parse_macro_input!(input as component_ast::Component));
+        component::generate_component(syn::parse_macro_input!(input as component::Component));
 
     println!("// macro output: \n{}", output);
 

@@ -12,7 +12,7 @@ pub enum TagName {
 impl Display for TagName {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::NS(ns_name) => ns_name.input.fmt(f),
+            Self::NS(ns_name) => ns_name.ident.to_string().fmt(f),
             Self::Component(type_path) => {
                 let tokens = quote::quote! {
                     #type_path
@@ -35,7 +35,9 @@ pub fn parse_tag_name(input: ParseStream, namespace: Namespace) -> Result<TagNam
         if ident_string.as_str() < "a" {
             TagName::Component(type_path)
         } else {
-            TagName::NS(namespace.parse_tag_name(ident_string, ident.span())?)
+            let ident = type_path.path.segments.into_iter().next().unwrap().ident;
+            let span = ident.span();
+            TagName::NS(namespace.parse_tag_name(ident, ident_string, span)?)
         }
     } else {
         TagName::Component(type_path)

@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
+use web_ns::attr::Attribute;
 use web_ns::{AttrByLocalName, TagByLocalName};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,7 +19,7 @@ pub enum TraversalDirection {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct NSName<N> {
-    pub input: String,
+    pub ident: syn::Ident,
     pub name: N,
 }
 
@@ -30,6 +31,11 @@ pub enum NSTagName {
 #[derive(Debug, Eq, PartialEq)]
 pub enum NSAttrName {
     Html(web_ns::html5::HtmlAttr),
+}
+
+pub enum NSAttrKind {
+    Callback,
+    Misc,
 }
 
 pub trait OpcodeValue {
@@ -51,17 +57,18 @@ impl Namespace {
 
     pub fn parse_tag_name(
         &self,
-        input: String,
+        ident: syn::Ident,
+        ident_string: String,
         span: proc_macro2::Span,
     ) -> syn::Result<NSName<NSTagName>> {
         match self {
             Self::Html => {
                 let tag_name = web_ns::html5::HTML5_NS
-                    .tag_by_local_name(&input)
-                    .map_err(|error| self.web_ns_error_to_syn_error(&input, error, span))?;
+                    .tag_by_local_name(&ident_string)
+                    .map_err(|error| self.web_ns_error_to_syn_error(&ident_string, error, span))?;
 
                 Ok(NSName {
-                    input,
+                    ident,
                     name: NSTagName::Html(tag_name),
                 })
             }
@@ -87,17 +94,20 @@ impl Namespace {
 impl NSTagName {
     pub fn parse_attr_name(
         &self,
-        input: String,
+        ident: syn::Ident,
+        ident_string: String,
         span: proc_macro2::Span,
     ) -> syn::Result<NSName<NSAttrName>> {
         match self {
             Self::Html(tag_name) => {
-                let attr_name = tag_name.attr_by_local_name(&input).map_err(|error| {
-                    Namespace::Html.web_ns_error_to_syn_error(&input, error, span)
-                })?;
+                let attr_name = tag_name
+                    .attr_by_local_name(&ident_string)
+                    .map_err(|error| {
+                        Namespace::Html.web_ns_error_to_syn_error(&ident_string, error, span)
+                    })?;
 
                 Ok(NSName {
-                    input,
+                    ident,
                     name: NSAttrName::Html(attr_name),
                 })
             }
@@ -105,10 +115,94 @@ impl NSTagName {
     }
 }
 
-impl OpcodeValue for NSTagName {
-    fn opcode_value(&self) -> syn::Expr {
+impl NSAttrName {
+    pub fn kind(&self) -> NSAttrKind {
+        use web_ns::html5::HtmlAttr;
         match self {
-            Self::Html(tag_name) => {
+            NSAttrName::Html(attr) => match attr {
+                HtmlAttr::Onclick
+                | HtmlAttr::Onclose
+                | HtmlAttr::Oncontextmenu
+                | HtmlAttr::Oncopy
+                | HtmlAttr::Oncuechange
+                | HtmlAttr::Oncut
+                | HtmlAttr::Ondblclick
+                | HtmlAttr::Ondrag
+                | HtmlAttr::Ondragend
+                | HtmlAttr::Ondragenter
+                | HtmlAttr::Ondragexit
+                | HtmlAttr::Ondragleave
+                | HtmlAttr::Ondragover
+                | HtmlAttr::Ondragstart
+                | HtmlAttr::Ondrop
+                | HtmlAttr::Ondurationchange
+                | HtmlAttr::Onemptied
+                | HtmlAttr::Onended
+                | HtmlAttr::Onerror
+                | HtmlAttr::Onfocus
+                | HtmlAttr::Onformdata
+                | HtmlAttr::Onhashchange
+                | HtmlAttr::Oninput
+                | HtmlAttr::Oninvalid
+                | HtmlAttr::Onkeydown
+                | HtmlAttr::Onkeypress
+                | HtmlAttr::Onkeyup
+                | HtmlAttr::Onlanguagechange
+                | HtmlAttr::Onload
+                | HtmlAttr::Onloadeddata
+                | HtmlAttr::Onloadedmetadata
+                | HtmlAttr::Onloadend
+                | HtmlAttr::Onloadstart
+                | HtmlAttr::Onmessage
+                | HtmlAttr::Onmessageerror
+                | HtmlAttr::Onmousedown
+                | HtmlAttr::Onmouseenter
+                | HtmlAttr::Onmouseleave
+                | HtmlAttr::Onmousemove
+                | HtmlAttr::Onmouseout
+                | HtmlAttr::Onmouseover
+                | HtmlAttr::Onmouseup
+                | HtmlAttr::Onoffline
+                | HtmlAttr::Ononline
+                | HtmlAttr::Onpagehide
+                | HtmlAttr::Onpageshow
+                | HtmlAttr::Onpaste
+                | HtmlAttr::Onpause
+                | HtmlAttr::Onplay
+                | HtmlAttr::Onplaying
+                | HtmlAttr::Onpopstate
+                | HtmlAttr::Onprogress
+                | HtmlAttr::Onratechange
+                | HtmlAttr::Onrejectionhandled
+                | HtmlAttr::Onreset
+                | HtmlAttr::Onresize
+                | HtmlAttr::Onscroll
+                | HtmlAttr::Onsecuritypolicyviolation
+                | HtmlAttr::Onseeked
+                | HtmlAttr::Onseeking
+                | HtmlAttr::Onselect
+                | HtmlAttr::Onslotchange
+                | HtmlAttr::Onstalled
+                | HtmlAttr::Onstorage
+                | HtmlAttr::Onsubmit
+                | HtmlAttr::Onsuspend
+                | HtmlAttr::Ontimeupdate
+                | HtmlAttr::Ontoggle
+                | HtmlAttr::Onunhandledrejection
+                | HtmlAttr::Onunload
+                | HtmlAttr::Onvolumechange
+                | HtmlAttr::Onwaiting
+                | HtmlAttr::Onwheel => NSAttrKind::Callback,
+                _ => NSAttrKind::Misc,
+            },
+        }
+    }
+}
+
+impl OpcodeValue for NSName<NSTagName> {
+    fn opcode_value(&self) -> syn::Expr {
+        match &self.name {
+            NSTagName::Html(tag_name) => {
                 let ident = quote::format_ident!("{}", format!("{:?}", tag_name));
 
                 syn::parse_quote! {
@@ -119,10 +213,10 @@ impl OpcodeValue for NSTagName {
     }
 }
 
-impl OpcodeValue for NSAttrName {
+impl OpcodeValue for NSName<NSAttrName> {
     fn opcode_value(&self) -> syn::Expr {
-        match self {
-            Self::Html(attr_name) => {
+        match &self.name {
+            NSAttrName::Html(attr_name) => {
                 let ident = quote::format_ident!("{}", format!("{:?}", attr_name));
 
                 syn::parse_quote! {

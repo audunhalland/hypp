@@ -204,25 +204,27 @@ pub struct ConstDomProgram {
 
 impl ConstDomProgram {
     pub fn last_node_opcode(&self) -> Option<&DomOpCode> {
-        self.opcodes.iter().rev().find(|opcode| match opcode {
-            DomOpCode::Enter(_) => true,
-            DomOpCode::Attr(_) => false,
-            DomOpCode::AttrText(_) => false,
-            DomOpCode::Text(_) => true,
-            DomOpCode::Exit => true,
+        self.opcodes.iter().rev().find(|opcode| match &opcode.0 {
+            DomOpCodeKind::Enter(_) => true,
+            DomOpCodeKind::Attr(_) => false,
+            DomOpCodeKind::AttrText(_) => false,
+            DomOpCodeKind::Text(_) => true,
+            DomOpCodeKind::Exit => true,
         })
     }
 
     pub fn last_node_type(&self) -> Option<NodeType> {
-        self.last_node_opcode().and_then(|opcode| match opcode {
-            DomOpCode::Enter(_) | DomOpCode::Exit => Some(NodeType::Element),
-            DomOpCode::Attr(_) | DomOpCode::AttrText(_) => None,
-            DomOpCode::Text(_) => Some(NodeType::Text),
+        self.last_node_opcode().and_then(|opcode| match &opcode.0 {
+            DomOpCodeKind::Enter(_) | DomOpCodeKind::Exit => Some(NodeType::Element),
+            DomOpCodeKind::Attr(_) | DomOpCodeKind::AttrText(_) => None,
+            DomOpCodeKind::Text(_) => Some(NodeType::Text),
         })
     }
 }
 
-pub enum DomOpCode {
+pub type DomOpCode = (DomOpCodeKind, proc_macro2::Span);
+
+pub enum DomOpCodeKind {
     Enter(syn::Expr),
     Attr(syn::Expr),
     AttrText(syn::LitStr),

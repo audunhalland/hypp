@@ -147,12 +147,12 @@ fn compile_body<'c>(
                     local: FieldLocal::Let,
                     field_ident: &stmt.field,
                     init: match last_node_opcode {
-                        Some(ir::DomOpCode::Enter(_) | ir::DomOpCode::Exit) => {
+                        Some((ir::DomOpCodeKind::Enter(_), _) | (ir::DomOpCodeKind::Exit, _)) => {
                             quote! {
                                 __ctx.cur.const_exec_element(&#program_ident)?;
                             }
                         }
-                        Some(ir::DomOpCode::Text(_)) => quote! {
+                        Some((ir::DomOpCodeKind::Text(_), _)) => quote! {
                             __ctx.cur.const_exec_text(&#program_ident)?;
                         },
                         _ => panic!(),
@@ -166,12 +166,14 @@ fn compile_body<'c>(
 
                         let field_expr = FieldExpr(*field, ctx);
                         match last_node_opcode {
-                            Some(ir::DomOpCode::Enter(_)) => quote! {
+                            Some((ir::DomOpCodeKind::Enter(_), _)) => quote! {
                                 __ctx.cur.move_to_children_of(&#field_expr);
                             },
-                            Some(ir::DomOpCode::Exit | ir::DomOpCode::Text(_)) => quote! {
-                                __ctx.cur.move_to_following_sibling_of(#field_expr.as_node());
-                            },
+                            Some((ir::DomOpCodeKind::Exit | ir::DomOpCodeKind::Text(_), _)) => {
+                                quote! {
+                                    __ctx.cur.move_to_following_sibling_of(#field_expr.as_node());
+                                }
+                            }
                             _ => panic!(),
                         }
                     }

@@ -3,7 +3,7 @@
 //!
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, quote_spanned};
 
 use crate::ir;
 use crate::namespace;
@@ -213,19 +213,25 @@ pub fn collect_dom_programs(statements: &[ir::Statement], output: &mut Vec<Token
 
 pub fn generate_dom_program(program: &ir::ConstDomProgram) -> TokenStream {
     let opcodes = program.opcodes.iter().map(|opcode| match opcode {
-        ir::DomOpCode::Enter(lit_str) => quote! {
-            ::hypp::ConstOpCode::Enter(#lit_str),
-        },
-        ir::DomOpCode::Attr(name) => quote! {
-            ::hypp::ConstOpCode::Attr(#name),
-        },
-        ir::DomOpCode::AttrText(value) => quote! {
+        (ir::DomOpCodeKind::Enter(expr), span) => {
+            let spanned = quote_spanned!(*span=> #expr);
+            quote! {
+                ::hypp::ConstOpCode::Enter(#spanned),
+            }
+        }
+        (ir::DomOpCodeKind::Attr(expr), span) => {
+            let spanned = quote_spanned!(*span=> #expr);
+            quote! {
+                ::hypp::ConstOpCode::Attr(#spanned),
+            }
+        }
+        (ir::DomOpCodeKind::AttrText(value), _) => quote! {
             ::hypp::ConstOpCode::AttrText(#value),
         },
-        ir::DomOpCode::Text(lit_str) => quote! {
+        (ir::DomOpCodeKind::Text(lit_str), _) => quote! {
             ::hypp::ConstOpCode::Text(#lit_str),
         },
-        ir::DomOpCode::Exit => quote! {
+        (ir::DomOpCodeKind::Exit, _) => quote! {
             ::hypp::ConstOpCode::Exit,
         },
     });
@@ -534,7 +540,7 @@ impl ir::Block {
                     let program_ident = program.get_ident();
                     for (index, opcode) in program.opcodes.iter().enumerate() {
                         match opcode {
-                            ir::DomOpCode::Enter(_) => {
+                            (ir::DomOpCodeKind::Enter(_), _) => {
                                 if dom_depth == 0 {
                                     sub_spans.push(FieldCode {
                                         field: None,
@@ -545,7 +551,7 @@ impl ir::Block {
                                 }
                                 dom_depth += 1;
                             }
-                            ir::DomOpCode::Text(_) => {
+                            (ir::DomOpCodeKind::Text(_), _) => {
                                 if dom_depth == 0 {
                                     sub_spans.push(FieldCode {
                                         field: None,
@@ -555,7 +561,7 @@ impl ir::Block {
                                     });
                                 }
                             }
-                            ir::DomOpCode::Exit => {
+                            (ir::DomOpCodeKind::Exit, _) => {
                                 dom_depth -= 1;
                             }
                             _ => {}

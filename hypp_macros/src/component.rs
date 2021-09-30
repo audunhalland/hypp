@@ -4,6 +4,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::parse::{Parse, ParseStream};
 
 use crate::component_ast;
 use crate::ir;
@@ -12,7 +13,10 @@ use crate::param;
 
 use crate::misc_codegen::*;
 
-struct Component {
+///
+/// Fully analyzed component, ready for code generation
+///
+pub struct Component {
     comp_ctx: CompCtx,
     dom_programs: Vec<TokenStream>,
     params: Vec<param::Param>,
@@ -22,13 +26,47 @@ struct Component {
     methods: Vec<syn::ItemFn>,
 }
 
+impl Parse for Component {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let component_ast::Component {
+            ident,
+            namespace,
+            params,
+            methods,
+            template,
+        } = input.parse()?;
+
+        let (component_kind, root_block) =
+            lowering::lower_root_node(template, namespace.traversal_direction(), &params)?;
+
+        // Root idents which are used as prefixes for every global ident generated:
+        let comp_ctx = CompCtx::new(ident, component_kind, namespace);
+
+        let mut dom_programs = vec![];
+        collect_dom_programs(&root_block.statements, &mut dom_programs);
+
+        let mut span_typedefs = vec![];
+        collect_span_typedefs(&root_block, None, &comp_ctx, &mut span_typedefs);
+
+        Ok(Self {
+            comp_ctx,
+            dom_programs,
+            params,
+            root_block,
+            span_typedefs,
+            fn_stmts: vec![],
+            methods,
+        })
+    }
+}
+
 struct PublicPropsStruct {
     tokens: TokenStream,
     has_p_lifetime: bool,
 }
 
-pub fn generate_component(ast: component_ast::Component) -> TokenStream {
-    let Component {
+pub fn generate_component(
+    Component {
         comp_ctx,
         dom_programs,
         params,
@@ -36,8 +74,8 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
         span_typedefs,
         fn_stmts,
         methods,
-    } = analyze_ast(ast);
-
+    }: Component,
+) -> TokenStream {
     let component_ident = &comp_ctx.component_ident;
     let props_ident = &comp_ctx.public_props_ident;
     let mod_ident = &comp_ctx.mod_ident;
@@ -204,39 +242,6 @@ pub fn generate_component(ast: component_ast::Component) -> TokenStream {
 
             #patch_fn
         }
-    }
-}
-
-fn analyze_ast(
-    component_ast::Component {
-        ident,
-        namespace,
-        params,
-        methods,
-        template,
-    }: component_ast::Component,
-) -> Component {
-    let (component_kind, root_block) =
-        lowering::lower_root_node(template, namespace.traversal_direction(), &params).unwrap();
-    // .expect("Compile error: Lowering problem");
-
-    // Root idents which are used as prefixes for every global ident generated:
-    let comp_ctx = CompCtx::new(ident, component_kind, namespace);
-
-    let mut dom_programs = vec![];
-    collect_dom_programs(&root_block.statements, &mut dom_programs);
-
-    let mut span_typedefs = vec![];
-    collect_span_typedefs(&root_block, None, &comp_ctx, &mut span_typedefs);
-
-    Component {
-        comp_ctx,
-        dom_programs,
-        params,
-        root_block,
-        span_typedefs,
-        fn_stmts: vec![],
-        methods,
     }
 }
 
