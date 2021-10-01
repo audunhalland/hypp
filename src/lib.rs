@@ -13,6 +13,7 @@ pub mod error;
 pub mod handle;
 pub mod list;
 pub mod ns;
+pub mod patch;
 pub mod shim;
 pub mod span;
 pub mod state_ref;
@@ -325,41 +326,8 @@ pub trait CallbackSlot {
     fn release(&mut self);
 }
 
-// Bug: derive(Clone) broken
-// https://github.com/rust-lang/rust/issues/89188
-// #[derive(Clone)]
-pub struct ShimMethod<T: ShimTrampoline + 'static>(
-    pub &'static dyn for<'s> Fn(&'s mut T::Shim<'s>),
-);
-
-impl<T: ShimTrampoline + 'static> ShimMethod<T> {
-    fn clone(&self) -> Self {
-        ShimMethod(self.0)
-    }
-}
-
-///
-/// Inject a "shim" type as the argument of a closure and call that closure.
-///
-pub trait ShimTrampoline: Sized {
-    type Shim<'s>
-    where
-        Self: 's;
-
-    ///
-    /// Set up the shim, and call the given closure
-    /// with that shim as its only argument.
-    ///
-    fn shim_trampoline(&mut self, method: ShimMethod<Self>);
-}
-
-///
-/// Bind a callback.
-///
-/// The intention is to associate a callback with a method.
-///
-pub trait BindCallback<H: Hypp, T: ShimTrampoline> {
-    fn bind(&mut self, slot: H::Shared<H::CallbackSlot>, method: ShimMethod<T>);
+pub trait Call {
+    fn call(&self);
 }
 
 ///
@@ -375,33 +343,6 @@ pub enum Duplex<'a, T> {
 ///
 pub trait GetCursor<H: Hypp, NS: TemplNS> {
     fn get_cursor(&mut self) -> &mut H::Cursor<NS>;
-}
-
-///
-/// Patching context without `bind` functionality
-///
-pub struct PatchCtx<'a, H: Hypp, NS: TemplNS> {
-    pub cur: &'a mut H::Cursor<NS>,
-}
-
-impl<'a, H: Hypp, NS: TemplNS> GetCursor<H, NS> for PatchCtx<'a, H, NS> {
-    fn get_cursor(&mut self) -> &mut H::Cursor<NS> {
-        self.cur
-    }
-}
-
-///
-/// Patching context _with_ `bind` functionality
-///
-pub struct PatchBindCtx<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> {
-    pub cur: &'a mut H::Cursor<NS>,
-    pub bind: &'a mut dyn BindCallback<H, T>,
-}
-
-impl<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> GetCursor<H, NS> for PatchBindCtx<'a, H, NS, T> {
-    fn get_cursor(&mut self) -> &mut H::Cursor<NS> {
-        self.cur
-    }
 }
 
 pub type Void = Result<(), Error>;

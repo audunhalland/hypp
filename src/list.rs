@@ -109,6 +109,7 @@ where
 mod tests {
     use super::*;
     use crate::ns::Html;
+    use crate::patch::PatchCtx;
     use crate::server::ServerHypp;
 
     #[derive(Eq, PartialEq, Debug)]

@@ -1,4 +1,6 @@
 use crate::handle::*;
+use crate::patch::{PatchBindCtx, PatchCtx};
+use crate::shim::ShimTrampoline;
 use crate::*;
 
 pub struct UniqueInner<Env, Span> {
@@ -59,7 +61,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
     {
         let updates = [false; U];
         let anchor = cursor.anchor();
-        let mut binder: crate::shim::LazyBinder<H, C> = crate::shim::LazyBinder::new();
+        let mut binder: crate::shim::LazySelfBinder<H, C> = crate::shim::LazySelfBinder::new();
         let mut root_span = None;
         patch(
             Duplex::Out(&mut root_span),

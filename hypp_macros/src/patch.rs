@@ -195,9 +195,9 @@ fn compile_body<'c>(
                         __ctx.cur.attribute_value_callback()?;
                     },
                     post_init: Some(quote! {
-                        __ctx.bind.bind(
+                        __ctx.bind.bind_self(
                             #field.clone(),
-                            ::hypp::ShimMethod::<#component_ident<H>>(&|shim| {
+                            ::hypp::shim::ShimMethod::<#component_ident<H>>(&|shim| {
                                 shim.#ident();
                             }),
                         );

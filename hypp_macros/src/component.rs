@@ -156,18 +156,18 @@ pub fn generate_component(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 &__updates,
-                &mut ::hypp::PatchCtx {
+                &mut ::hypp::patch::PatchCtx {
                     cur: __cursor,
                 }
             ).unwrap();
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
+            let mut binder = ::hypp::shim::SelfBinder::from_opt_weak(&self.0.weak_self);
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 &__updates,
-                &mut ::hypp::PatchBindCtx {
+                &mut ::hypp::patch::PatchBindCtx {
                     cur: __cursor,
                     bind: &mut binder,
                 }
@@ -515,10 +515,10 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     });
 
     quote! {
-        impl<'p, H: ::hypp::Hypp + 'static> ::hypp::ShimTrampoline for #component_ident<H> {
+        impl<'p, H: ::hypp::Hypp + 'static> ::hypp::shim::ShimTrampoline for #component_ident<H> {
             type Shim<'s> = __Shim<'s>;
 
-            fn shim_trampoline(&mut self, method: ::hypp::ShimMethod<Self>)
+            fn shim_trampoline(&mut self, method: ::hypp::shim::ShimMethod<Self>)
             {
                 #(#updates_locals)*
 
@@ -529,12 +529,12 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 method.0(&mut shim);
 
                 let mut cursor = self.0.anchor.create_cursor();
-                let mut binder = ::hypp::shim::Binder::from_opt_weak(&self.0.weak_self);
+                let mut binder = ::hypp::shim::SelfBinder::from_opt_weak(&self.0.weak_self);
                 __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
                     &[#(#updates_array_items),*],
-                    &mut ::hypp::PatchBindCtx {
+                    &mut ::hypp::patch::PatchBindCtx {
                         cur: &mut cursor,
                         bind: &mut binder,
                     }

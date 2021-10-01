@@ -54,20 +54,20 @@ impl CompCtx {
 
         let patch_ctx_ty_root = match kind {
             ir::ComponentKind::Basic => quote! {
-                ::hypp::PatchCtx<H, __NS>
+                ::hypp::patch::PatchCtx<H, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::PatchBindCtx<H, __NS, #component_ident<H>>
+                ::hypp::patch::PatchBindCtx<H, __NS, #component_ident<H>>
             },
         };
 
         // PatchCtx type used in closures where last parameter may be inferred
         let patch_ctx_ty_inner = match kind {
             ir::ComponentKind::Basic => quote! {
-                ::hypp::PatchCtx<H, __NS>
+                ::hypp::patch::PatchCtx<H, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::PatchBindCtx<H, __NS, _>
+                ::hypp::patch::PatchBindCtx<H, __NS, _>
             },
         };
 
