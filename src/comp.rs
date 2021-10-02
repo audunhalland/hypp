@@ -23,7 +23,8 @@ impl<Env, Span> UniqueInner<Env, Span> {
         wrap: Wrap,
     ) -> Result<Unique<C>, crate::Error>
     where
-        Patch: Fn(Duplex<Span>, &Env, &[bool], &mut PatchCtx<H, NS>) -> Result<(), crate::Error>,
+        Patch:
+            Fn(Duplex<Span>, &Env, bool, &[bool], &mut PatchCtx<H, NS>) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
     {
         let updates: [bool; 1usize] = [true; 1usize];
@@ -31,6 +32,7 @@ impl<Env, Span> UniqueInner<Env, Span> {
         patch(
             Duplex::Out(&mut root_span),
             &env,
+            true, // invalidated
             &updates,
             &mut PatchCtx { cur: cursor },
         )?;
@@ -53,6 +55,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
         Patch: Fn(
             Duplex<Span>,
             &Env,
+            bool,
             &[bool],
             &mut PatchBindCtx<H, NS, C>,
         ) -> Result<(), crate::Error>,
@@ -66,6 +69,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
         patch(
             Duplex::Out(&mut root_span),
             &env,
+            true, // invalidated
             &updates,
             &mut PatchBindCtx {
                 cur: cursor,

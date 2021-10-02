@@ -40,15 +40,13 @@ pub fn gen_patch_fn(
         pub fn __patch<#(#public_generic_params),*>(
             __root: ::hypp::Duplex<__RootSpan<#hypp_ident>>,
             __env: &__Env #env_gen_args,
+            __invalidated: bool,
             __updates: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
             #env_locals
 
             #(#fn_stmts)*
-
-            // closures may shadow this variable
-            let __invalidated = false;
 
             #(#closures)*
 

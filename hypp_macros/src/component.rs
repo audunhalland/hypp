@@ -163,6 +163,7 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
+                false, // invalidated
                 &__updates,
                 &mut ::hypp::patch::PatchCtx {
                     cur: __cursor,
@@ -174,6 +175,7 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
+                false, // invalidated,
                 &__updates,
                 &mut ::hypp::patch::PatchBindCtx {
                     cur: __cursor,
@@ -575,6 +577,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
+                    false, // invalidated
                     &[#(#updates_array_items),*],
                     &mut ::hypp::patch::PatchBindCtx {
                         cur: &mut cursor,
