@@ -62,9 +62,14 @@ impl Parse for Component {
     }
 }
 
-struct PublicPropsStruct {
-    tokens: TokenStream,
-    has_p_lifetime: bool,
+struct PropsEnvStructs {
+    props_struct: TokenStream,
+    // Generic arguments, with lifetime for props
+    props_gen_args: Option<TokenStream>,
+
+    env_struct: TokenStream,
+    // Generic arguments for env, no lifetime
+    env_gen_args: Option<TokenStream>,
 }
 
 pub fn generate_component(
@@ -83,12 +88,13 @@ pub fn generate_component(
     let mod_ident = &comp_ctx.mod_ident;
     let hypp_ns = comp_ctx.namespace.hypp_ns();
 
-    let PublicPropsStruct {
-        tokens: public_props_struct,
-        has_p_lifetime,
-    } = gen_public_props_struct(&params, &comp_ctx);
-    let env_struct = gen_env_struct(&params);
-    let fn_props_destructuring = gen_fn_props_destructuring(&params, &comp_ctx);
+    let PropsEnvStructs {
+        props_struct,
+        props_gen_args,
+        env_struct,
+        env_gen_args,
+    } = gen_props_env_structs(&params, &comp_ctx);
+    let fn_props_destructuring = gen_fn_props_destructuring(&params, &env_gen_args, &comp_ctx);
     let env_locals = gen_env_locals(&params);
     let props_updater = gen_props_updater(&params);
     let shim = if comp_ctx.kind.is_self_updatable() {
@@ -104,10 +110,10 @@ pub fn generate_component(
 
     let component_inner_ty = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            ::hypp::comp::UniqueInner<#mod_ident::__Env, #mod_ident::__RootSpan<#hypp_ident>>
+            ::hypp::comp::UniqueInner<#mod_ident::__Env #env_gen_args, #mod_ident::__RootSpan<#hypp_ident>>
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner<#hypp_ident, Self, #mod_ident::__Env, #mod_ident::__RootSpan<#hypp_ident>>,
+            ::hypp::comp::SharedInner<#hypp_ident, Self, #mod_ident::__Env #env_gen_args, #mod_ident::__RootSpan<#hypp_ident>>,
         },
     };
 
@@ -139,16 +145,11 @@ pub fn generate_component(
         None
     };
 
-    let public_props_generics = if has_p_lifetime {
-        Some(quote! { <'p> })
-    } else {
-        None
-    };
-
     let patch_fn = crate::patch::gen_patch_fn(
         &root_block,
         &comp_ctx,
         env_locals,
+        &env_gen_args,
         fn_stmts,
         CodegenCtx {
             component_kind: comp_ctx.kind,
@@ -197,7 +198,7 @@ pub fn generate_component(
     };
 
     quote! {
-        #public_props_struct
+        #props_struct
 
         pub struct #component_ident<#(#public_generic_params),*>(#component_inner_ty);
 
@@ -232,7 +233,7 @@ pub fn generate_component(
             }
 
             impl<'p, #(#public_generic_params),*> ::hypp::Component<'p, #hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
-                type Props = #props_ident #public_props_generics;
+                type Props = #props_ident #props_gen_args;
                 type NS = __NS;
 
                 fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut #hypp_ident::Cursor<Self::NS>) {
@@ -252,13 +253,12 @@ pub fn generate_component(
     }
 }
 
-/// Create the props `struct` that callees will use to instantiate the component
-fn gen_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> PublicPropsStruct {
+fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEnvStructs {
     let props_ident = &comp_ctx.public_props_ident;
 
     let mut has_p_lifetime = false;
 
-    let fields = params
+    let props_fields = params
         .iter()
         .filter_map(|param| match &param.kind {
             param::ParamKind::Prop(root_ty) => Some((&param.ident, root_ty)),
@@ -288,25 +288,7 @@ fn gen_public_props_struct(params: &[param::Param], comp_ctx: &CompCtx) -> Publi
         })
         .collect::<Vec<_>>();
 
-    let generics = if has_p_lifetime {
-        Some(quote! { <'p> })
-    } else {
-        None
-    };
-
-    PublicPropsStruct {
-        tokens: quote! {
-            pub struct #props_ident #generics {
-                #(#fields)*
-            }
-        },
-        has_p_lifetime,
-    }
-}
-
-/// Create the env struct that the component uses to cache internal data
-fn gen_env_struct(params: &[param::Param]) -> TokenStream {
-    let fields = params.iter().map(|param| {
+    let env_fields = params.iter().map(|param| {
         let ident = &param.ident;
         let ty = param.owned_ty_tokens();
 
@@ -315,9 +297,55 @@ fn gen_env_struct(params: &[param::Param]) -> TokenStream {
         }
     });
 
-    quote! {
-        pub struct __Env {
-            #(#fields)*
+    let props_lifetime = if has_p_lifetime {
+        Some(quote! { 'p, })
+    } else {
+        None
+    };
+
+    let item_generics = &comp_ctx.generics.internal;
+
+    match (props_lifetime, item_generics) {
+        // Simple case, no generics at all
+        (None, None) => PropsEnvStructs {
+            props_struct: quote! {
+                pub struct #props_ident {
+                    #(#props_fields)*
+                }
+            },
+            props_gen_args: None,
+            env_struct: quote! {
+                pub struct __Env {
+                    #(#env_fields)*
+                }
+            },
+            env_gen_args: None,
+        },
+        (props_lifetime, generics) => {
+            let generic_params = generics.as_ref().map(|item_generics| {
+                let params = &item_generics.params;
+                quote! { #(#params),* }
+            });
+            let generic_arguments = generics.as_ref().map(|item_generics| {
+                let arguments = &item_generics.arguments;
+                quote! { #(#arguments),* }
+            });
+
+            PropsEnvStructs {
+                props_struct: quote! {
+                    pub struct #props_ident<#props_lifetime #generic_params> {
+                        #(#props_fields)*
+                    }
+                },
+                props_gen_args: Some(quote! { <#props_lifetime #generic_arguments> }),
+
+                env_struct: quote! {
+                    pub struct __Env<#generic_params> {
+                        #(#env_fields)*
+                    }
+                },
+                env_gen_args: Some(quote! { <#generic_arguments> }),
+            }
         }
     }
 }
@@ -331,7 +359,11 @@ fn gen_env_expr(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn gen_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) -> syn::FnArg {
+fn gen_fn_props_destructuring(
+    params: &[param::Param],
+    env_gen_args: &Option<TokenStream>,
+    comp_ctx: &CompCtx,
+) -> syn::FnArg {
     let props_ident = &comp_ctx.public_props_ident;
 
     let fields = params.iter().filter_map(|param| match &param.kind {
@@ -349,7 +381,7 @@ fn gen_fn_props_destructuring(params: &[param::Param], comp_ctx: &CompCtx) -> sy
         #props_ident {
             #(#fields)*
             ..
-        }: #props_ident
+        }: #props_ident #env_gen_args
     }
 }
 

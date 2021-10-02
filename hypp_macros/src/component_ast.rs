@@ -27,7 +27,7 @@ pub struct ComponentGenerics {
     pub public: ItemGenerics,
 
     // Internal generics, used for props and env structs
-    pub internal: ItemGenerics,
+    pub internal: Option<ItemGenerics>,
 
     pub ns: Namespace,
 }
@@ -114,7 +114,7 @@ impl ComponentGenerics {
                 has_explicit_hypp: true,
                 hypp_ident,
                 public: ItemGenerics::from_type_params(final_type_params.clone()),
-                internal: ItemGenerics::from_type_params(final_type_params.clone()),
+                internal: Some(ItemGenerics::from_type_params(final_type_params.clone())),
                 ns: Namespace::default(),
             })
         } else {
@@ -130,7 +130,11 @@ impl ComponentGenerics {
                 has_explicit_hypp: true,
                 hypp_ident,
                 public: ItemGenerics::from_type_params(public_type_params),
-                internal: ItemGenerics::from_type_params(type_params),
+                internal: if type_params.is_empty() {
+                    None
+                } else {
+                    Some(ItemGenerics::from_type_params(type_params))
+                },
                 ns: Namespace::default(),
             })
         }

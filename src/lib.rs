@@ -330,6 +330,9 @@ pub trait Call {
     fn call(&self);
 }
 
+#[derive(Clone)]
+pub struct Callback<H: Hypp>(std::marker::PhantomData<H>);
+
 ///
 /// A function parameter that can function dynamically as either an input or an output parameter
 ///

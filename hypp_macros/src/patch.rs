@@ -15,6 +15,7 @@ pub fn gen_patch_fn(
     block: &ir::Block,
     comp_ctx: &CompCtx,
     env_locals: TokenStream,
+    env_gen_args: &Option<TokenStream>,
     fn_stmts: Vec<syn::Stmt>,
     ctx: CodegenCtx,
 ) -> TokenStream {
@@ -38,7 +39,7 @@ pub fn gen_patch_fn(
     quote! {
         pub fn __patch<#(#public_generic_params),*>(
             __root: ::hypp::Duplex<__RootSpan<#hypp_ident>>,
-            __env: &__Env,
+            __env: &__Env #env_gen_args,
             __updates: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
