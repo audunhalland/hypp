@@ -30,17 +30,19 @@ impl Parse for Component {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let component_ast::Component {
             ident,
-            namespace,
+            generics,
             params,
             methods,
             template,
         } = input.parse()?;
 
+        let ns = generics.ns;
+
         let (component_kind, root_block) =
-            lowering::lower_root_node(template, namespace.traversal_direction(), &params)?;
+            lowering::lower_root_node(template, generics.ns.traversal_direction(), &params)?;
 
         // Root idents which are used as prefixes for every global ident generated:
-        let comp_ctx = CompCtx::new(ident, component_kind, namespace);
+        let comp_ctx = CompCtx::new(ident, generics, component_kind, ns);
 
         let mut dom_programs = vec![];
         collect_dom_programs(&root_block.statements, &mut dom_programs);
@@ -95,12 +97,17 @@ pub fn generate_component(
         quote! {}
     };
 
+    // Ident `H` in `H: ::hypp::Hypp`
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let public_generic_params = &comp_ctx.generics.public.params;
+    let public_generic_arguments = &comp_ctx.generics.public.arguments;
+
     let component_inner_ty = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            ::hypp::comp::UniqueInner<#mod_ident::__Env, #mod_ident::__RootSpan<H>>
+            ::hypp::comp::UniqueInner<#mod_ident::__Env, #mod_ident::__RootSpan<#hypp_ident>>
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner<H, Self, #mod_ident::__Env, #mod_ident::__RootSpan<H>>,
+            ::hypp::comp::SharedInner<#hypp_ident, Self, #mod_ident::__Env, #mod_ident::__RootSpan<#hypp_ident>>,
         },
     };
 
@@ -175,12 +182,12 @@ pub fn generate_component(
         },
     };
 
-    let handle_path = root_block.handle_kind.handle_path();
+    let handle_path = root_block.handle_kind.handle_path(&comp_ctx);
 
     let mount_impl = if params.iter().filter(|param| param.is_prop()).count() == 0 {
         Some(quote! {
-            impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Mount<'p, H> for #component_ident<H> {
-                fn mount(cursor: &mut H::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
+            impl<'p, #(#public_generic_params),*> ::hypp::Mount<'p, #hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
+                fn mount(cursor: &mut #hypp_ident::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
                     Self::mount(#props_ident {}, cursor)
                 }
             }
@@ -192,7 +199,7 @@ pub fn generate_component(
     quote! {
         #public_props_struct
 
-        pub struct #component_ident<H: ::hypp::Hypp + 'static>(#component_inner_ty);
+        pub struct #component_ident<#(#public_generic_params),*>(#component_inner_ty);
 
         mod #mod_ident {
             use super::*;
@@ -204,31 +211,31 @@ pub fn generate_component(
             #env_struct
             #shim
 
-            impl<H: ::hypp::Hypp + 'static> #component_ident<H> {
-                pub fn mount(#fn_props_destructuring, cursor: &mut H::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
+            impl<#(#public_generic_params),*> #component_ident<#(#public_generic_arguments),*> {
+                pub fn mount(#fn_props_destructuring, cursor: &mut #hypp_ident::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
                     #mount_body
                 }
             }
 
-            impl<H: ::hypp::Hypp + 'static> ::hypp::handle::ToHandle for #component_ident<H> {
+            impl<#(#public_generic_params),*> ::hypp::handle::ToHandle for #component_ident<#(#public_generic_arguments),*> {
                 type Handle = #handle_path<Self>;
             }
 
-            impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #component_ident<H> {
+            impl<#(#public_generic_params),*> ::hypp::Span<#hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
                 fn is_anchored(&self) -> bool {
                     self.0.is_anchored()
                 }
 
-                fn pass(&mut self, cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+                fn pass(&mut self, cursor: &mut dyn ::hypp::Cursor<#hypp_ident>, op: ::hypp::SpanOp) -> bool {
                     self.0.pass(cursor, op)
                 }
             }
 
-            impl<'p, H: ::hypp::Hypp + 'static> ::hypp::Component<'p, H> for #component_ident<H> {
+            impl<'p, #(#public_generic_params),*> ::hypp::Component<'p, #hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
                 type Props = #props_ident #public_props_generics;
                 type NS = __NS;
 
-                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut H::Cursor<Self::NS>) {
+                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut #hypp_ident::Cursor<Self::NS>) {
                     #props_updater
                     #pass_props_patch_call
                 }
@@ -479,6 +486,9 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
 fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let component_ident = &comp_ctx.component_ident;
 
+    let public_generic_params = &comp_ctx.generics.public.params;
+    let public_generic_arguments = &comp_ctx.generics.public.arguments;
+
     let state_update_idents = params
         .iter()
         .map(|param| match &param.kind {
@@ -515,7 +525,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     });
 
     quote! {
-        impl<'p, H: ::hypp::Hypp + 'static> ::hypp::shim::ShimTrampoline for #component_ident<H> {
+        impl<'p, #(#public_generic_params),*> ::hypp::shim::ShimTrampoline for #component_ident<#(#public_generic_arguments),*> {
             type Shim<'s> = __Shim<'s>;
 
             fn shim_trampoline(&mut self, method: ::hypp::shim::ShimMethod<Self>)

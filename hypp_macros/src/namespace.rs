@@ -1,6 +1,5 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use web_ns::attr::Attribute;
 use web_ns::{AttrByLocalName, TagByLocalName};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,6 +39,12 @@ pub enum NSAttrKind {
 
 pub trait OpcodeValue {
     fn opcode_value(&self) -> syn::Expr;
+}
+
+impl Default for Namespace {
+    fn default() -> Self {
+        Self::Html
+    }
 }
 
 impl Namespace {

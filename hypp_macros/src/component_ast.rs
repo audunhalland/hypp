@@ -3,6 +3,7 @@
 //!
 
 use syn::parse::{Parse, ParseStream};
+use syn::spanned::Spanned;
 
 use crate::namespace::Namespace;
 use crate::param;
@@ -11,16 +12,37 @@ use crate::template_ast;
 
 pub struct Component {
     pub ident: syn::Ident,
-    pub namespace: Namespace,
+    pub generics: ComponentGenerics,
     pub params: Vec<param::Param>,
     pub methods: Vec<syn::ItemFn>,
     pub template: template_ast::Node,
 }
 
+pub struct ComponentGenerics {
+    pub has_explicit_hypp: bool,
+
+    pub hypp_ident: syn::Ident,
+
+    // Public generics, for the whole component structs
+    pub public: ItemGenerics,
+
+    // Internal generics, used for props and env structs
+    pub internal: ItemGenerics,
+
+    pub ns: Namespace,
+}
+
+pub struct ItemGenerics {
+    // 'incoming' generics, e.g. `H: ::hypp::Hypp` in `impl<H: ::hypp::Hypp> ...`
+    pub params: Vec<syn::TypeParam>,
+    // 'outgoing' generics, e.g. `H` in `SomeStruct<H>`
+    pub arguments: Vec<syn::GenericArgument>,
+}
+
 impl Parse for Component {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let ident = input.parse()?;
-        let namespace = input.parse()?;
+        let generics = ComponentGenerics::try_from_generics(input.parse()?)?;
 
         let props_content;
         syn::parenthesized!(props_content in input);
@@ -44,16 +66,15 @@ impl Parse for Component {
         let mut methods = vec![];
 
         while input.peek(syn::token::Fn) {
-            // TODO: ignore for now
             methods.push(input.parse::<syn::ItemFn>()?);
         }
 
         let template =
-            template_ast::TemplateParser::for_namespace(namespace).parse_at_least_one(input)?;
+            template_ast::TemplateParser::for_namespace(generics.ns).parse_at_least_one(input)?;
 
         Ok(Self {
             ident,
-            namespace,
+            generics,
             params,
             methods,
             template,
@@ -61,18 +82,126 @@ impl Parse for Component {
     }
 }
 
-impl Parse for Namespace {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        input.parse::<syn::token::Lt>()?;
-        let ident: syn::Ident = input.parse()?;
-        input.parse::<syn::token::Gt>()?;
+enum GenericComponentParam {
+    Hypp(syn::TypeParam),
+    Generic(syn::TypeParam),
+}
 
-        match ident.to_string().as_ref() {
-            "Html" => Ok(Self::Html),
-            other => Err(syn::Error::new(
-                ident.span(),
-                format!("Unrecognized namespace {}", other),
-            )),
+impl ComponentGenerics {
+    fn try_from_generics(generics: syn::Generics) -> syn::Result<Self> {
+        let mut explicit_hypp: Option<syn::TypeParam> = None;
+        let mut type_params = vec![];
+
+        for ty_param in generics.params.into_iter() {
+            let component_ty_param = Self::analyze_generic(ty_param)?;
+            match component_ty_param {
+                GenericComponentParam::Hypp(ty_param) => {
+                    explicit_hypp = Some(ty_param);
+                }
+                GenericComponentParam::Generic(ty_param) => {
+                    type_params.push(ty_param);
+                }
+            }
+        }
+
+        if let Some(explicit_hypp) = explicit_hypp {
+            let hypp_ident = explicit_hypp.ident.clone();
+
+            let mut final_type_params = vec![explicit_hypp];
+            final_type_params.extend(type_params.into_iter());
+
+            Ok(Self {
+                has_explicit_hypp: true,
+                hypp_ident,
+                public: ItemGenerics::from_type_params(final_type_params.clone()),
+                internal: ItemGenerics::from_type_params(final_type_params.clone()),
+                ns: Namespace::default(),
+            })
+        } else {
+            let hypp_ident = quote::format_ident!("H");
+            let hypp_type_param: syn::TypeParam = syn::parse_quote! {
+                H: ::hypp::Hypp + 'static
+            };
+
+            let mut public_type_params = vec![hypp_type_param];
+            public_type_params.extend(type_params.clone().into_iter());
+
+            Ok(Self {
+                has_explicit_hypp: true,
+                hypp_ident,
+                public: ItemGenerics::from_type_params(public_type_params),
+                internal: ItemGenerics::from_type_params(type_params),
+                ns: Namespace::default(),
+            })
+        }
+    }
+
+    fn analyze_generic(param: syn::GenericParam) -> syn::Result<GenericComponentParam> {
+        match param {
+            syn::GenericParam::Type(ty_param) => {
+                let mut is_hypp = false;
+                for bound in &ty_param.bounds {
+                    match bound {
+                        syn::TypeParamBound::Trait(tr) => {
+                            if Self::path_is_hypp(&tr.path) {
+                                is_hypp = true;
+                            }
+                        }
+                        syn::TypeParamBound::Lifetime(_) => {}
+                    }
+                }
+
+                if is_hypp {
+                    Ok(GenericComponentParam::Hypp(ty_param))
+                } else {
+                    Ok(GenericComponentParam::Generic(ty_param))
+                }
+            }
+            syn::GenericParam::Lifetime(_) => {
+                return Err(syn::Error::new(
+                    param.span(),
+                    "Lifetime params are not supported",
+                ));
+            }
+            syn::GenericParam::Const(_) => {
+                return Err(syn::Error::new(
+                    param.span(),
+                    "Const params are not supported",
+                ));
+            }
+        }
+    }
+
+    fn path_is_hypp(_path: &syn::Path) -> bool {
+        // BUG: determine for real
+        true
+    }
+}
+
+impl ItemGenerics {
+    fn from_type_params(type_params: Vec<syn::TypeParam>) -> Self {
+        let arguments = type_params
+            .iter()
+            .map(|param| {
+                let mut segments = syn::punctuated::Punctuated::new();
+                segments.push(syn::PathSegment {
+                    ident: param.ident.clone(),
+                    arguments: syn::PathArguments::None,
+                });
+
+                syn::GenericArgument::Type(syn::Type::Path(syn::TypePath {
+                    qself: None,
+                    path: syn::Path {
+                        leading_colon: None,
+                        segments,
+                    },
+                }))
+            })
+            .collect();
+
+        Self {
+            params: type_params,
+            arguments,
         }
     }
 }

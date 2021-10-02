@@ -20,6 +20,9 @@ pub fn gen_patch_fn(
 ) -> TokenStream {
     let patch_ctx_ty_root = &comp_ctx.patch_ctx_ty_root;
 
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let public_generic_params = &comp_ctx.generics.public.params;
+
     let Body {
         closures,
         mount_locals,
@@ -33,8 +36,8 @@ pub fn gen_patch_fn(
         .map(ir::StructField::mut_pattern_tokens);
 
     quote! {
-        pub fn __patch<H: ::hypp::Hypp>(
-            __root: ::hypp::Duplex<__RootSpan<H>>,
+        pub fn __patch<#(#public_generic_params),*>(
+            __root: ::hypp::Duplex<__RootSpan<#hypp_ident>>,
             __env: &__Env,
             __updates: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
@@ -126,6 +129,8 @@ fn compile_body<'c>(
         LetMut,
     }
 
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
+
     struct FieldInit<'b> {
         local: FieldLocal,
         field_ident: &'b Option<ir::FieldIdent>,
@@ -197,7 +202,7 @@ fn compile_body<'c>(
                     post_init: Some(quote! {
                         __ctx.bind.bind_self(
                             #field.clone(),
-                            ::hypp::shim::ShimMethod::<#component_ident<H>>(&|shim| {
+                            ::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
                                 shim.#ident();
                             }),
                         );
@@ -228,7 +233,7 @@ fn compile_body<'c>(
                 let text_update = if stmt.param_deps.is_variable() {
                     Some(quote! {
                         if #test {
-                            H::set_text(#field_expr, #closure_ident().as_ref());
+                            #hypp_ident::set_text(#field_expr, #closure_ident().as_ref());
                         }
                     })
                 } else {
@@ -393,7 +398,8 @@ fn compile_body<'c>(
     let constructor_path = match constructor_kind {
         SpanConstructorKind::FixedSpan(opt_span_type) => match opt_span_type {
             Some(span_type) => {
-                let path_segment = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
+                let path_segment =
+                    span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
                 quote! {
                     #path_segment
                 }
@@ -403,7 +409,8 @@ fn compile_body<'c>(
             }
         },
         SpanConstructorKind::DynamicSpan { span_type, variant } => {
-            let span_ident = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
+            let span_ident =
+                span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
 
             quote! {
                 #span_ident::#variant
@@ -450,7 +457,8 @@ fn gen_match_closure<'c>(
 ) -> Closure<'c> {
     let field = statement.field.unwrap();
     let field_expr = FieldExpr(field, ctx);
-    let dynamic_span_path_segment = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
+    let dynamic_span_path_segment =
+        span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
 
     let pattern_arms = arms.iter().map(
         |ir::Arm {
@@ -514,7 +522,8 @@ fn gen_match_closure<'c>(
         Ok(())
     };
 
-    let dynamic_span_full_type = span_type.to_tokens(ctx.scope, StructFieldFormat::TypeInStruct);
+    let dynamic_span_full_type =
+        span_type.to_tokens(ctx.scope, StructFieldFormat::TypeInStruct, comp_ctx);
 
     Closure {
         comp_ctx,
@@ -546,7 +555,8 @@ fn gen_iter_item_closure<'c>(
         SpanConstructorKind::FixedSpan(Some(span_type)),
     );
 
-    let fixed_span_path_segment = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment);
+    let fixed_span_path_segment =
+        span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
 
     let fields = inner_block
         .struct_fields
@@ -569,7 +579,8 @@ fn gen_iter_item_closure<'c>(
         Ok(())
     };
 
-    let fixed_span_full_type = span_type.to_tokens(ctx.scope, StructFieldFormat::InnerType);
+    let fixed_span_full_type =
+        span_type.to_tokens(ctx.scope, StructFieldFormat::InnerType, comp_ctx);
 
     Closure {
         comp_ctx,

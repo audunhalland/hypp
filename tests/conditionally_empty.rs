@@ -1,7 +1,7 @@
 use hypp::prelude::*;
 
 component! {
-    ConditionalString<Html>(string: Option<&str>) {}
+    ConditionalString(string: Option<&str>) {}
 
     if let Some(string) = string {
         {string}
@@ -14,7 +14,7 @@ component! {
 // and could instantiate its DOM "after-the-fact".
 // In that case it has to know where to anchor.
 component! {
-    ComponentBeforeConditional<Html>(
+    ComponentBeforeConditional(
         foo: Option<&str>,
         bar: Option<&str>,
         baz: Option<&str>

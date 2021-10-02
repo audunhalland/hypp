@@ -415,7 +415,11 @@ mod tests {
         A: Fn(&NSName<NSTagName>) -> Vec<Attr<NSName<NSAttrName>>>,
     {
         let ns_name = Namespace::Html
-            .parse_tag_name(tag_name.to_string(), proc_macro2::Span::mixed_site())
+            .parse_tag_name(
+                quote::format_ident!("{}", tag_name),
+                tag_name.to_string(),
+                proc_macro2::Span::mixed_site(),
+            )
             .unwrap();
         let attrs = attrs_fn(&ns_name);
         Node::Element(Element {
@@ -460,7 +464,11 @@ mod tests {
         Attr {
             name: tag
                 .name
-                .parse_attr_name(name.to_string(), proc_macro2::Span::mixed_site())
+                .parse_attr_name(
+                    quote::format_ident!("{}", name),
+                    name.to_string(),
+                    proc_macro2::Span::mixed_site(),
+                )
                 .unwrap(),
             value,
         }

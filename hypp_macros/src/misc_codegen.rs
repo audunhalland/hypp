@@ -5,6 +5,7 @@
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 
+use crate::component_ast;
 use crate::ir;
 use crate::namespace;
 use crate::param;
@@ -32,6 +33,7 @@ pub struct CodegenCtx {
 /// Context for one whole component
 pub struct CompCtx {
     pub component_ident: syn::Ident,
+    pub generics: component_ast::ComponentGenerics,
     pub kind: ir::ComponentKind,
     pub public_props_ident: syn::Ident,
     pub namespace: namespace::Namespace,
@@ -44,35 +46,39 @@ pub struct CompCtx {
 impl CompCtx {
     pub fn new(
         component_ident: syn::Ident,
+        generics: component_ast::ComponentGenerics,
         kind: ir::ComponentKind,
         namespace: namespace::Namespace,
     ) -> Self {
         let comp_string = component_ident.clone().to_string();
+
+        let hypp_ident = &generics.hypp_ident;
 
         let public_props_ident = quote::format_ident!("__{}Props", component_ident);
         let mod_ident = quote::format_ident!("__{}", comp_string.to_lowercase());
 
         let patch_ctx_ty_root = match kind {
             ir::ComponentKind::Basic => quote! {
-                ::hypp::patch::PatchCtx<H, __NS>
+                ::hypp::patch::PatchCtx<#hypp_ident, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::patch::PatchBindCtx<H, __NS, #component_ident<H>>
+                ::hypp::patch::PatchBindCtx<#hypp_ident, __NS, #component_ident<#hypp_ident>>
             },
         };
 
         // PatchCtx type used in closures where last parameter may be inferred
         let patch_ctx_ty_inner = match kind {
             ir::ComponentKind::Basic => quote! {
-                ::hypp::patch::PatchCtx<H, __NS>
+                ::hypp::patch::PatchCtx<#hypp_ident, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::patch::PatchBindCtx<H, __NS, _>
+                ::hypp::patch::PatchBindCtx<#hypp_ident, __NS, _>
             },
         };
 
         Self {
             component_ident,
+            generics,
             kind,
             namespace,
             public_props_ident,
@@ -293,8 +299,9 @@ fn gen_fixed_span_struct(
     span_type: Option<&ir::StructFieldType>,
     comp_ctx: &CompCtx,
 ) -> TokenStream {
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
     let span_ident = if let Some(span_type) = span_type {
-        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment)
+        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment, comp_ctx)
     } else {
         quote! { __RootSpan }
     };
@@ -308,7 +315,7 @@ fn gen_fixed_span_struct(
     let struct_field_defs = block
         .struct_fields
         .iter()
-        .map(|field| field.field_def_tokens(Scope::Component));
+        .map(|field| field.field_def_tokens(Scope::Component, comp_ctx));
 
     let span_pass = block.gen_span_pass(
         ir::DomDepth(0),
@@ -317,6 +324,7 @@ fn gen_fixed_span_struct(
             function: Function::SpanPass,
             scope: Scope::Component,
         },
+        comp_ctx,
     );
 
     let fn_span_erase = block
@@ -327,7 +335,7 @@ fn gen_fixed_span_struct(
         })
         .map(|stmts| {
             quote! {
-                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+                fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<#hypp_ident>) -> bool {
                     #stmts
                     self.pass(__cursor, ::hypp::SpanOp::Erase)
                 }
@@ -335,17 +343,17 @@ fn gen_fixed_span_struct(
         });
 
     quote! {
-        #public struct #span_ident<H: ::hypp::Hypp + 'static> {
+        #public struct #span_ident<#hypp_ident: ::hypp::Hypp + 'static> {
             #(#struct_field_defs)*
-            __phantom: ::std::marker::PhantomData<H>
+            __phantom: ::std::marker::PhantomData<#hypp_ident>
         }
 
-        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #span_ident<H> {
+        impl<#hypp_ident: ::hypp::Hypp + 'static> ::hypp::Span<#hypp_ident> for #span_ident<#hypp_ident> {
             fn is_anchored(&self) -> bool {
                 unimplemented!()
             }
 
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<#hypp_ident>, op: ::hypp::SpanOp) -> bool {
                 #span_pass
             }
 
@@ -360,7 +368,10 @@ fn gen_dynamic_span_enum(
     dom_depth: ir::DomDepth,
     comp_ctx: &CompCtx,
 ) -> TokenStream {
-    let span_ident = span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment);
+    let span_ident =
+        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment, comp_ctx);
+
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
 
     let variant_defs = arms.iter().map(|arm| {
         let variant = &arm.variant;
@@ -368,7 +379,7 @@ fn gen_dynamic_span_enum(
             .block
             .struct_fields
             .iter()
-            .map(|field| field.field_def_tokens(Scope::DynamicSpan));
+            .map(|field| field.field_def_tokens(Scope::DynamicSpan, comp_ctx));
 
         quote! {
             #variant {
@@ -385,6 +396,7 @@ fn gen_dynamic_span_enum(
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             },
+            comp_ctx,
         );
         let pat_fields = block
             .struct_fields
@@ -438,7 +450,7 @@ fn gen_dynamic_span_enum(
     {
         let arms = span_erase_arms.iter().map(|(_, arm)| arm);
         quote! {
-            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>) -> bool {
+            fn erase(&mut self, __cursor: &mut dyn ::hypp::Cursor<#hypp_ident>) -> bool {
                 match self {
                     #(#arms)*
                 }
@@ -450,17 +462,17 @@ fn gen_dynamic_span_enum(
     };
 
     quote! {
-        enum #span_ident<H: ::hypp::Hypp + 'static> {
+        enum #span_ident<#hypp_ident: ::hypp::Hypp + 'static> {
             #(#variant_defs)*
         }
 
-        impl<H: ::hypp::Hypp + 'static> ::hypp::Span<H> for #span_ident<H> {
+        impl<#hypp_ident: ::hypp::Hypp + 'static> ::hypp::Span<#hypp_ident> for #span_ident<#hypp_ident> {
             fn is_anchored(&self) -> bool {
                 // not anchored, by definition
                 false
             }
 
-            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<H>, op: ::hypp::SpanOp) -> bool {
+            fn pass(&mut self, __cursor: &mut dyn ::hypp::Cursor<#hypp_ident>, op: ::hypp::SpanOp) -> bool {
                 match self {
                     #(#span_pass_arms)*
                 }
@@ -472,9 +484,11 @@ fn gen_dynamic_span_enum(
 }
 
 impl ir::StructField {
-    pub fn field_def_tokens(&self, scope: Scope) -> TokenStream {
+    pub fn field_def_tokens(&self, scope: Scope, comp_ctx: &CompCtx) -> TokenStream {
         let ident = &self.ident;
-        let ty = self.ty.to_tokens(scope, StructFieldFormat::TypeInStruct);
+        let ty = self
+            .ty
+            .to_tokens(scope, StructFieldFormat::TypeInStruct, comp_ctx);
 
         quote! { #ident: #ty, }
     }
@@ -529,7 +543,13 @@ impl ir::Block {
     ///
     /// Generate code for the Span::pass method
     ///
-    pub fn gen_span_pass(&self, base_dom_depth: ir::DomDepth, ctx: CodegenCtx) -> JoinedFieldCode {
+    pub fn gen_span_pass(
+        &self,
+        base_dom_depth: ir::DomDepth,
+        ctx: CodegenCtx,
+        comp_ctx: &CompCtx,
+    ) -> JoinedFieldCode {
+        let hypp_ident = &comp_ctx.generics.hypp_ident;
         let mut sub_spans: Vec<FieldCode> = vec![];
 
         for statement in &self.statements {
@@ -612,7 +632,7 @@ impl ir::Block {
                 .filter_map(|span| Some(span.field?.0))
                 .collect(),
             code: quote! {
-                ::hypp::span::pass::<H>(
+                ::hypp::span::pass::<#hypp_ident>(
                     &mut [#(#sub_spans),*],
                     __cursor,
                     op
@@ -677,16 +697,24 @@ pub enum StructFieldFormat {
 }
 
 impl ir::StructFieldType {
-    pub fn to_tokens(&self, scope: Scope, format: StructFieldFormat) -> TokenStream {
+    pub fn to_tokens(
+        &self,
+        scope: Scope,
+        format: StructFieldFormat,
+        comp_ctx: &CompCtx,
+    ) -> TokenStream {
+        let hypp_ident = &comp_ctx.generics.hypp_ident;
         let generics = match format {
-            StructFieldFormat::TypeInStruct | StructFieldFormat::InnerType => quote! { <H> },
+            StructFieldFormat::TypeInStruct | StructFieldFormat::InnerType => {
+                quote! { <#hypp_ident> }
+            }
             StructFieldFormat::PathSegment => quote! {},
         };
 
         match self {
-            Self::DomElement => quote! { H::Element },
-            Self::DomText => quote! { H::Text },
-            Self::CallbackSlot => quote! { H::Shared<H::CallbackSlot> },
+            Self::DomElement => quote! { #hypp_ident::Element },
+            Self::DomText => quote! { #hypp_ident::Text },
+            Self::CallbackSlot => quote! { #hypp_ident::Shared<#hypp_ident::CallbackSlot> },
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
@@ -705,7 +733,7 @@ impl ir::StructFieldType {
                         quote! { Option<#ident #generics> }
                     }
                     (ir::SpanKind::RepeatedStruct, StructFieldFormat::TypeInStruct) => {
-                        quote! { hypp::list::SimpleListSpan<H, __NS, #ident #generics> }
+                        quote! { hypp::list::SimpleListSpan<#hypp_ident, __NS, #ident #generics> }
                     }
                     (_, StructFieldFormat::InnerType) => quote! { #ident #generics },
                     (_, StructFieldFormat::PathSegment) => quote! { #ident },
@@ -767,10 +795,12 @@ impl param::Param {
 }
 
 impl ir::HandleKind {
-    pub fn handle_path(&self) -> TokenStream {
+    pub fn handle_path(&self, comp_ctx: &CompCtx) -> TokenStream {
+        let hypp_ident = &comp_ctx.generics.hypp_ident;
+
         match self {
             Self::Unique => quote! { ::hypp::handle::Unique },
-            Self::Shared => quote! { H::Shared },
+            Self::Shared => quote! { #hypp_ident::Shared },
         }
     }
 }
