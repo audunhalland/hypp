@@ -59,8 +59,11 @@ pub trait Hypp: Sized {
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T>;
 
-    /// Mount something at the root.
-    fn mount<'p, M: Mount<'p, Self> + 'static>(&mut self) -> Result<(), Error>;
+    /// Mount a component accepting default props exclusively at the root.
+    fn mount<'p, C>(&mut self) -> Result<(), Error>
+    where
+        C: Component<'p, Self>,
+        C::Props: Default;
 
     fn set_text(node: &Self::Text, text: &str);
 
@@ -267,6 +270,11 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 
     type NS: TemplNS;
 
+    fn mount(
+        props: Self::Props,
+        cursor: &mut H::Cursor<Self::NS>,
+    ) -> Result<<Self as ToHandle>::Handle, Error>;
+
     ///
     /// Set new props on the component instance, causing an immediate, synchronous
     /// DOM update if the component determines that anything changes.
@@ -276,13 +284,6 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// what direction to take is determined by H.
     ///
     fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor<Self::NS>);
-}
-
-///
-/// Anything that can be mounted without parameters
-///
-pub trait Mount<'p, H: Hypp>: handle::ToHandle + Component<'p, H> {
-    fn mount(cursor: &mut H::Cursor<Self::NS>) -> Result<<Self as ToHandle>::Handle, Error>;
 }
 
 ///
@@ -330,8 +331,20 @@ pub trait Call {
     fn call(&self);
 }
 
-#[derive(Clone)]
 pub struct Callback<H: Hypp>(std::marker::PhantomData<H>);
+
+impl<H: Hypp> Clone for Callback<H> {
+    fn clone(&self) -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+/// FIXME: Temporary while still comparing values in pass_props
+impl<H: Hypp> PartialEq<Callback<H>> for Callback<H> {
+    fn eq(&self, _rhs: &Callback<H>) -> bool {
+        false
+    }
+}
 
 ///
 /// A function parameter that can function dynamically as either an input or an output parameter

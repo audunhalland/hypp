@@ -211,7 +211,7 @@ impl OpcodeValue for NSName<NSTagName> {
                 let ident = quote::format_ident!("{}", format!("{:?}", tag_name));
 
                 syn::parse_quote! {
-                    ::web_ns::html5::HtmlTag::#ident
+                    ::hypp::ns::html::HtmlTag::#ident
                 }
             }
         }
@@ -225,7 +225,7 @@ impl OpcodeValue for NSName<NSAttrName> {
                 let ident = quote::format_ident!("{}", format!("{:?}", attr_name));
 
                 syn::parse_quote! {
-                    ::web_ns::html5::HtmlAttr::#ident
+                    ::hypp::ns::html::HtmlAttr::#ident
                 }
             }
         }

@@ -5,7 +5,7 @@ use hypp::prelude::*;
 use wasm_bindgen::prelude::*;
 
 hypp::component! {
-    App<Html>() {
+    App() {
         todo_items: Vec<String>,
         id_counter: usize,
     }
@@ -17,7 +17,7 @@ hypp::component! {
 
     <div>
         <Headline n_items={todo_items.len()} />
-        <button on_click={Self::add_item}>
+        <button onClick={Self::add_item}>
             "Add item"
         </button>
     </div>
@@ -35,7 +35,7 @@ hypp::component! {
 }
 
 hypp::component! {
-    Headline<Html>(n_items: usize) {}
+    Headline(n_items: usize) {}
 
     <div>
         match n_items {

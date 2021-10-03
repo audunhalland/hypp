@@ -419,9 +419,9 @@ component! {
     }
 }
 
-component_dbg! {
+component! {
     CallbackAsProp<Y: ::hypp::Hypp + 'static>(
-        callback: ::hypp::Callback<Y>
+        callback: &::hypp::Callback<Y>
     ) {}
 
     <></>

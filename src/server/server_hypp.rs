@@ -3,7 +3,7 @@ use crate::error::Error;
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{
-    AsNode, CallbackSlot, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Name, Span, TemplNS,
+    AsNode, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS,
 };
 
 use parking_lot::Mutex;
@@ -63,11 +63,15 @@ impl Hypp for ServerHypp {
         Arc::new(Mutex::new(value))
     }
 
-    fn mount<'p, M: Mount<'p, ServerHypp> + 'static>(&mut self) -> Result<(), Error> {
+    fn mount<'p, C>(&mut self) -> Result<(), Error>
+    where
+        C: Component<'p, ServerHypp>,
+        C::Props: Default,
+    {
         let mut builder = self.builder_at_body();
-        let mounted = M::mount(&mut builder)?;
+        let handle = C::mount(Default::default(), &mut builder)?;
 
-        self.mounts.push(Box::new(mounted));
+        self.mounts.push(Box::new(handle));
 
         Ok(())
     }

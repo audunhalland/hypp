@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, ConstOpCode, Cursor, Hypp, Mount, NSCursor, Name, Span, TemplNS};
+use crate::{AsNode, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -95,11 +95,15 @@ impl Hypp for WebHypp {
         Rc::new(RefCell::new(value))
     }
 
-    fn mount<'p, M: Mount<'p, WebHypp> + 'static>(&mut self) -> Result<(), Error> {
+    fn mount<'p, C>(&mut self) -> Result<(), Error>
+    where
+        C: Component<'p, WebHypp>,
+        C::Props: Default,
+    {
         let mut builder = self.builder_at_body();
-        let mounted = M::mount(&mut builder)?;
+        let handle = C::mount(Default::default(), &mut builder)?;
 
-        self.mounts.push(Box::new(mounted));
+        self.mounts.push(Box::new(handle));
 
         Ok(())
     }

@@ -187,18 +187,6 @@ pub fn generate_component(
 
     let handle_path = root_block.handle_kind.handle_path(&comp_ctx);
 
-    let mount_impl = if params.iter().filter(|param| param.is_prop()).count() == 0 {
-        Some(quote! {
-            impl<'p, #(#public_generic_params),*> ::hypp::Mount<'p, #hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
-                fn mount(cursor: &mut #hypp_ident::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
-                    Self::mount(#props_ident {}, cursor)
-                }
-            }
-        })
-    } else {
-        None
-    };
-
     quote! {
         #props_struct
 
@@ -213,12 +201,6 @@ pub fn generate_component(
             // Also the simple names of these may shadow.. Should use underscore
             #env_struct
             #shim
-
-            impl<#(#public_generic_params),*> #component_ident<#(#public_generic_arguments),*> {
-                pub fn mount(#fn_props_destructuring, cursor: &mut #hypp_ident::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
-                    #mount_body
-                }
-            }
 
             impl<#(#public_generic_params),*> ::hypp::handle::ToHandle for #component_ident<#(#public_generic_arguments),*> {
                 type Handle = #handle_path<Self>;
@@ -238,6 +220,10 @@ pub fn generate_component(
                 type Props = #props_ident #props_gen_args;
                 type NS = __NS;
 
+                fn mount(#fn_props_destructuring, cursor: &mut #hypp_ident::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                    #mount_body
+                }
+
                 fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut #hypp_ident::Cursor<Self::NS>) {
                     #props_updater
                     #pass_props_patch_call
@@ -248,7 +234,6 @@ pub fn generate_component(
             #(#span_typedefs)*
 
             #shim_impls
-            #mount_impl
 
             #patch_fn
         }
@@ -290,6 +275,18 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
         })
         .collect::<Vec<_>>();
 
+    let props_default_impl = if props_fields.is_empty() {
+        Some(quote! {
+            impl Default for #props_ident {
+                fn default() -> Self {
+                    Self {}
+                }
+            }
+        })
+    } else {
+        None
+    };
+
     let env_fields = params.iter().map(|param| {
         let ident = &param.ident;
         let ty = param.owned_ty_tokens();
@@ -314,6 +311,7 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
                 pub struct #props_ident {
                     #(#props_fields)*
                 }
+                #props_default_impl
             },
             props_gen_args: None,
             env_struct: quote! {
@@ -338,6 +336,7 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
                     pub struct #props_ident<#props_lifetime #generic_params> {
                         #(#props_fields)*
                     }
+                    #props_default_impl
                 },
                 props_gen_args: Some(quote! { <#props_lifetime #generic_arguments> }),
 

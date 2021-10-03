@@ -1,7 +1,7 @@
 /// Trait for converting a type into a Handle.
 pub trait ToHandle: Sized {
     /// The type of handle that must be used when owning an instance of this type.
-    type Handle: Handle<Self>;
+    type Handle: Handle<Self> + 'static;
 
     fn to_handle(self) -> Self::Handle {
         Self::Handle::new(self)
@@ -244,7 +244,7 @@ pub mod sync {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Component, Hypp, Span};
+    use crate::{Component, Error, Hypp, Span};
 
     struct LolProps<'p> {
         _prop: &'p str,
@@ -272,6 +272,9 @@ mod test {
         type Props = LolProps<'p>;
         type NS = crate::ns::Html;
 
+        fn mount(_props: Self::Props, _: &mut H::Cursor<Self::NS>) -> Result<Unique<Self>, Error> {
+            panic!()
+        }
         fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
@@ -302,6 +305,9 @@ mod test {
         type Props = LolProps<'p>;
         type NS = crate::ns::Html;
 
+        fn mount(_props: Self::Props, _: &mut H::Cursor<Self::NS>) -> Result<Shared<Self>, Error> {
+            panic!()
+        }
         fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
