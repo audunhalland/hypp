@@ -57,11 +57,9 @@ impl Test {
     }
 
     fn verify(&mut self, props: (u8, u8, u8)) {
-        self.comp.get_mut().pass_props(
-            ::hypp::Refresh(true),
-            props_from(props),
-            &mut self.hypp.builder_at_body(),
-        );
+        self.comp
+            .get_mut()
+            .pass_props(props_from(props), &mut self.hypp.builder_at_body());
 
         self.verify_render(props);
     }

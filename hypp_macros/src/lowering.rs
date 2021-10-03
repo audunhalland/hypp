@@ -380,15 +380,27 @@ impl BlockBuilder {
             ty: ir::StructFieldType::Component(component_path.clone()),
         });
 
-        let mut param_deps = ir::ParamDeps::Const;
-        for attr in &component.attrs {
-            match &attr.value {
-                template_ast::AttrValue::ImplicitTrue => {}
-                template_ast::AttrValue::Literal(_) => {}
-                template_ast::AttrValue::Expr(expr) => {
-                    param_deps.extend(&scope.lookup_params_deps_for_expr(expr));
+        let prop_args: Vec<_> = component
+            .attrs
+            .into_iter()
+            .map(|attr| {
+                let param_deps = match &attr.value {
+                    template_ast::AttrValue::ImplicitTrue => ir::ParamDeps::Const,
+                    template_ast::AttrValue::Literal(_) => ir::ParamDeps::Const,
+                    template_ast::AttrValue::Expr(expr) => scope.lookup_params_deps_for_expr(expr),
+                };
+
+                ir::ComponentPropArg {
+                    ident: attr.name,
+                    value: attr.value,
+                    param_deps,
                 }
-            }
+            })
+            .collect();
+
+        let mut param_deps = ir::ParamDeps::Const;
+        for prop_arg in &prop_args {
+            param_deps.extend(&prop_arg.param_deps)
         }
 
         self.param_deps.extend(&param_deps);
@@ -400,7 +412,7 @@ impl BlockBuilder {
                 param_deps,
                 expression: ir::Expression::Component {
                     path: component_path,
-                    props: component.attrs,
+                    props: prop_args,
                 },
             },
             ctx,

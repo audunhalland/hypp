@@ -172,7 +172,7 @@ pub enum Expression {
     /// A component instantiation
     Component {
         path: ComponentPath,
-        props: Vec<template_ast::Attr<syn::Ident>>,
+        props: Vec<ComponentPropArg>,
     },
 
     /// A match expression (something which is conditional)
@@ -193,6 +193,12 @@ pub enum Expression {
         /// Code block executed for each iteration:
         inner_block: Box<Block>,
     },
+}
+
+pub struct ComponentPropArg {
+    pub ident: syn::Ident,
+    pub value: template_ast::AttrValue,
+    pub param_deps: ParamDeps,
 }
 
 /// A DOM program which can be stored in static memory

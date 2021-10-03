@@ -40,7 +40,6 @@ fn render_foo_server() {
     );
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __FooProps {
             is_cool: (false, ::hypp::Refresh(true)),
         },
@@ -120,7 +119,6 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __ConditionalProps {
             hello: (false, ::hypp::Refresh(true)),
             world: (true, ::hypp::Refresh(true)),
@@ -132,7 +130,6 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __ConditionalProps {
             hello: (true, ::hypp::Refresh(true)),
             world: (false, ::hypp::Refresh(true)),
@@ -146,7 +143,6 @@ fn render_conditional_server() {
     );
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __ConditionalProps {
             hello: (true, ::hypp::Refresh(true)),
             world: (true, ::hypp::Refresh(true)),
@@ -216,7 +212,6 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article/></body>");
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __IfLetProps {
             opt_number: (Some(42), ::hypp::Refresh(true)),
         },
@@ -226,7 +221,6 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __IfLetProps {
             opt_number: (None, ::hypp::Refresh(true)),
         },
@@ -279,7 +273,6 @@ fn render_fragment1() {
     );
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __Fragment1Props {
             perhaps: (false, ::hypp::Refresh(true)),
         },
@@ -321,7 +314,6 @@ fn render_recursive_server() {
     );
 
     c.get_mut().pass_props(
-        hypp::Refresh(true),
         __RecursiveProps {
             depth: (2, ::hypp::Refresh(true)),
         },
@@ -365,7 +357,6 @@ fn render_list() {
     );
 
     c.get_mut().pass_props(
-        ::hypp::Refresh(true),
         __ListProps {
             items: (&strings2, ::hypp::Refresh(true)),
         },
@@ -466,6 +457,12 @@ component! {
 }
 
 component! {
+    ListItem(text: &str) {}
+
+    <li>{text}</li>
+}
+
+component! {
     AddToList() {
         items: Vec<String>,
         unused: bool,
@@ -483,7 +480,7 @@ component! {
         } else {
             <ul>
                 for item in items {
-                    <li>{item}</li>
+                    <ListItem text={item}/>
                 }
             </ul>
         }

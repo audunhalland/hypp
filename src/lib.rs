@@ -259,6 +259,44 @@ pub trait Span<H: Hypp> {
     }
 }
 
+///
+/// Deviation model (encodes which parameters must be refreshed)
+///
+#[derive(Clone)]
+pub enum Deviation<'b> {
+    Full,
+    Partial(&'b [bool]),
+    None,
+}
+
+impl<'b> Deviation<'b> {
+    pub fn refresh_at(&self, param: usize) -> Refresh {
+        match self {
+            Self::Full => Refresh(true),
+            Self::Partial(slice) => Refresh(slice[param]),
+            Self::None => Refresh(false),
+        }
+    }
+
+    pub fn refresh_at_any(&self, params: &[usize]) -> Refresh {
+        match self {
+            Self::Full => Refresh(true),
+            Self::Partial(slice) => {
+                for param in params {
+                    if slice[*param] {
+                        return Refresh(true);
+                    }
+                }
+                Refresh(false)
+            }
+            Self::None => Refresh(false),
+        }
+    }
+}
+
+///
+/// Refresh; determines whether something atomically needs to be refreshed
+///
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Refresh(pub bool);
 
@@ -294,18 +332,11 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// what direction to take is determined by H.
     ///
     /// # Arguments
-    /// * `refresh` - Whether anything should be refreshed. If not, the component
-    ///   may run separate logic for just "passing" the cursor.
     /// * `props` - new set of props
     /// * `cursor` - mutable cursor poining to the component. After return of method,
     ///   it must point _after_ the component (depending on traversal direction)
     ///
-    fn pass_props(
-        &mut self,
-        refresh: Refresh,
-        props: Self::Props,
-        cursor: &mut H::Cursor<Self::NS>,
-    );
+    fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor<Self::NS>);
 }
 
 ///

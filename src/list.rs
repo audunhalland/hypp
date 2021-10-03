@@ -26,11 +26,12 @@ where
         &mut self,
         mut data_iterator: I,
         mut inner_patch_fn: F,
+        _deviation: Deviation,
         ctx: &mut C,
     ) -> Result<(), crate::Error>
     where
         I: DoubleEndedIterator<Item = D>,
-        F: FnMut(Duplex<S>, D, Refresh, &mut C) -> Result<(), crate::Error>,
+        F: FnMut(Duplex<S>, D, Deviation, &mut C) -> Result<(), crate::Error>,
         C: GetCursor<H, NS> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
@@ -44,12 +45,12 @@ where
                 inner_patch_fn(
                     Duplex::In(&mut self.spans[index]),
                     data_item,
-                    Refresh(true),
+                    Deviation::Full,
                     ctx,
                 )?;
             } else {
                 let mut new_inner = None;
-                inner_patch_fn(Duplex::Out(&mut new_inner), data_item, Refresh(true), ctx)?;
+                inner_patch_fn(Duplex::Out(&mut new_inner), data_item, Deviation::Full, ctx)?;
                 self.spans.push(new_inner.unwrap());
             }
             index += 1;
@@ -145,7 +146,7 @@ mod tests {
     ) {
         let patch_fake_span_inner = |inout: Duplex<FakeSpan>,
                                      data: &'static str,
-                                     _: Refresh,
+                                     _: Deviation,
                                      _ctx: &mut PatchCtx<ServerHypp, Html>|
          -> Result<(), crate::Error> {
             match inout {
@@ -167,7 +168,12 @@ mod tests {
 
         let mut patch_ctx = PatchCtx { cur: cursor };
         list_span
-            .patch(data.into_iter(), patch_fake_span_inner, &mut patch_ctx)
+            .patch(
+                data.into_iter(),
+                patch_fake_span_inner,
+                Deviation::Full,
+                &mut patch_ctx,
+            )
             .unwrap();
     }
 

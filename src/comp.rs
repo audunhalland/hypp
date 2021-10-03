@@ -16,29 +16,22 @@ pub struct SharedInner<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> {
 }
 
 impl<Env, Span> UniqueInner<Env, Span> {
-    pub fn mount<H: Hypp, NS: TemplNS, C, Patch, Wrap, const U: usize>(
+    pub fn mount<H: Hypp, NS: TemplNS, C, Patch, Wrap>(
         env: Env,
         cursor: &mut H::Cursor<NS>,
         patch: Patch,
         wrap: Wrap,
     ) -> Result<Unique<C>, crate::Error>
     where
-        Patch: Fn(
-            Duplex<Span>,
-            &Env,
-            Refresh,
-            &[bool],
-            &mut PatchCtx<H, NS>,
-        ) -> Result<(), crate::Error>,
+        Patch:
+            Fn(Duplex<Span>, &Env, Deviation<'_>, &mut PatchCtx<H, NS>) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
     {
-        let updates: [bool; 1usize] = [true; 1usize];
         let mut root_span = None;
         patch(
             Duplex::Out(&mut root_span),
             &env,
-            Refresh(true),
-            &updates,
+            Deviation::Full,
             &mut PatchCtx { cur: cursor },
         )?;
         Ok(Unique::new(wrap(Self {
@@ -49,7 +42,7 @@ impl<Env, Span> UniqueInner<Env, Span> {
 }
 
 impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, Env, Span> {
-    pub fn mount<NS: TemplNS, Patch, Wrap, SaveWeak, const U: usize>(
+    pub fn mount<NS: TemplNS, Patch, Wrap, SaveWeak>(
         env: Env,
         cursor: &mut H::Cursor<NS>,
         patch: Patch,
@@ -60,22 +53,19 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
         Patch: Fn(
             Duplex<Span>,
             &Env,
-            Refresh,
-            &[bool],
+            Deviation<'_>,
             &mut PatchBindCtx<H, NS, C>,
         ) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
         SaveWeak: Fn(&mut C, <H::Shared<C> as SharedHandle<C>>::Weak),
     {
-        let updates = [false; U];
         let anchor = cursor.anchor();
         let mut binder: crate::shim::LazySelfBinder<H, C> = crate::shim::LazySelfBinder::new();
         let mut root_span = None;
         patch(
             Duplex::Out(&mut root_span),
             &env,
-            Refresh(true),
-            &updates,
+            Deviation::Full,
             &mut PatchBindCtx {
                 cur: cursor,
                 bind: &mut binder,

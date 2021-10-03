@@ -118,10 +118,9 @@ pub fn generate_component(
     };
 
     let env_expr = gen_env_expr(&params);
-    let n_params = params.len();
     let mount_body = match comp_ctx.kind {
         ir::ComponentKind::Basic => quote! {
-            ::hypp::comp::UniqueInner::mount::<_, _, _, _, _, #n_params>(
+            ::hypp::comp::UniqueInner::mount::<_, _, _, _, _>(
                 #env_expr,
                 cursor,
                 __patch,
@@ -129,7 +128,7 @@ pub fn generate_component(
             )
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner::mount::<_, _, _, _, #n_params>(
+            ::hypp::comp::SharedInner::mount::<_, _, _, _>(
                 #env_expr,
                 cursor,
                 __patch,
@@ -163,8 +162,7 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
-                __refresh,
-                &__refresh_params,
+                ::hypp::Deviation::Partial(&__refresh_params),
                 &mut ::hypp::patch::PatchCtx {
                     cur: __cursor,
                 }
@@ -175,8 +173,7 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
-                __refresh,
-                &__refresh_params,
+                ::hypp::Deviation::Partial(&__refresh_params),
                 &mut ::hypp::patch::PatchBindCtx {
                     cur: __cursor,
                     bind: &mut binder,
@@ -229,7 +226,6 @@ pub fn generate_component(
 
                 fn pass_props(
                     &mut self,
-                    __refresh: ::hypp::Refresh,
                     #fn_props_destructuring,
                     __cursor: &mut #hypp_ident::Cursor<Self::NS>
                 ) {
@@ -594,8 +590,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
-                    ::hypp::Refresh(false),
-                    &[#(#updates_array_items),*],
+                    ::hypp::Deviation::Partial(&[#(#updates_array_items),*]),
                     &mut ::hypp::patch::PatchBindCtx {
                         cur: &mut cursor,
                         bind: &mut binder,

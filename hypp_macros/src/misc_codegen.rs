@@ -21,6 +21,7 @@ pub enum Function {
 pub enum Scope {
     Component,
     DynamicSpan,
+    Iter,
 }
 
 #[derive(Clone, Copy)]
@@ -138,7 +139,7 @@ impl quote::ToTokens for FieldExpr {
         tokens.extend(match (self.1.scope, self.1.function) {
             (Scope::Component, Function::Patch) => quote! { #field },
             (Scope::Component, _) => quote! { self.#field },
-            (Scope::DynamicSpan, _) => quote! { #field },
+            (Scope::DynamicSpan | Scope::Iter, _) => quote! { #field },
         });
     }
 }
@@ -152,7 +153,7 @@ impl<'f> quote::ToTokens for FieldRef<'f> {
 
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { &self.#field },
-            Scope::DynamicSpan => quote! { #field },
+            Scope::DynamicSpan | Scope::Iter => quote! { #field },
         });
     }
 }
@@ -165,7 +166,7 @@ impl<'f> quote::ToTokens for MutFieldRef {
 
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { &mut self.#field },
-            Scope::DynamicSpan => quote! { #field },
+            Scope::DynamicSpan | Scope::Iter => quote! { #field },
         });
     }
 }
@@ -179,7 +180,7 @@ impl<'f> quote::ToTokens for MutFieldPat<'f> {
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { &mut self.#field },
             // Field has already been marked as a `ref mut` in the pattern binding:
-            Scope::DynamicSpan => quote! { &#field },
+            Scope::DynamicSpan | Scope::Iter => quote! { &#field },
         });
     }
 }
@@ -193,7 +194,7 @@ impl<'f> quote::ToTokens for FieldAssign<'f> {
 
         tokens.extend(match self.1.scope {
             Scope::Component => quote! { self.#field },
-            Scope::DynamicSpan => quote! { *#field },
+            Scope::DynamicSpan | Scope::Iter => quote! { *#field },
         });
     }
 }
@@ -519,22 +520,25 @@ impl ir::StructField {
 }
 
 impl ir::ParamDeps {
-    pub fn update_test_tokens(&self) -> TokenStream {
+    pub fn param_refresh_expr(&self) -> TokenStream {
         match self {
-            Self::Const => quote! { false },
-            Self::Some(ids) => {
-                let clauses = ids.iter().map(|id| {
-                    let id = *id as usize;
+            Self::Const => quote! { ::hypp::Refresh(false) },
+            Self::Some(ids) => match ids.len() {
+                0 => panic!("Should not be empty"),
+                1 => {
+                    let first = *ids.iter().next().unwrap() as usize;
                     quote! {
-                        __refresh_params[#id]
+                        __deviation.refresh_at(#first)
                     }
-                });
-
-                quote! {
-                    __refresh.0 || #(#clauses)||*
                 }
-            }
-            Self::All => quote! { true },
+                _ => {
+                    let ids = ids.iter().map(|id| *id as usize);
+                    quote! {
+                        __deviation.refresh_at_any(&[#(#ids),*])
+                    }
+                }
+            },
+            Self::All => quote! { ::hypp::Refresh(true) },
         }
     }
 }
@@ -718,7 +722,7 @@ impl ir::StructFieldType {
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
-                    Scope::Component => {
+                    Scope::Component | Scope::Iter => {
                         quote! { <#type_path #generics as ::hypp::handle::ToHandle>::Handle }
                     }
                     Scope::DynamicSpan => quote! {

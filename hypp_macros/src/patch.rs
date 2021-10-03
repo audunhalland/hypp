@@ -40,8 +40,7 @@ pub fn gen_patch_fn(
         pub fn __patch<#(#public_generic_params),*>(
             __root: ::hypp::Duplex<__RootSpan<#hypp_ident>>,
             __env: &__Env #env_gen_args,
-            __refresh: ::hypp::Refresh,
-            __refresh_params: &[bool],
+            __deviation: ::hypp::Deviation<'_>,
             __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
             #env_locals
@@ -210,7 +209,7 @@ fn compile_body<'c>(
             }
             ir::Expression::Text(expr) => {
                 let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
-                let test = stmt.param_deps.update_test_tokens();
+                let refresh_expr = stmt.param_deps.param_refresh_expr();
 
                 let closure = Closure {
                     comp_ctx,
@@ -231,7 +230,7 @@ fn compile_body<'c>(
 
                 let text_update = if stmt.param_deps.is_variable() {
                     Some(quote! {
-                        if #test {
+                        if #refresh_expr.0 {
                             #hypp_ident::set_text(#field_expr, #closure_ident().as_ref());
                         }
                     })
@@ -247,22 +246,20 @@ fn compile_body<'c>(
                 closures.push(closure);
             }
             ir::Expression::Component { path, props } => {
-                let props_exprs: Vec<(&syn::Ident, TokenStream)> = props
+                let props_exprs: Vec<(&ir::ComponentPropArg, TokenStream)> = props
                     .iter()
-                    .map(|attr| {
-                        let ident = &attr.name;
-                        match &attr.value {
-                            template_ast::AttrValue::ImplicitTrue => (ident, quote! { true }),
-                            template_ast::AttrValue::Literal(lit) => (ident, quote! { #lit }),
-                            template_ast::AttrValue::Expr(expr) => (ident, quote! { #expr }),
-                        }
+                    .map(|prop_arg| match &prop_arg.value {
+                        template_ast::AttrValue::ImplicitTrue => (prop_arg, quote! { true }),
+                        template_ast::AttrValue::Literal(lit) => (prop_arg, quote! { #lit }),
+                        template_ast::AttrValue::Expr(expr) => (prop_arg, quote! { #expr }),
                     })
                     .collect();
 
                 let component_path = &path.type_path;
                 let props_path = path.props_path();
 
-                let mount_props = props_exprs.iter().map(|(ident, expr)| {
+                let mount_props = props_exprs.iter().map(|(prop_arg, expr)| {
+                    let ident = &prop_arg.ident;
                     quote! { #ident: (#expr, ::hypp::Refresh(true)) }
                 });
 
@@ -279,7 +276,7 @@ fn compile_body<'c>(
                     local: FieldLocal::Let,
                     field_ident: &stmt.field,
                     init: match &ctx.scope {
-                        Scope::Component => quote! { #mount_expr; },
+                        Scope::Component | Scope::Iter => quote! { #mount_expr; },
                         Scope::DynamicSpan => quote! {
                             #mount_expr.into_boxed();
                         },
@@ -291,16 +288,17 @@ fn compile_body<'c>(
                 // variable parameters. If not, it is a constant.
                 if stmt.param_deps.is_variable() {
                     let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
-                    let test = stmt.param_deps.update_test_tokens();
+                    let test = stmt.param_deps.param_refresh_expr();
 
-                    let props_with_refresh = props_exprs.into_iter().map(|(ident, expr)| {
-                        quote! { #ident: (#expr, ::hypp::Refresh(true)) }
+                    let props_with_refresh = props_exprs.into_iter().map(|(prop_arg, expr)| {
+                        let ident = &prop_arg.ident;
+                        let refresh_expr = prop_arg.param_deps.param_refresh_expr();
+                        quote! { #ident: (#expr, #refresh_expr) }
                     });
 
                     patch_stmts.push(quote! {
-                        if #test {
+                        if #test.0 {
                             #field_expr.get_mut().pass_props(
-                                ::hypp::Refresh(true),
                                 #props_path {
                                     #(#props_with_refresh),*
                                 },
@@ -354,7 +352,10 @@ fn compile_body<'c>(
                     variable,
                     inner_block,
                     comp_ctx,
-                    ctx,
+                    CodegenCtx {
+                        scope: Scope::Iter,
+                        ..ctx
+                    },
                 );
 
                 let field = stmt.field.as_ref().unwrap();
@@ -365,11 +366,11 @@ fn compile_body<'c>(
                     field_ident: &stmt.field,
                     init: quote! { ::hypp::list::SimpleListSpan::new(); },
                     post_init: Some(quote! {
-                        #field.patch(#expr.iter(), #closure_ident, __ctx)?;
+                        #field.patch(#expr.iter(), #closure_ident, __deviation, __ctx)?;
                     }),
                 });
                 patch_stmts.push(quote! {
-                    #field.patch(#expr.iter(), #closure_ident, __ctx)?;
+                    #field.patch(#expr.iter(), #closure_ident, __deviation, __ctx)?;
                 });
                 closures.push(closure);
             }
@@ -590,7 +591,7 @@ fn gen_iter_item_closure<'c>(
         args: quote! {
             __span: ::hypp::Duplex<#fixed_span_full_type>,
             #iter_variable: &String,
-            __refresh: ::hypp::Refresh,
+            __deviation: ::hypp::Deviation,
         },
         body,
     }
