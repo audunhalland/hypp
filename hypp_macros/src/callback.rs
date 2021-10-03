@@ -4,8 +4,9 @@
 
 use syn::spanned::Spanned;
 
-pub struct Callback {
-    pub ident: syn::Ident,
+pub enum Callback {
+    Param(syn::Ident),
+    SelfMethod(syn::Ident),
 }
 
 pub fn parse_callback(expr: syn::Expr) -> Result<Callback, syn::Error> {
@@ -28,34 +29,28 @@ pub fn parse_callback(expr: syn::Expr) -> Result<Callback, syn::Error> {
         ));
     }
 
-    let ident = path_to_self_ident(expr_path.path)?;
-
-    Ok(Callback { ident })
+    path_to_callback(expr_path.path)
 }
 
-fn path_to_self_ident(path: syn::Path) -> Result<syn::Ident, syn::Error> {
+fn path_to_callback(path: syn::Path) -> Result<Callback, syn::Error> {
     let span = path.span();
     let mut iterator = path.segments.into_iter();
 
-    let _self = iterator
+    let first = iterator
         .next()
-        .and_then(|segment| {
-            if segment.ident != "Self" {
-                None
-            } else {
-                Some(segment.ident)
-            }
-        })
-        .ok_or_else(|| syn::Error::new(span, "No leading colon allowed"))?;
+        .ok_or_else(|| syn::Error::new(span, "Expected a path with at least one segment"))?;
 
-    let fn_ident = iterator
-        .next()
-        .and_then(|segment| Some(segment.ident))
-        .ok_or_else(|| syn::Error::new(span, "Expected a function name"))?;
+    if first.ident == "Self" {
+        let method = iterator
+            .next()
+            .ok_or_else(|| syn::Error::new(span, "Expected method name"))?;
 
-    if let Some(_) = iterator.next() {
-        return Err(syn::Error::new(span, "Expected only two elements in path"));
+        if let Some(_) = iterator.next() {
+            return Err(syn::Error::new(span, "Expected only two segments in path"));
+        }
+
+        Ok(Callback::SelfMethod(method.ident))
+    } else {
+        Ok(Callback::Param(first.ident))
     }
-
-    Ok(fn_ident)
 }

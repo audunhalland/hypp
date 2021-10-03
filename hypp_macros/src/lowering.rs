@@ -30,7 +30,7 @@ pub fn lower_root_node(
         dom_program_count: 0,
         field_count: 0,
         dynamic_span_count: 0,
-        callback_count: 0,
+        used_method_count: 0,
         current_dom_depth: 0,
         direction,
         errors: vec![],
@@ -53,7 +53,7 @@ pub fn lower_root_node(
 
     let mut component_kind = ir::ComponentKind::Basic;
 
-    if ctx.callback_count > 0 {
+    if ctx.used_method_count > 0 {
         component_kind = ir::ComponentKind::SelfUpdatable;
         root_block.handle_kind = ir::HandleKind::Shared;
     }
@@ -66,7 +66,7 @@ pub struct Context {
     dom_program_count: u16,
     field_count: u16,
     dynamic_span_count: u16,
-    callback_count: u16,
+    used_method_count: u16,
 
     current_dom_depth: u16,
 
@@ -294,8 +294,6 @@ impl BlockBuilder {
             },
             NSAttrKind::Callback => match attr.value {
                 template_ast::AttrValue::Expr(expr) => {
-                    ctx.callback_count += 1;
-
                     // First push the attribute name into const program:
                     self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
 
@@ -308,6 +306,14 @@ impl BlockBuilder {
                     });
 
                     let callback = callback::parse_callback(expr)?;
+
+                    match &callback {
+                        callback::Callback::SelfMethod(_) => {
+                            // Make this component self-updatable
+                            ctx.used_method_count += 1;
+                        }
+                        _ => {}
+                    }
 
                     // Break the DOM program to produce a callback here:
                     self.push_statement(

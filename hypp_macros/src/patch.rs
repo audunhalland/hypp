@@ -187,26 +187,38 @@ fn compile_body<'c>(
                     }
                 });
             }
-            ir::Expression::AttributeCallback(callback::Callback { ident }) => {
-                let field = stmt.field.as_ref().unwrap();
-                let component_ident = &comp_ctx.component_ident;
+            ir::Expression::AttributeCallback(callback) => match callback {
+                callback::Callback::Param(_ident) => {
+                    field_inits.push(FieldInit {
+                        local: FieldLocal::Let,
+                        field_ident: &stmt.field,
+                        init: quote! {
+                            __ctx.cur.attribute_value_callback()?;
+                        },
+                        post_init: None,
+                    });
+                }
+                callback::Callback::SelfMethod(ident) => {
+                    let field = stmt.field.as_ref().unwrap();
+                    let component_ident = &comp_ctx.component_ident;
 
-                field_inits.push(FieldInit {
-                    local: FieldLocal::Let,
-                    field_ident: &stmt.field,
-                    init: quote! {
-                        __ctx.cur.attribute_value_callback()?;
-                    },
-                    post_init: Some(quote! {
-                        __ctx.bind.bind_self(
-                            #field.clone(),
-                            ::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
-                                shim.#ident();
-                            }),
-                        );
-                    }),
-                });
-            }
+                    field_inits.push(FieldInit {
+                        local: FieldLocal::Let,
+                        field_ident: &stmt.field,
+                        init: quote! {
+                            __ctx.cur.attribute_value_callback()?;
+                        },
+                        post_init: Some(quote! {
+                            __ctx.bind.bind_self(
+                                #field.clone(),
+                                ::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
+                                    shim.#ident();
+                                }),
+                            );
+                        }),
+                    });
+                }
+            },
             ir::Expression::Text(expr) => {
                 let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
                 let refresh_expr = stmt.param_deps.param_refresh_expr();
