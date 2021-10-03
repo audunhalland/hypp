@@ -450,10 +450,10 @@ component! {
 
 component! {
     BasicCallbackAsProp<Y: ::hypp::Hypp + 'static>(
-        callback: &::hypp::Callback<Y>
+        function: &::hypp::Function<Y>
     ) {}
 
-    <button onClick={callback}>
+    <button onClick={function}>
     </button>
 }
 
@@ -465,7 +465,7 @@ component! {
 
     fn do_stuff(&mut self) {}
 
-    <BasicCallbackAsProp callback={Self::do_stuff} />
+    <BasicCallbackAsProp function={Self::do_stuff} />
 }
 
 component! {

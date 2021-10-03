@@ -63,10 +63,8 @@ impl<H: Hypp, T: ShimTrampoline + 'static> Call for ShimClosure<H, T> {
 ///
 /// But need to do so in an abstract manner, because 'self' may not exist yet (LazySelfBinder)
 ///
-pub trait BindSelf<H: Hypp, T: ShimTrampoline> {
-    fn make_closure(&mut self, method: ShimMethod<T>) -> Callback<H>;
-
-    fn bind_self(&mut self, slot: H::Shared<H::CallbackSlot>, method: ShimMethod<T>);
+pub trait MakeClosure<H: Hypp, T: ShimTrampoline> {
+    fn make_closure(&mut self, method: ShimMethod<T>) -> Function<H>;
 }
 
 pub struct SelfBinder<H: Hypp, T: 'static> {
@@ -91,39 +89,24 @@ impl<H: Hypp, T> SelfBinder<H, T> {
     }
 }
 
-impl<H: Hypp + 'static, T: ShimTrampoline> BindSelf<H, T> for SelfBinder<H, T> {
-    fn make_closure(&mut self, method: ShimMethod<T>) -> Callback<H> {
+impl<H: Hypp + 'static, T: ShimTrampoline> MakeClosure<H, T> for SelfBinder<H, T> {
+    fn make_closure(&mut self, method: ShimMethod<T>) -> Function<H> {
         let closure = ShimClosure::<H, T> {
             instance: DeferrableInstance(H::make_shared(Some(self.weak.clone()))),
             method,
         };
-        Callback::from_call(Box::new(closure))
-    }
-
-    fn bind_self(&mut self, mut slot: H::Shared<H::CallbackSlot>, method: ShimMethod<T>) {
-        let weak = self.weak.clone();
-
-        /*
-        slot.get_mut().bind(Box::new(move || {
-            let mut rc = weak
-                .upgrade()
-                .expect("Callback invoked, but component was destroyed");
-            rc.get_mut().shim_trampoline(method.clone());
-        }));
-        */
+        Function::from_call(Box::new(closure))
     }
 }
 
 pub struct DeferredSelfBinder<H: Hypp + 'static, T: ShimTrampoline + 'static> {
     deferred_instances: Vec<DeferrableInstance<H, T>>,
-    bound_slots: Vec<(H::Shared<H::CallbackSlot>, ShimMethod<T>)>,
 }
 
 impl<H: Hypp, T: ShimTrampoline + 'static> DeferredSelfBinder<H, T> {
     pub fn new() -> Self {
         Self {
             deferred_instances: vec![],
-            bound_slots: vec![],
         }
     }
 
@@ -132,19 +115,11 @@ impl<H: Hypp, T: ShimTrampoline + 'static> DeferredSelfBinder<H, T> {
             let mut opt_instance = deferred_instance.0.get_mut();
             *opt_instance = Some(weak.clone());
         }
-
-        if !self.bound_slots.is_empty() {
-            let mut binder: SelfBinder<H, T> = SelfBinder::from_weak(weak);
-
-            for (slot, method) in self.bound_slots.into_iter() {
-                binder.bind_self(slot, method);
-            }
-        }
     }
 }
 
-impl<H: Hypp, T: ShimTrampoline> BindSelf<H, T> for DeferredSelfBinder<H, T> {
-    fn make_closure(&mut self, method: ShimMethod<T>) -> Callback<H> {
+impl<H: Hypp, T: ShimTrampoline> MakeClosure<H, T> for DeferredSelfBinder<H, T> {
+    fn make_closure(&mut self, method: ShimMethod<T>) -> Function<H> {
         let deferred_instance = DeferrableInstance::<H, T>(H::make_shared(None));
 
         let closure = ShimClosure::<H, T> {
@@ -154,10 +129,6 @@ impl<H: Hypp, T: ShimTrampoline> BindSelf<H, T> for DeferredSelfBinder<H, T> {
         self.deferred_instances.push(deferred_instance);
 
         let shared_closure: H::Shared<Box<dyn Call>> = H::make_shared(Box::new(closure));
-        Callback::from_shared(shared_closure)
-    }
-
-    fn bind_self(&mut self, slot: H::Shared<H::CallbackSlot>, method: ShimMethod<T>) {
-        self.bound_slots.push((slot, method));
+        Function::from_shared(shared_closure)
     }
 }

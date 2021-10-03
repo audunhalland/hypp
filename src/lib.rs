@@ -51,7 +51,8 @@ pub trait Hypp: Sized {
     type Cursor<NS: TemplNS>: NSCursor<Self, NS> + Cursor<Self>;
 
     ///
-    /// Type of
+    /// Type of the callback slot used for connecting with functions
+    ///
     type CallbackSlot: CallbackSlot<Self> + 'static;
 
     /// How to share something.
@@ -148,12 +149,6 @@ pub trait Cursor<H: Hypp> {
     /// Create a storable anchor at the current position.
     fn anchor(&self) -> H::Anchor;
 
-    /// Set up a callback bound to the current attribute.
-    /// The way this works is that we bind the H::Callback to the element,
-    /// but that callback doesn't do anything yet. Later, using the Callback
-    /// handle, the callback is set up to do its work.
-    fn attribute_value_callback(&mut self) -> Result<H::Shared<H::CallbackSlot>, Error>;
-
     /// Define a text. The cursor moves past this text.
     fn text(&mut self, text: &str) -> Result<H::Text, Error>;
 
@@ -188,6 +183,9 @@ pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
     /// Execute a series of opcodes.
     /// The last node opcode must produce a text node.
     fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<H::Text, Error>;
+
+    /// Set up a callback slot connected to the current attribute.
+    fn attribute_slot(&mut self) -> Result<H::Shared<H::CallbackSlot>, Error>;
 
     /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.
@@ -348,21 +346,24 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 ///
 /// ```text
 ///
-///                       [Handle::Weak] <------------- [Option A]
-///                             |                           ^
-///                             |                           |
-/// [  Parent   ]               v                       ****************
-/// [ Component ] -> [H::Shared] --> [RefCell/Mutex] --> *THIS COMPONENT*
-///                             ^                       ****************
-///                             |                           |
-///                       [Handle::Weak]                    v
-///                             ^                       [H::Shared] <------ [wasm/JS closure] <-- [DOM node]
-///                             |                           |
-///                           [Fn] (method)                 v
-///                             ^                      [RefCell/Mutex]
-///                             |                           |
-///                             |                           v
-///                           [Box] <-- [Option B] <-- [CallbackSlot]
+///                        [Handle::Weak] <---------------- [Option]
+///                              |                              ^
+///                              |                              |
+/// [  Parent   ]                v                        ******************
+/// [ Component ] -> [H::Shared] -----------------------> * THIS COMPONENT *
+///                              ^                        ******************
+///                              |                              |
+///                              |                              v
+///                       [Handle::Weak]                   [H::Shared] <------ [wasm/JS closure] <-- [DOM node]
+///                              ^                              |
+///                              |                              v
+///  DeferredSelfBinder --> [H::Shared]                    [CallbackSlot]
+///                              ^                              |
+///                              |                              v
+///                       [ShimClosure] <-- [H::Shared] <-- [Function]
+///                                              ^
+///                                              |
+///                                          [Function] <--- {callbacks shared to child components}
 /// ```
 ///
 ///
@@ -375,20 +376,26 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 /// diagram to None.
 ///
 pub trait CallbackSlot<H: Hypp> {
-    /// Bind the slot to an actual callback
-    fn bind(&mut self, callback: Callback<H>);
+    /// Bind the slot to an actual function
+    fn bind(&mut self, function: Function<H>);
 
     /// Release the bound callback from the slot
     fn release(&mut self);
 }
 
+///
+/// Something that can be called
+///
 pub trait Call {
     fn call(&self);
 }
 
-pub struct Callback<H: Hypp>(H::Shared<Box<dyn Call>>);
+///
+/// Function - a shared reference to something callable.
+///
+pub struct Function<H: Hypp>(H::Shared<Box<dyn Call>>);
 
-impl<H: Hypp> Callback<H> {
+impl<H: Hypp> Function<H> {
     pub fn from_call(call: Box<dyn Call>) -> Self {
         Self(H::make_shared(call))
     }
@@ -398,13 +405,13 @@ impl<H: Hypp> Callback<H> {
     }
 }
 
-impl<H: Hypp> Clone for Callback<H> {
+impl<H: Hypp> Clone for Function<H> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<H: Hypp> Call for Callback<H> {
+impl<H: Hypp> Call for Function<H> {
     fn call(&self) {
         self.0.get().call();
     }

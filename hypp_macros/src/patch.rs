@@ -194,7 +194,7 @@ fn compile_body<'c>(
                         mutability: Mutability::LetMut,
                         field_ident: stmt.field.as_ref(),
                         init: quote! {
-                            __ctx.cur.attribute_value_callback()?;
+                            __ctx.cur.attribute_slot()?;
                         },
                         post_init: Some(quote! {
                             #field.get_mut().bind(#expr.clone());
@@ -225,7 +225,7 @@ fn compile_body<'c>(
                         mutability: Mutability::LetMut,
                         field_ident: stmt.field.as_ref(),
                         init: quote! {
-                            __ctx.cur.attribute_value_callback()?;
+                            __ctx.cur.attribute_slot()?;
                         },
                         // Associate the slot with the closure:
                         post_init: Some(quote! {

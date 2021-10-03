@@ -3,7 +3,7 @@ use crate::error::Error;
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{
-    AsNode, Callback, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span,
+    AsNode, CallbackSlot, Component, ConstOpCode, Cursor, Function, Hypp, NSCursor, Name, Span,
     TemplNS,
 };
 
@@ -111,7 +111,7 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
 }
 
 impl CallbackSlot<ServerHypp> for () {
-    fn bind(&mut self, _callback: Callback<ServerHypp>) {}
+    fn bind(&mut self, _function: Function<ServerHypp>) {}
     fn release(&mut self) {}
 }
 
@@ -194,11 +194,6 @@ impl ServerBuilder {
 impl Cursor<ServerHypp> for ServerBuilder {
     fn anchor(&self) -> ServerBuilder {
         self.clone()
-    }
-
-    fn attribute_value_callback(&mut self) -> Result<Arc<Mutex<()>>, Error> {
-        // Callbacks do nothing on the server
-        Ok(Arc::new(Mutex::new(())))
     }
 
     fn text(&mut self, text: &str) -> Result<ArcNode, Error> {
@@ -294,6 +289,11 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
 
     fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<ArcNode, Error> {
         <ServerBuilder as NSCursor<ServerHypp, NS>>::const_exec_element(self, program)
+    }
+
+    fn attribute_slot(&mut self) -> Result<Arc<Mutex<()>>, Error> {
+        // Callbacks do nothing on the server
+        Ok(Arc::new(Mutex::new(())))
     }
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode<NS>]) {

@@ -1,4 +1,4 @@
-use super::shim::{BindSelf, ShimTrampoline};
+use super::shim::{MakeClosure, ShimTrampoline};
 use super::{GetCursor, Hypp, TemplNS};
 
 ///
@@ -19,7 +19,7 @@ impl<'a, H: Hypp, NS: TemplNS> GetCursor<H, NS> for PatchCtx<'a, H, NS> {
 ///
 pub struct PatchBindCtx<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> {
     pub cur: &'a mut H::Cursor<NS>,
-    pub bind: &'a mut dyn BindSelf<H, T>,
+    pub bind: &'a mut dyn MakeClosure<H, T>,
 }
 
 impl<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> GetCursor<H, NS> for PatchBindCtx<'a, H, NS, T> {

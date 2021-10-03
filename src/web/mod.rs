@@ -236,36 +236,6 @@ impl Cursor<WebHypp> for WebBuilder {
         self.clone()
     }
 
-    fn attribute_value_callback(
-        &mut self,
-    ) -> Result<Rc<RefCell<callback::WebCallbackSlot>>, Error> {
-        let attribute_name = self
-            .loaded_attribute_name
-            .expect("needs an attribute name loaded");
-
-        match attribute_name {
-            "onclick" => {
-                let slot = callback::new_slot();
-
-                {
-                    let borrow = slot.borrow();
-
-                    self.html_element()
-                        .set_onclick(Some(borrow.web_closure().as_ref().unchecked_ref()));
-                }
-
-                Ok(slot)
-            }
-            _ => {
-                tracing::error!(
-                    "Cannot make callback slot on attribute \"{}\"",
-                    attribute_name
-                );
-                Err(Error::SetAttribute)
-            }
-        }
-    }
-
     fn text(&mut self, text: &str) -> Result<web_sys::Text, Error> {
         Ok(self.text(text)?)
     }
@@ -381,6 +351,34 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
         }
 
         result
+    }
+
+    fn attribute_slot(&mut self) -> Result<Rc<RefCell<callback::WebCallbackSlot>>, Error> {
+        let attribute_name = self
+            .loaded_attribute_name
+            .expect("needs an attribute name loaded");
+
+        match attribute_name {
+            "onclick" => {
+                let slot = callback::new_slot();
+
+                {
+                    let borrow = slot.borrow();
+
+                    self.html_element()
+                        .set_onclick(Some(borrow.web_closure().as_ref().unchecked_ref()));
+                }
+
+                Ok(slot)
+            }
+            _ => {
+                tracing::error!(
+                    "Cannot make callback slot on attribute \"{}\"",
+                    attribute_name
+                );
+                Err(Error::SetAttribute)
+            }
+        }
     }
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode<NS>]) {

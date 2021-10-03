@@ -3,21 +3,21 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
 use super::WebHypp;
-use crate::{Call, Callback, CallbackSlot};
+use crate::{Call, CallbackSlot, Function};
 
 pub struct WebCallbackSlot {
     web_closure: Option<Closure<dyn Fn()>>,
-    callback: Option<Callback<WebHypp>>,
+    function: Option<Function<WebHypp>>,
 }
 
 impl WebCallbackSlot {
     fn call(&self) {
-        let callback = self
-            .callback
+        let function = self
+            .function
             .as_ref()
             .expect("No Rust function defined in callback");
 
-        callback.call();
+        function.call();
     }
 
     pub fn web_closure(&self) -> &Closure<dyn Fn()> {
@@ -35,7 +35,7 @@ impl Drop for WebCallbackSlot {
 pub fn new_slot() -> Rc<RefCell<WebCallbackSlot>> {
     let callback = Rc::new(RefCell::new(WebCallbackSlot {
         web_closure: None,
-        callback: None,
+        function: None,
     }));
     let js_ref = callback.clone();
 
@@ -49,12 +49,12 @@ pub fn new_slot() -> Rc<RefCell<WebCallbackSlot>> {
 }
 
 impl CallbackSlot<WebHypp> for WebCallbackSlot {
-    fn bind(&mut self, callback: Callback<WebHypp>) {
-        self.callback = Some(callback);
+    fn bind(&mut self, function: Function<WebHypp>) {
+        self.function = Some(function);
     }
 
     fn release(&mut self) {
         self.web_closure = None;
-        self.callback = None;
+        self.function = None;
     }
 }
