@@ -101,9 +101,17 @@ impl Hypp for WebHypp {
         C::Props: Default,
     {
         let mut builder = self.builder_at_body();
-        let handle = C::mount(Default::default(), &mut builder)?;
+        let handle = match C::mount(Default::default(), &mut builder) {
+            Ok(handle) => handle,
+            Err(error) => {
+                tracing::error!("problem mounting: {:?}", error);
+                return Err(error);
+            }
+        };
 
         self.mounts.push(Box::new(handle));
+
+        tracing::debug!("Mounted successfully");
 
         Ok(())
     }
@@ -236,7 +244,7 @@ impl Cursor<WebHypp> for WebBuilder {
             .expect("needs an attribute name loaded");
 
         match attribute_name {
-            "on_click" => {
+            "onclick" => {
                 let callback = callback::new_callback();
 
                 {
@@ -248,7 +256,10 @@ impl Cursor<WebHypp> for WebBuilder {
 
                 Ok(callback)
             }
-            _ => Err(Error::SetAttribute),
+            _ => {
+                tracing::error!("Cannot set callback on attribute \"{}\"", attribute_name);
+                Err(Error::SetAttribute)
+            }
         }
     }
 

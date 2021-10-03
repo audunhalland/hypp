@@ -26,6 +26,7 @@ pub mod server;
 
 pub use error::Error;
 pub use hypp_macros::component;
+pub use hypp_macros::component_dbg;
 use prelude::ToHandle;
 
 pub enum TraversalDirection {
