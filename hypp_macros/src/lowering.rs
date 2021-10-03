@@ -289,9 +289,10 @@ impl BlockBuilder {
                         field: Some(slot_field),
                         dom_depth: ir::DomDepth(ctx.current_dom_depth),
                         param_deps: ir::ParamDeps::Const,
-                        expression: ir::Expression::AttributeCallback(ir::Callback::SelfMethod(
+                        expression: ir::Expression::AttributeCallback(ir::Callback::SelfMethod {
+                            local_field: ctx.next_field_id(),
                             method_ident,
-                        )),
+                        }),
                     },
                     ctx,
                 );
@@ -391,35 +392,38 @@ impl BlockBuilder {
         scope: &flow::FlowScope<'p>,
         ctx: &mut Context,
     ) -> Result<(), syn::Error> {
-        let field = ctx.next_field_id();
-
         let component_path = ir::ComponentPath::new(component.type_path);
-
-        self.struct_fields.push(ir::StructField {
-            ident: field.clone(),
-            ty: ir::StructFieldType::Component(component_path.clone()),
-        });
 
         let prop_args: Vec<_> = component
             .attrs
             .into_iter()
             .map(|attr| {
-                let param_deps = match &attr.value {
-                    template_ast::AttrValue::ImplicitTrue => ir::ParamDeps::Const,
-                    template_ast::AttrValue::Literal(_) => ir::ParamDeps::Const,
-                    template_ast::AttrValue::Expr(expr) => scope.lookup_params_deps_for_expr(expr),
+                let (param_deps, local_field) = match &attr.value {
+                    template_ast::AttrValue::ImplicitTrue => (ir::ParamDeps::Const, None),
+                    template_ast::AttrValue::Literal(_) => (ir::ParamDeps::Const, None),
+                    template_ast::AttrValue::Expr(expr) => {
+                        (scope.lookup_params_deps_for_expr(expr), None)
+                    }
                     template_ast::AttrValue::SelfMethod(_) => {
-                        unimplemented!("Pass callback to component")
+                        ctx.used_method_count += 1;
+                        (ir::ParamDeps::Const, Some(ctx.next_field_id()))
                     }
                 };
 
                 ir::ComponentPropArg {
                     ident: attr.name,
+                    local_field,
                     value: attr.value,
                     param_deps,
                 }
             })
             .collect();
+
+        let field = ctx.next_field_id();
+        self.struct_fields.push(ir::StructField {
+            ident: field.clone(),
+            ty: ir::StructFieldType::Component(component_path.clone()),
+        });
 
         let mut param_deps = ir::ParamDeps::Const;
         for prop_arg in &prop_args {

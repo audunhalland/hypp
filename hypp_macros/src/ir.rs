@@ -196,11 +196,15 @@ pub enum Expression {
 
 pub enum Callback {
     Expr(syn::Expr),
-    SelfMethod(syn::Ident),
+    SelfMethod {
+        local_field: FieldIdent,
+        method_ident: syn::Ident,
+    },
 }
 
 pub struct ComponentPropArg {
     pub ident: syn::Ident,
+    pub local_field: Option<FieldIdent>,
     pub value: template_ast::AttrValue,
     pub param_deps: ParamDeps,
 }

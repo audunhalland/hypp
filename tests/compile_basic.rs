@@ -458,7 +458,10 @@ component! {
 }
 
 component! {
-    PassCallbackToChildComponent() {}
+    PassCallbackToChildComponent() {
+        // BUG: it breaks without this (unused lifetime on Shim)
+        some_state: u32,
+    }
 
     fn do_stuff(&mut self) {}
 

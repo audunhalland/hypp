@@ -121,7 +121,7 @@ fn compile_body<'c>(
     ctx: CodegenCtx,
     constructor_kind: SpanConstructorKind<'_>,
 ) -> Body<'c> {
-    enum FieldLocal {
+    enum Mutability {
         Let,
         LetMut,
     }
@@ -129,8 +129,8 @@ fn compile_body<'c>(
     let hypp_ident = &comp_ctx.generics.hypp_ident;
 
     struct FieldInit<'b> {
-        local: FieldLocal,
-        field_ident: &'b Option<ir::FieldIdent>,
+        mutability: Mutability,
+        field_ident: Option<&'b ir::FieldIdent>,
         init: TokenStream,
         post_init: Option<TokenStream>,
     }
@@ -146,8 +146,8 @@ fn compile_body<'c>(
                 let last_node_opcode = program.last_node_opcode();
 
                 field_inits.push(FieldInit {
-                    local: FieldLocal::Let,
-                    field_ident: &stmt.field,
+                    mutability: Mutability::Let,
+                    field_ident: stmt.field.as_ref(),
                     init: match last_node_opcode {
                         Some((ir::DomOpCodeKind::Enter(_), _) | (ir::DomOpCodeKind::Exit, _)) => {
                             quote! {
@@ -191,8 +191,8 @@ fn compile_body<'c>(
                     let field = stmt.field.as_ref().unwrap();
 
                     field_inits.push(FieldInit {
-                        local: FieldLocal::LetMut,
-                        field_ident: &stmt.field,
+                        mutability: Mutability::LetMut,
+                        field_ident: stmt.field.as_ref(),
                         init: quote! {
                             __ctx.cur.attribute_value_callback()?;
                         },
@@ -201,26 +201,35 @@ fn compile_body<'c>(
                         }),
                     });
                 }
-                ir::Callback::SelfMethod(ident) => {
+                ir::Callback::SelfMethod {
+                    local_field: closure_field,
+                    method_ident,
+                } => {
                     let field = stmt.field.as_ref().unwrap();
                     let component_ident = &comp_ctx.component_ident;
 
+                    // Closure:
                     field_inits.push(FieldInit {
-                        local: FieldLocal::Let,
-                        field_ident: &stmt.field,
+                        mutability: Mutability::Let,
+                        field_ident: Some(closure_field),
+                        init: quote! {
+                            __ctx.bind.make_closure(::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
+                                shim.#method_ident();
+                            }));
+                        },
+                        post_init: None,
+                    });
+
+                    // Slot:
+                    field_inits.push(FieldInit {
+                        mutability: Mutability::LetMut,
+                        field_ident: stmt.field.as_ref(),
                         init: quote! {
                             __ctx.cur.attribute_value_callback()?;
                         },
+                        // Associate the slot with the closure:
                         post_init: Some(quote! {
-                            let __closure = __ctx.bind.make_closure(::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
-                                shim.#ident();
-                            }));
-                            __ctx.bind.bind_self(
-                                #field.clone(),
-                                ::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
-                                    shim.#ident();
-                                }),
-                            );
+                            #field.get_mut().bind(#closure_field);
                         }),
                     });
                 }
@@ -238,8 +247,8 @@ fn compile_body<'c>(
                 let closure_ident = &closure.sig.ident;
 
                 field_inits.push(FieldInit {
-                    local: FieldLocal::Let,
-                    field_ident: &stmt.field,
+                    mutability: Mutability::Let,
+                    field_ident: stmt.field.as_ref(),
                     init: quote! {
                         __ctx.cur.text(#closure_ident().as_ref())?;
                     },
@@ -264,24 +273,51 @@ fn compile_body<'c>(
                 closures.push(closure);
             }
             ir::Expression::Component { path, props } => {
-                let props_exprs: Vec<(&ir::ComponentPropArg, TokenStream)> = props
-                    .iter()
-                    .map(|prop_arg| match &prop_arg.value {
-                        template_ast::AttrValue::ImplicitTrue => (prop_arg, quote! { true }),
-                        template_ast::AttrValue::Literal(lit) => (prop_arg, quote! { #lit }),
-                        template_ast::AttrValue::Expr(expr) => (prop_arg, quote! { #expr }),
-                        template_ast::AttrValue::SelfMethod(_) => {
-                            unimplemented!("pass self method to component")
+                let mut props_exprs: Vec<(&ir::ComponentPropArg, TokenStream)> = vec![];
+
+                for prop_arg in props.iter() {
+                    match &prop_arg.value {
+                        template_ast::AttrValue::ImplicitTrue => {
+                            props_exprs.push((prop_arg, quote! { true }));
                         }
-                    })
-                    .collect();
+                        template_ast::AttrValue::Literal(lit) => {
+                            props_exprs.push((prop_arg, quote! { #lit }));
+                        }
+                        template_ast::AttrValue::Expr(expr) => {
+                            props_exprs.push((prop_arg, quote! { #expr }));
+                        }
+                        template_ast::AttrValue::SelfMethod(method_ident) => {
+                            // Construct a callback wrapping the self method
+                            let component_ident = &comp_ctx.component_ident;
+
+                            let closure_field = prop_arg
+                                .local_field
+                                .as_ref()
+                                .expect("Expected a local for closure creation");
+
+                            // Push field init for the creation of the closure
+                            field_inits.push(FieldInit {
+                                mutability: Mutability::Let,
+                                field_ident: Some(closure_field),
+                                init: quote! {
+                                    __ctx.bind.make_closure(::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
+                                        shim.#method_ident();
+                                    }));
+                                },
+                                post_init: None,
+                            });
+
+                            props_exprs.push((prop_arg, quote! { &#closure_field }));
+                        }
+                    }
+                }
 
                 let component_path = &path.type_path;
                 let props_path = path.props_path();
 
-                let mount_props = props_exprs.iter().map(|(prop_arg, expr)| {
+                let mount_props = props_exprs.iter().map(|(prop_arg, value)| {
                     let ident = &prop_arg.ident;
-                    quote! { #ident: (#expr, ::hypp::Refresh(true)) }
+                    quote! { #ident: (#value, ::hypp::Refresh(true)) }
                 });
 
                 let mount_expr = quote! {
@@ -294,8 +330,8 @@ fn compile_body<'c>(
                 };
 
                 field_inits.push(FieldInit {
-                    local: FieldLocal::Let,
-                    field_ident: &stmt.field,
+                    mutability: Mutability::Let,
+                    field_ident: stmt.field.as_ref(),
                     init: match &ctx.scope {
                         Scope::Component | Scope::Iter => quote! { #mount_expr; },
                         Scope::DynamicSpan => quote! {
@@ -311,10 +347,10 @@ fn compile_body<'c>(
                     let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
                     let test = stmt.param_deps.param_refresh_expr();
 
-                    let props_with_refresh = props_exprs.into_iter().map(|(prop_arg, expr)| {
+                    let props_with_refresh = props_exprs.into_iter().map(|(prop_arg, value)| {
                         let ident = &prop_arg.ident;
                         let refresh_expr = prop_arg.param_deps.param_refresh_expr();
-                        quote! { #ident: (#expr, #refresh_expr) }
+                        quote! { #ident: (#value, #refresh_expr) }
                     });
 
                     patch_stmts.push(quote! {
@@ -346,8 +382,8 @@ fn compile_body<'c>(
                 let closure_ident = &closure.sig.ident;
 
                 field_inits.push(FieldInit {
-                    local: FieldLocal::LetMut,
-                    field_ident: &stmt.field,
+                    mutability: Mutability::LetMut,
+                    field_ident: stmt.field.as_ref(),
                     init: quote! { None; },
                     post_init: Some(quote! {
                         #closure_ident(&mut #field, __ctx)?;
@@ -383,8 +419,8 @@ fn compile_body<'c>(
                 let closure_ident = &closure.sig.ident;
 
                 field_inits.push(FieldInit {
-                    local: FieldLocal::LetMut,
-                    field_ident: &stmt.field,
+                    mutability: Mutability::LetMut,
+                    field_ident: stmt.field.as_ref(),
                     init: quote! { ::hypp::list::SimpleListSpan::new(); },
                     post_init: Some(quote! {
                         #field.patch(#expr.iter(), #closure_ident, __deviation, __ctx)?;
@@ -406,12 +442,12 @@ fn compile_body<'c>(
                 #init
                 #post_init
             },
-            Some(field_ident) => match field_init.local {
-                FieldLocal::Let => quote! {
+            Some(field_ident) => match field_init.mutability {
+                Mutability::Let => quote! {
                     let #field_ident = #init
                     #post_init
                 },
-                FieldLocal::LetMut => quote! {
+                Mutability::LetMut => quote! {
                     let mut #field_ident = #init
                     #post_init
                 },
