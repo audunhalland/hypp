@@ -526,12 +526,12 @@ impl ir::ParamDeps {
                 let clauses = ids.iter().map(|id| {
                     let id = *id as usize;
                     quote! {
-                        __updates[#id]
+                        __refresh_params[#id]
                     }
                 });
 
                 quote! {
-                    __invalidated.0 || #(#clauses)||*
+                    __refresh.0 || #(#clauses)||*
                 }
             }
             Self::All => quote! { true },
@@ -771,7 +771,7 @@ impl param::Param {
         }
     }
 
-    pub fn owned_struct_param_tokens(&self) -> TokenStream {
+    pub fn props_to_owned_struct_param_tokens(&self) -> TokenStream {
         let ident = &self.ident;
 
         match &self.kind {
@@ -780,13 +780,13 @@ impl param::Param {
             // Convert from generally borrowed props:
             param::ParamKind::Prop(root_ty) => match root_ty {
                 param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => quote! { #ident, },
-                    param::ParamLeafType::Ref(_) => quote! { #ident: #ident.to_owned(), },
+                    param::ParamLeafType::Owned(_) => quote! { #ident: #ident.0, },
+                    param::ParamLeafType::Ref(_) => quote! { #ident: #ident.0.to_owned(), },
                 },
                 param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => quote! { #ident, },
+                    param::ParamLeafType::Owned(_) => quote! { #ident: #ident.0, },
                     param::ParamLeafType::Ref(_) => {
-                        quote! { #ident: #ident.map(|val| val.to_owned()), }
+                        quote! { #ident: #ident.0.map(|val| val.to_owned()), }
                     }
                 },
             },

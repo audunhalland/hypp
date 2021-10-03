@@ -260,7 +260,13 @@ pub trait Span<H: Hypp> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Invalidated(pub bool);
+pub struct Refresh(pub bool);
+
+impl Default for Refresh {
+    fn default() -> Self {
+        Refresh(true)
+    }
+}
 
 /// The Component trait.
 ///
@@ -288,7 +294,7 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// what direction to take is determined by H.
     ///
     /// # Arguments
-    /// * `invalidated` - Whether anything has been invalidated. If not, the component
+    /// * `refresh` - Whether anything should be refreshed. If not, the component
     ///   may run separate logic for just "passing" the cursor.
     /// * `props` - new set of props
     /// * `cursor` - mutable cursor poining to the component. After return of method,
@@ -296,7 +302,7 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     ///
     fn pass_props(
         &mut self,
-        invalidated: Invalidated,
+        refresh: Refresh,
         props: Self::Props,
         cursor: &mut H::Cursor<Self::NS>,
     );
@@ -352,13 +358,6 @@ pub struct Callback<H: Hypp>(std::marker::PhantomData<H>);
 impl<H: Hypp> Clone for Callback<H> {
     fn clone(&self) -> Self {
         Self(std::marker::PhantomData)
-    }
-}
-
-/// FIXME: Temporary while still comparing values in pass_props
-impl<H: Hypp> PartialEq<Callback<H>> for Callback<H> {
-    fn eq(&self, _rhs: &Callback<H>) -> bool {
-        false
     }
 }
 

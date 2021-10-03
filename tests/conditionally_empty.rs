@@ -40,9 +40,9 @@ fn props_from(props: (u8, u8, u8)) -> __ComponentBeforeConditionalProps<'static>
     let baz = props.2 > 0;
 
     __ComponentBeforeConditionalProps {
-        foo: if foo { Some("foo") } else { None },
-        bar: if bar { Some("bar") } else { None },
-        baz: if baz { Some("baz") } else { None },
+        foo: (if foo { Some("foo") } else { None }, Default::default()),
+        bar: (if bar { Some("bar") } else { None }, Default::default()),
+        baz: (if baz { Some("baz") } else { None }, Default::default()),
     }
 }
 
@@ -58,7 +58,7 @@ impl Test {
 
     fn verify(&mut self, props: (u8, u8, u8)) {
         self.comp.get_mut().pass_props(
-            ::hypp::Invalidated(true),
+            ::hypp::Refresh(true),
             props_from(props),
             &mut self.hypp.builder_at_body(),
         );

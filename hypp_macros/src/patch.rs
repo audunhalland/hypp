@@ -40,8 +40,8 @@ pub fn gen_patch_fn(
         pub fn __patch<#(#public_generic_params),*>(
             __root: ::hypp::Duplex<__RootSpan<#hypp_ident>>,
             __env: &__Env #env_gen_args,
-            __invalidated: ::hypp::Invalidated,
-            __updates: &[bool],
+            __refresh: ::hypp::Refresh,
+            __refresh_params: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
             #env_locals
@@ -247,20 +247,14 @@ fn compile_body<'c>(
                 closures.push(closure);
             }
             ir::Expression::Component { path, props } => {
-                let prop_list: Vec<TokenStream> = props
+                let props_exprs: Vec<(&syn::Ident, TokenStream)> = props
                     .iter()
                     .map(|attr| {
                         let ident = &attr.name;
                         match &attr.value {
-                            template_ast::AttrValue::ImplicitTrue => quote! {
-                                #ident: true,
-                            },
-                            template_ast::AttrValue::Literal(lit) => quote! {
-                                #ident: #lit,
-                            },
-                            template_ast::AttrValue::Expr(expr) => quote! {
-                                #ident: #expr,
-                            },
+                            template_ast::AttrValue::ImplicitTrue => (ident, quote! { true }),
+                            template_ast::AttrValue::Literal(lit) => (ident, quote! { #lit }),
+                            template_ast::AttrValue::Expr(expr) => (ident, quote! { #expr }),
                         }
                     })
                     .collect();
@@ -268,10 +262,14 @@ fn compile_body<'c>(
                 let component_path = &path.type_path;
                 let props_path = path.props_path();
 
+                let mount_props = props_exprs.iter().map(|(ident, expr)| {
+                    quote! { #ident: (#expr, ::hypp::Refresh(true)) }
+                });
+
                 let mount_expr = quote! {
                     #component_path::mount(
                         #props_path {
-                            #(#prop_list)*
+                            #(#mount_props),*
                         },
                         __ctx.cur
                     )?
@@ -295,12 +293,16 @@ fn compile_body<'c>(
                     let field_expr = FieldExpr(stmt.field.unwrap(), ctx);
                     let test = stmt.param_deps.update_test_tokens();
 
+                    let props_with_refresh = props_exprs.into_iter().map(|(ident, expr)| {
+                        quote! { #ident: (#expr, ::hypp::Refresh(true)) }
+                    });
+
                     patch_stmts.push(quote! {
                         if #test {
                             #field_expr.get_mut().pass_props(
-                                ::hypp::Invalidated(true),
+                                ::hypp::Refresh(true),
                                 #props_path {
-                                    #(#prop_list)*
+                                    #(#props_with_refresh),*
                                 },
                                 __ctx.cur
                             );
@@ -588,7 +590,7 @@ fn gen_iter_item_closure<'c>(
         args: quote! {
             __span: ::hypp::Duplex<#fixed_span_full_type>,
             #iter_variable: &String,
-            __invalidated: ::hypp::Invalidated,
+            __refresh: ::hypp::Refresh,
         },
         body,
     }

@@ -26,8 +26,13 @@ component! {
 #[test]
 fn render_foo_server() {
     let hypp = ServerHypp::new();
-    let mut c = Foo::<ServerHypp>::mount(__FooProps { is_cool: true }, &mut hypp.builder_at_body())
-        .unwrap();
+    let mut c = Foo::<ServerHypp>::mount(
+        __FooProps {
+            is_cool: (true, hypp::Refresh(true)),
+        },
+        &mut hypp.builder_at_body(),
+    )
+    .unwrap();
 
     assert_eq!(
         hypp.render(),
@@ -35,8 +40,10 @@ fn render_foo_server() {
     );
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
-        __FooProps { is_cool: false },
+        hypp::Refresh(true),
+        __FooProps {
+            is_cool: (false, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     );
 
@@ -103,8 +110,8 @@ fn render_conditional_server() {
     let hypp = ServerHypp::new();
     let mut c = Conditional::<ServerHypp>::mount(
         __ConditionalProps {
-            hello: false,
-            world: false,
+            hello: (false, ::hypp::Refresh(true)),
+            world: (false, ::hypp::Refresh(true)),
         },
         &mut hypp.builder_at_body(),
     )
@@ -113,10 +120,10 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
+        hypp::Refresh(true),
         __ConditionalProps {
-            hello: false,
-            world: true,
+            hello: (false, ::hypp::Refresh(true)),
+            world: (true, ::hypp::Refresh(true)),
         },
         &mut hypp.builder_at_body(),
     );
@@ -125,10 +132,10 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
+        hypp::Refresh(true),
         __ConditionalProps {
-            hello: true,
-            world: false,
+            hello: (true, ::hypp::Refresh(true)),
+            world: (false, ::hypp::Refresh(true)),
         },
         &mut hypp.builder_at_body(),
     );
@@ -139,10 +146,10 @@ fn render_conditional_server() {
     );
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
+        hypp::Refresh(true),
         __ConditionalProps {
-            hello: true,
-            world: true,
+            hello: (true, ::hypp::Refresh(true)),
+            world: (true, ::hypp::Refresh(true)),
         },
         &mut hypp.builder_at_body(),
     );
@@ -199,7 +206,9 @@ fn render_iflet_server() {
 
     let hypp = hypp::server::ServerHypp::new();
     let mut c = IfLet::<ServerHypp>::mount(
-        __IfLetProps { opt_number: None },
+        __IfLetProps {
+            opt_number: (None, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     )
     .unwrap();
@@ -207,9 +216,9 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article/></body>");
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
+        hypp::Refresh(true),
         __IfLetProps {
-            opt_number: Some(42),
+            opt_number: (Some(42), ::hypp::Refresh(true)),
         },
         &mut hypp.builder_at_body(),
     );
@@ -217,8 +226,10 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
-        __IfLetProps { opt_number: None },
+        hypp::Refresh(true),
+        __IfLetProps {
+            opt_number: (None, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     );
 
@@ -255,7 +266,9 @@ fn render_fragment1() {
 
     let hypp = hypp::server::ServerHypp::new();
     let mut c = Fragment1::<ServerHypp>::mount(
-        __Fragment1Props { perhaps: true },
+        __Fragment1Props {
+            perhaps: (true, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     )
     .unwrap();
@@ -266,8 +279,10 @@ fn render_fragment1() {
     );
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
-        __Fragment1Props { perhaps: false },
+        hypp::Refresh(true),
+        __Fragment1Props {
+            perhaps: (false, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     );
 
@@ -292,9 +307,13 @@ component! {
 #[test]
 fn render_recursive_server() {
     let hypp = hypp::server::ServerHypp::new();
-    let mut c =
-        Recursive::<ServerHypp>::mount(__RecursiveProps { depth: 3 }, &mut hypp.builder_at_body())
-            .unwrap();
+    let mut c = Recursive::<ServerHypp>::mount(
+        __RecursiveProps {
+            depth: (3, ::hypp::Refresh(true)),
+        },
+        &mut hypp.builder_at_body(),
+    )
+    .unwrap();
 
     assert_eq!(
         hypp.render(),
@@ -302,8 +321,10 @@ fn render_recursive_server() {
     );
 
     c.get_mut().pass_props(
-        hypp::Invalidated(true),
-        __RecursiveProps { depth: 2 },
+        hypp::Refresh(true),
+        __RecursiveProps {
+            depth: (2, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     );
 
@@ -331,7 +352,9 @@ fn render_list() {
     let strings2 = ["bar".to_string(), "baz".to_string()];
 
     let mut c = List::<ServerHypp>::mount(
-        __ListProps { items: &strings1 },
+        __ListProps {
+            items: (&strings1, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     )
     .unwrap();
@@ -342,8 +365,10 @@ fn render_list() {
     );
 
     c.get_mut().pass_props(
-        ::hypp::Invalidated(true),
-        __ListProps { items: &strings2 },
+        ::hypp::Refresh(true),
+        __ListProps {
+            items: (&strings2, ::hypp::Refresh(true)),
+        },
         &mut hypp.builder_at_body(),
     );
 
@@ -377,7 +402,7 @@ component! {
     <div>{arg}</div>
 }
 
-component_dbg! {
+component! {
     ConditionalStringProp(arg: &str, draw_one: bool) {}
 
     if draw_one {

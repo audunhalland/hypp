@@ -163,8 +163,8 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
-                __invalidated,
-                &__updates,
+                __refresh,
+                &__refresh_params,
                 &mut ::hypp::patch::PatchCtx {
                     cur: __cursor,
                 }
@@ -175,8 +175,8 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
-                __invalidated,
-                &__updates,
+                __refresh,
+                &__refresh_params,
                 &mut ::hypp::patch::PatchBindCtx {
                     cur: __cursor,
                     bind: &mut binder,
@@ -229,7 +229,7 @@ pub fn generate_component(
 
                 fn pass_props(
                     &mut self,
-                    __invalidated: ::hypp::Invalidated,
+                    __refresh: ::hypp::Refresh,
                     #fn_props_destructuring,
                     __cursor: &mut #hypp_ident::Cursor<Self::NS>
                 ) {
@@ -278,7 +278,7 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
             };
 
             quote! {
-                pub #ident: #ty,
+                pub #ident: (#ty, ::hypp::Refresh),
             }
         })
         .collect::<Vec<_>>();
@@ -360,7 +360,9 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
 }
 
 fn gen_env_expr(params: &[param::Param]) -> TokenStream {
-    let env_params = params.iter().map(param::Param::owned_struct_param_tokens);
+    let env_params = params
+        .iter()
+        .map(param::Param::props_to_owned_struct_param_tokens);
     quote! {
         __Env {
             #(#env_params)*
@@ -443,36 +445,44 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
 
         match &param.kind {
             param::ParamKind::Prop(root_ty) => {
-                let self_prop_as_ref = match root_ty {
+                /*
+                let prop_value_as_ref = match root_ty {
                     param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident },
-                        param::ParamLeafType::Ref(_) => quote! { &self.0.env.#ident },
+                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident.value },
+                        param::ParamLeafType::Ref(_) => quote! { &self.0.env.#ident.value },
                     },
                     param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident },
-                        param::ParamLeafType::Ref(_) => quote! {self.0.env.#ident.as_deref() },
+                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident.value },
+                        param::ParamLeafType::Ref(_) => {
+                            quote! {self.0.env.#ident.value.as_deref() }
+                        }
                     },
                 };
+                */
 
                 let write = match root_ty {
                     param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident = #ident; },
+                        param::ParamLeafType::Owned(_) => {
+                            quote! { self.0.env.#ident = #ident.0; }
+                        }
                         param::ParamLeafType::Ref(_) => quote! {
-                            self.0.env.#ident = #ident.to_owned();
+                            self.0.env.#ident = #ident.0.to_owned();
                         },
                     },
                     param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident = #ident; },
+                        param::ParamLeafType::Owned(_) => {
+                            quote! { self.0.env.#ident = #ident.0; }
+                        }
                         param::ParamLeafType::Ref(_) => quote! {
-                            self.0.env.#ident = #ident.map(|val| val.to_owned());
+                            self.0.env.#ident = #ident.0.map(|val| val.to_owned());
                         },
                     },
                 };
 
                 Some(quote! {
-                    if #self_prop_as_ref != #ident {
+                    if #ident.1.0 {
                         #write
-                        __updates[#id] = true;
+                        __refresh_params[#id] = true;
                     }
                 })
             }
@@ -482,7 +492,7 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
 
     quote! {
         // TODO: use bitvec?
-        let mut __updates: [bool; #n_params] = [false; #n_params];
+        let mut __refresh_params: [bool; #n_params] = [false; #n_params];
 
         #(#checks)*
     }
@@ -584,7 +594,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
-                    ::hypp::Invalidated(false),
+                    ::hypp::Refresh(false),
                     &[#(#updates_array_items),*],
                     &mut ::hypp::patch::PatchBindCtx {
                         cur: &mut cursor,
