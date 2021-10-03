@@ -2,21 +2,22 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
-use crate::CallbackSlot;
+use super::WebHypp;
+use crate::{Call, Callback, CallbackSlot};
 
 pub struct WebCallbackSlot {
     web_closure: Option<Closure<dyn Fn()>>,
-    rust_function: Option<Box<dyn Fn()>>,
+    callback: Option<Callback<WebHypp>>,
 }
 
 impl WebCallbackSlot {
     fn call(&self) {
-        let rust_function = self
-            .rust_function
+        let callback = self
+            .callback
             .as_ref()
             .expect("No Rust function defined in callback");
 
-        rust_function();
+        callback.call();
     }
 
     pub fn web_closure(&self) -> &Closure<dyn Fn()> {
@@ -31,10 +32,10 @@ impl Drop for WebCallbackSlot {
     }
 }
 
-pub fn new_callback() -> Rc<RefCell<WebCallbackSlot>> {
+pub fn new_slot() -> Rc<RefCell<WebCallbackSlot>> {
     let callback = Rc::new(RefCell::new(WebCallbackSlot {
         web_closure: None,
-        rust_function: None,
+        callback: None,
     }));
     let js_ref = callback.clone();
 
@@ -47,13 +48,13 @@ pub fn new_callback() -> Rc<RefCell<WebCallbackSlot>> {
     callback
 }
 
-impl CallbackSlot for WebCallbackSlot {
-    fn bind(&mut self, function: Box<dyn Fn()>) {
-        self.rust_function = Some(function);
+impl CallbackSlot<WebHypp> for WebCallbackSlot {
+    fn bind(&mut self, callback: Callback<WebHypp>) {
+        self.callback = Some(callback);
     }
 
     fn release(&mut self) {
         self.web_closure = None;
-        self.rust_function = None;
+        self.callback = None;
     }
 }

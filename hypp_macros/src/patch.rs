@@ -6,7 +6,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::callback;
 use crate::ir;
 use crate::misc_codegen::*;
 use crate::template_ast;
@@ -188,17 +187,21 @@ fn compile_body<'c>(
                 });
             }
             ir::Expression::AttributeCallback(callback) => match callback {
-                callback::Callback::Param(_ident) => {
+                ir::Callback::Expr(expr) => {
+                    let field = stmt.field.as_ref().unwrap();
+
                     field_inits.push(FieldInit {
-                        local: FieldLocal::Let,
+                        local: FieldLocal::LetMut,
                         field_ident: &stmt.field,
                         init: quote! {
                             __ctx.cur.attribute_value_callback()?;
                         },
-                        post_init: None,
+                        post_init: Some(quote! {
+                            #field.get_mut().bind(#expr.clone());
+                        }),
                     });
                 }
-                callback::Callback::SelfMethod(ident) => {
+                ir::Callback::SelfMethod(ident) => {
                     let field = stmt.field.as_ref().unwrap();
                     let component_ident = &comp_ctx.component_ident;
 
@@ -209,6 +212,9 @@ fn compile_body<'c>(
                             __ctx.cur.attribute_value_callback()?;
                         },
                         post_init: Some(quote! {
+                            let __closure = __ctx.bind.make_closure(::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
+                                shim.#ident();
+                            }));
                             __ctx.bind.bind_self(
                                 #field.clone(),
                                 ::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
@@ -264,6 +270,9 @@ fn compile_body<'c>(
                         template_ast::AttrValue::ImplicitTrue => (prop_arg, quote! { true }),
                         template_ast::AttrValue::Literal(lit) => (prop_arg, quote! { #lit }),
                         template_ast::AttrValue::Expr(expr) => (prop_arg, quote! { #expr }),
+                        template_ast::AttrValue::SelfMethod(_) => {
+                            unimplemented!("pass self method to component")
+                        }
                     })
                     .collect();
 

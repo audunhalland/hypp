@@ -3,7 +3,8 @@ use crate::error::Error;
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{
-    AsNode, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS,
+    AsNode, Callback, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span,
+    TemplNS,
 };
 
 use parking_lot::Mutex;
@@ -109,8 +110,8 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
     }
 }
 
-impl CallbackSlot for () {
-    fn bind(&mut self, _function: Box<dyn Fn()>) {}
+impl CallbackSlot<ServerHypp> for () {
+    fn bind(&mut self, _callback: Callback<ServerHypp>) {}
     fn release(&mut self) {}
 }
 

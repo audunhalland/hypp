@@ -1,12 +1,12 @@
-///
-/// Lowering / "flattening" of template_ast::Node, into a simple
-/// control-flow "tree" (not a graph, because there are no joins).
-///
-/// The tree consists of `ir::Block`, which contains code the _must_ run
-/// together with other code. The only reason to split a block would the
-/// presence of conditionals.
-///
-use crate::callback;
+//!
+//! Lowering / "flattening" of template_ast::Node, into a simple
+//! control-flow "tree" (not a graph, because there are no joins).
+//!
+//! The tree consists of `ir::Block`, which contains code the _must_ run
+//! together with other code. The only reason to split a block would the
+//! presence of conditionals.
+//!
+
 use crate::flow;
 use crate::ir;
 use crate::namespace::*;
@@ -268,67 +268,81 @@ impl BlockBuilder {
         let attr_opcode_value = attr.name.opcode_value();
         let span = attr.name.ident.span();
 
-        match attr.name.name.kind() {
-            NSAttrKind::Misc => match attr.value {
-                template_ast::AttrValue::ImplicitTrue => {
-                    let attr_value = syn::LitStr::new("true", proc_macro2::Span::mixed_site());
-                    self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
-                    self.push_dom_opcode((ir::DomOpCodeKind::AttrText(attr_value), span), ctx);
-                    Ok(())
-                }
-                template_ast::AttrValue::Literal(lit) => {
-                    let value_lit = match lit {
-                        syn::Lit::Str(lit_str) => lit_str,
-                        // BUG: Debug formatting
-                        lit => {
-                            syn::LitStr::new(&format!("{:?}", lit), proc_macro2::Span::mixed_site())
-                        }
-                    };
-                    self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
-                    self.push_dom_opcode((ir::DomOpCodeKind::AttrText(value_lit), span), ctx);
-                    Ok(())
-                }
-                template_ast::AttrValue::Expr(_) => {
-                    panic!("lol")
-                }
-            },
-            NSAttrKind::Callback => match attr.value {
-                template_ast::AttrValue::Expr(expr) => {
-                    // First push the attribute name into const program:
-                    self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
+        match (attr.name.name.kind(), attr.value) {
+            (NSAttrKind::Callback, template_ast::AttrValue::SelfMethod(method_ident)) => {
+                // First push the attribute name into const program:
+                self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
 
-                    // Callback must be stored, because it must release ref counts on unmount.
-                    let callback_field = ctx.next_field_id();
+                ctx.used_method_count += 1;
 
-                    self.struct_fields.push(ir::StructField {
-                        ident: callback_field.clone(),
-                        ty: ir::StructFieldType::CallbackSlot,
-                    });
+                // Slot must be stored, because it must release ref counts on unmount.
+                let slot_field = ctx.next_field_id();
 
-                    let callback = callback::parse_callback(expr)?;
+                self.struct_fields.push(ir::StructField {
+                    ident: slot_field.clone(),
+                    ty: ir::StructFieldType::CallbackSlot,
+                });
 
-                    match &callback {
-                        callback::Callback::SelfMethod(_) => {
-                            // Make this component self-updatable
-                            ctx.used_method_count += 1;
-                        }
-                        _ => {}
-                    }
+                // Break the DOM program to produce a callback here:
+                self.push_statement(
+                    ir::Statement {
+                        field: Some(slot_field),
+                        dom_depth: ir::DomDepth(ctx.current_dom_depth),
+                        param_deps: ir::ParamDeps::Const,
+                        expression: ir::Expression::AttributeCallback(ir::Callback::SelfMethod(
+                            method_ident,
+                        )),
+                    },
+                    ctx,
+                );
+                Ok(())
+            }
+            (NSAttrKind::Callback, template_ast::AttrValue::Expr(expr)) => {
+                // First push the attribute name into const program:
+                self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
 
-                    // Break the DOM program to produce a callback here:
-                    self.push_statement(
-                        ir::Statement {
-                            field: Some(callback_field),
-                            dom_depth: ir::DomDepth(ctx.current_dom_depth),
-                            param_deps: ir::ParamDeps::Const,
-                            expression: ir::Expression::AttributeCallback(callback),
-                        },
-                        ctx,
-                    );
-                    Ok(())
-                }
-                _ => panic!(),
-            },
+                // Slot must be stored, because it must release ref counts on unmount.
+                let slot_field = ctx.next_field_id();
+
+                self.struct_fields.push(ir::StructField {
+                    ident: slot_field.clone(),
+                    ty: ir::StructFieldType::CallbackSlot,
+                });
+
+                self.push_statement(
+                    ir::Statement {
+                        field: Some(slot_field),
+                        dom_depth: ir::DomDepth(ctx.current_dom_depth),
+                        param_deps: ir::ParamDeps::Const,
+                        expression: ir::Expression::AttributeCallback(ir::Callback::Expr(expr)),
+                    },
+                    ctx,
+                );
+                Ok(())
+            }
+            (_, template_ast::AttrValue::ImplicitTrue) => {
+                let attr_value = syn::LitStr::new("true", proc_macro2::Span::mixed_site());
+                self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
+                self.push_dom_opcode((ir::DomOpCodeKind::AttrText(attr_value), span), ctx);
+                Ok(())
+            }
+            (_, template_ast::AttrValue::Literal(lit)) => {
+                let value_lit = match lit {
+                    syn::Lit::Str(lit_str) => lit_str,
+                    // BUG: Debug formatting
+                    lit => syn::LitStr::new(&format!("{:?}", lit), proc_macro2::Span::mixed_site()),
+                };
+                self.push_dom_opcode((ir::DomOpCodeKind::Attr(attr_opcode_value), span), ctx);
+                self.push_dom_opcode((ir::DomOpCodeKind::AttrText(value_lit), span), ctx);
+                Ok(())
+            }
+            (_, template_ast::AttrValue::Expr(_)) => {
+                panic!("lol")
+            }
+            (_, template_ast::AttrValue::SelfMethod(_)) => Err(syn::Error::new(
+                span,
+                "Callback not applicable to this attribute",
+            )),
         }
     }
 
@@ -394,6 +408,9 @@ impl BlockBuilder {
                     template_ast::AttrValue::ImplicitTrue => ir::ParamDeps::Const,
                     template_ast::AttrValue::Literal(_) => ir::ParamDeps::Const,
                     template_ast::AttrValue::Expr(expr) => scope.lookup_params_deps_for_expr(expr),
+                    template_ast::AttrValue::SelfMethod(_) => {
+                        unimplemented!("Pass callback to component")
+                    }
                 };
 
                 ir::ComponentPropArg {

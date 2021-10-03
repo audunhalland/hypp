@@ -449,11 +449,20 @@ component! {
 }
 
 component! {
-    CallbackAsProp<Y: ::hypp::Hypp + 'static>(
+    BasicCallbackAsProp<Y: ::hypp::Hypp + 'static>(
         callback: &::hypp::Callback<Y>
     ) {}
 
-    <></>
+    <button onClick={callback}>
+    </button>
+}
+
+component! {
+    PassCallbackToChildComponent() {}
+
+    fn do_stuff(&mut self) {}
+
+    <BasicCallbackAsProp callback={Self::do_stuff} />
 }
 
 component! {
@@ -464,22 +473,23 @@ component! {
 
 component! {
     AddToList() {
-        items: Vec<String>,
+        todo_items: Vec<String>,
         unused: bool,
     }
 
     fn add_item(&mut self) {
-        let count = self.items.len();
-        self.items.push(format!("Item {}", count));
+        let count = self.todo_items.len();
+        self.todo_items.push(format!("Item {}", count));
     }
 
     <div>
         <button onClick={Self::add_item}>"Add item"</button>
-        if items.is_empty() {
+        if todo_items.is_empty() {
             "No items"
         } else {
             <ul>
-                for item in items {
+                for item in todo_items {
+                    <li>{item}</li>
                     <ListItem text={item}/>
                 }
             </ul>

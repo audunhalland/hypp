@@ -3,7 +3,10 @@ pub trait ToHandle: Sized {
     /// The type of handle that must be used when owning an instance of this type.
     type Handle: Handle<Self> + 'static;
 
-    fn to_handle(self) -> Self::Handle {
+    fn to_handle(self) -> Self::Handle
+    where
+        Self: Sized,
+    {
         Self::Handle::new(self)
     }
 }

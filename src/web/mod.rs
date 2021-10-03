@@ -245,19 +245,22 @@ impl Cursor<WebHypp> for WebBuilder {
 
         match attribute_name {
             "onclick" => {
-                let callback = callback::new_callback();
+                let slot = callback::new_slot();
 
                 {
-                    let borrow = callback.borrow();
+                    let borrow = slot.borrow();
 
                     self.html_element()
                         .set_onclick(Some(borrow.web_closure().as_ref().unchecked_ref()));
                 }
 
-                Ok(callback)
+                Ok(slot)
             }
             _ => {
-                tracing::error!("Cannot set callback on attribute \"{}\"", attribute_name);
+                tracing::error!(
+                    "Cannot make callback slot on attribute \"{}\"",
+                    attribute_name
+                );
                 Err(Error::SetAttribute)
             }
         }

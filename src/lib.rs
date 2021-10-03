@@ -29,6 +29,8 @@ pub use hypp_macros::component;
 pub use hypp_macros::component_dbg;
 use prelude::ToHandle;
 
+use handle::Handle;
+
 pub enum TraversalDirection {
     FirstToLast,
     LastToFirst,
@@ -50,7 +52,7 @@ pub trait Hypp: Sized {
 
     ///
     /// Type of
-    type CallbackSlot: CallbackSlot + 'static;
+    type CallbackSlot: CallbackSlot<Self> + 'static;
 
     /// How to share something.
     /// Different hypp implementations may have different thread-safety requirements.
@@ -372,11 +374,11 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 /// Releasing the references involves setting those `Option` values in the
 /// diagram to None.
 ///
-pub trait CallbackSlot {
-    /// Bind the slot to an actual method
-    fn bind(&mut self, method: Box<dyn Fn()>);
+pub trait CallbackSlot<H: Hypp> {
+    /// Bind the slot to an actual callback
+    fn bind(&mut self, callback: Callback<H>);
 
-    /// Release the bound method from the slot
+    /// Release the bound callback from the slot
     fn release(&mut self);
 }
 
@@ -384,11 +386,27 @@ pub trait Call {
     fn call(&self);
 }
 
-pub struct Callback<H: Hypp>(std::marker::PhantomData<H>);
+pub struct Callback<H: Hypp>(H::Shared<Box<dyn Call>>);
+
+impl<H: Hypp> Callback<H> {
+    pub fn from_call(call: Box<dyn Call>) -> Self {
+        Self(H::make_shared(call))
+    }
+
+    pub fn from_shared(call: H::Shared<Box<dyn Call>>) -> Self {
+        Self(call)
+    }
+}
 
 impl<H: Hypp> Clone for Callback<H> {
     fn clone(&self) -> Self {
-        Self(std::marker::PhantomData)
+        Self(self.0.clone())
+    }
+}
+
+impl<H: Hypp> Call for Callback<H> {
+    fn call(&self) {
+        self.0.get().call();
     }
 }
 

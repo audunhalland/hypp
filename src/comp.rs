@@ -41,7 +41,9 @@ impl<Env, Span> UniqueInner<Env, Span> {
     }
 }
 
-impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, Env, Span> {
+impl<H: crate::Hypp + 'static, C: ShimTrampoline + 'static, Env, Span>
+    SharedInner<H, C, Env, Span>
+{
     pub fn mount<NS: TemplNS, Patch, Wrap, SaveWeak>(
         env: Env,
         cursor: &mut H::Cursor<NS>,
@@ -60,7 +62,8 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
         SaveWeak: Fn(&mut C, <H::Shared<C> as SharedHandle<C>>::Weak),
     {
         let anchor = cursor.anchor();
-        let mut binder: crate::shim::LazySelfBinder<H, C> = crate::shim::LazySelfBinder::new();
+        let mut binder: crate::shim::DeferredSelfBinder<H, C> =
+            crate::shim::DeferredSelfBinder::new();
         let mut root_span = None;
         patch(
             Duplex::Out(&mut root_span),
@@ -78,7 +81,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> SharedInner<H, C, E
             weak_self: None,
         }));
         let weak = handle.downgrade();
-        binder.bind_all(weak.clone());
+        binder.register_instance(weak.clone());
         save_weak(&mut handle.get_mut(), weak);
         Ok(handle)
     }

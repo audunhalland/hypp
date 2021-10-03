@@ -2,7 +2,6 @@
 
 use std::collections::BTreeSet;
 
-use crate::callback;
 use crate::template_ast;
 
 /// The way something must be owned in order to work.
@@ -164,7 +163,7 @@ pub enum Expression {
     /// A constant DOM program
     ConstDom(ConstDomProgram),
 
-    AttributeCallback(callback::Callback),
+    AttributeCallback(Callback),
 
     /// Something that should evaluate to text at runtime
     Text(syn::Expr),
@@ -193,6 +192,11 @@ pub enum Expression {
         /// Code block executed for each iteration:
         inner_block: Box<Block>,
     },
+}
+
+pub enum Callback {
+    Expr(syn::Expr),
+    SelfMethod(syn::Ident),
 }
 
 pub struct ComponentPropArg {

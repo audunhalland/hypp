@@ -4,7 +4,6 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 
-mod callback;
 mod component;
 mod component_ast;
 mod flow;

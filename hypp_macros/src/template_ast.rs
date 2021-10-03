@@ -6,6 +6,7 @@
 //!
 
 use syn::parse::{Parse, ParseStream};
+use syn::spanned::Spanned;
 
 use crate::name;
 use crate::namespace::*;
@@ -42,6 +43,7 @@ pub enum AttrValue {
     ImplicitTrue,
     Literal(syn::Lit),
     Expr(syn::Expr),
+    SelfMethod(syn::Ident),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -231,17 +233,7 @@ impl TemplateParser {
 
             let value = if input.peek(syn::token::Eq) {
                 input.parse::<syn::token::Eq>()?;
-
-                if input.peek(syn::Lit) {
-                    AttrValue::Literal(input.parse()?)
-                } else {
-                    let content;
-                    let _brace_token = syn::braced!(content in input);
-
-                    let expr: syn::Expr = content.parse()?;
-
-                    AttrValue::Expr(expr)
-                }
+                self.parse_attr_value(input)?
             } else {
                 AttrValue::ImplicitTrue
             };
@@ -250,6 +242,66 @@ impl TemplateParser {
         }
 
         Ok(attrs)
+    }
+
+    fn parse_attr_value(&self, input: ParseStream) -> syn::Result<AttrValue> {
+        fn parse_expr(expr: syn::Expr) -> syn::Result<AttrValue> {
+            match expr {
+                syn::Expr::Path(expr_path) => parse_expr_path(expr_path),
+                expr => Ok(AttrValue::Expr(expr)),
+            }
+        }
+
+        fn parse_expr_path(expr_path: syn::ExprPath) -> syn::Result<AttrValue> {
+            if let Some(_qself) = &expr_path.qself {
+                return Err(syn::Error::new(
+                    expr_path.span(),
+                    "No \"qself\" in path allowed",
+                ));
+            }
+
+            if let Some(_colon) = &expr_path.path.leading_colon {
+                return Err(syn::Error::new(
+                    expr_path.span(),
+                    "No leading colon allowed",
+                ));
+            }
+
+            let path = expr_path.path;
+
+            let span = path.span();
+            let mut iterator = path.segments.into_iter();
+
+            let first = iterator.next().ok_or_else(|| {
+                syn::Error::new(span, "Expected a path with at least one segment")
+            })?;
+
+            if first.ident == "Self" {
+                let method = iterator
+                    .next()
+                    .ok_or_else(|| syn::Error::new(span, "Expected method name"))?;
+
+                if let Some(_) = iterator.next() {
+                    return Err(syn::Error::new(span, "Expected only two segments in path"));
+                }
+
+                Ok(AttrValue::SelfMethod(method.ident))
+            } else {
+                let ident = first.ident;
+                Ok(AttrValue::Expr(syn::parse_quote! { #ident }))
+            }
+        }
+
+        if input.peek(syn::Lit) {
+            Ok(AttrValue::Literal(input.parse()?))
+        } else {
+            let content;
+            let _brace_token = syn::braced!(content in input);
+
+            let expr: syn::Expr = content.parse()?;
+
+            parse_expr(expr)
+        }
     }
 
     /// Parse children until we see the start of a closing tag
