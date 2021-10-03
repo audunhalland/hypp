@@ -262,7 +262,7 @@ pub trait Span<H: Hypp> {
 ///
 /// Deviation model (encodes which parameters must be refreshed)
 ///
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Deviation<'b> {
     Full,
     Partial(&'b [bool]),
