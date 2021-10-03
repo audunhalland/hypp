@@ -244,7 +244,7 @@ pub mod sync {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Component, Error, Hypp, Span};
+    use crate::{Component, Error, Hypp, Invalidated, Span};
 
     struct LolProps<'p> {
         _prop: &'p str,
@@ -275,7 +275,7 @@ mod test {
         fn mount(_props: Self::Props, _: &mut H::Cursor<Self::NS>) -> Result<Unique<Self>, Error> {
             panic!()
         }
-        fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor<Self::NS>) {}
+        fn pass_props(&mut self, _: Invalidated, _: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
     struct CompB {
@@ -308,7 +308,7 @@ mod test {
         fn mount(_props: Self::Props, _: &mut H::Cursor<Self::NS>) -> Result<Shared<Self>, Error> {
             panic!()
         }
-        fn pass_props(&mut self, _props: Self::Props, _: &mut H::Cursor<Self::NS>) {}
+        fn pass_props(&mut self, _: Invalidated, _: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
     #[test]

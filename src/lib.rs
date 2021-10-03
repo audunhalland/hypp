@@ -259,6 +259,9 @@ pub trait Span<H: Hypp> {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Invalidated(pub bool);
+
 /// The Component trait.
 ///
 /// The term 'pass' is used when there's a cursor method parameter,
@@ -284,7 +287,19 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     /// When the method returns, the cursor must point to the end of the component,
     /// what direction to take is determined by H.
     ///
-    fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor<Self::NS>);
+    /// # Arguments
+    /// * `invalidated` - Whether anything has been invalidated. If not, the component
+    ///   may run separate logic for just "passing" the cursor.
+    /// * `props` - new set of props
+    /// * `cursor` - mutable cursor poining to the component. After return of method,
+    ///   it must point _after_ the component (depending on traversal direction)
+    ///
+    fn pass_props(
+        &mut self,
+        invalidated: Invalidated,
+        props: Self::Props,
+        cursor: &mut H::Cursor<Self::NS>,
+    );
 }
 
 ///

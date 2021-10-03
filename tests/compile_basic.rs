@@ -34,8 +34,11 @@ fn render_foo_server() {
         "<body><div><p class=\"css\"><span>cool</span></p></div></body>"
     );
 
-    c.get_mut()
-        .pass_props(__FooProps { is_cool: false }, &mut hypp.builder_at_body());
+    c.get_mut().pass_props(
+        hypp::Invalidated(true),
+        __FooProps { is_cool: false },
+        &mut hypp.builder_at_body(),
+    );
 
     assert_eq!(
         &hypp.render(),
@@ -110,6 +113,7 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.get_mut().pass_props(
+        hypp::Invalidated(true),
         __ConditionalProps {
             hello: false,
             world: true,
@@ -121,6 +125,7 @@ fn render_conditional_server() {
     assert_eq!(hypp.render(), "<body><div/></body>");
 
     c.get_mut().pass_props(
+        hypp::Invalidated(true),
         __ConditionalProps {
             hello: true,
             world: false,
@@ -134,6 +139,7 @@ fn render_conditional_server() {
     );
 
     c.get_mut().pass_props(
+        hypp::Invalidated(true),
         __ConditionalProps {
             hello: true,
             world: true,
@@ -201,6 +207,7 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article/></body>");
 
     c.get_mut().pass_props(
+        hypp::Invalidated(true),
         __IfLetProps {
             opt_number: Some(42),
         },
@@ -210,6 +217,7 @@ fn render_iflet_server() {
     assert_eq!(hypp.render(), "<body><article>num</article></body>");
 
     c.get_mut().pass_props(
+        hypp::Invalidated(true),
         __IfLetProps { opt_number: None },
         &mut hypp.builder_at_body(),
     );
@@ -258,6 +266,7 @@ fn render_fragment1() {
     );
 
     c.get_mut().pass_props(
+        hypp::Invalidated(true),
         __Fragment1Props { perhaps: false },
         &mut hypp.builder_at_body(),
     );
@@ -292,8 +301,11 @@ fn render_recursive_server() {
         "<body><span>3<span>2<span>1</span></span></span></body>"
     );
 
-    c.get_mut()
-        .pass_props(__RecursiveProps { depth: 2 }, &mut hypp.builder_at_body());
+    c.get_mut().pass_props(
+        hypp::Invalidated(true),
+        __RecursiveProps { depth: 2 },
+        &mut hypp.builder_at_body(),
+    );
 
     assert_eq!(hypp.render(), "<body><span>2<span>1</span></span></body>");
 
@@ -330,6 +342,7 @@ fn render_list() {
     );
 
     c.get_mut().pass_props(
+        ::hypp::Invalidated(true),
         __ListProps { items: &strings2 },
         &mut hypp.builder_at_body(),
     );
@@ -364,7 +377,7 @@ component! {
     <div>{arg}</div>
 }
 
-component! {
+component_dbg! {
     ConditionalStringProp(arg: &str, draw_one: bool) {}
 
     if draw_one {

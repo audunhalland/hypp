@@ -163,7 +163,7 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
-                false, // invalidated
+                __invalidated,
                 &__updates,
                 &mut ::hypp::patch::PatchCtx {
                     cur: __cursor,
@@ -175,7 +175,7 @@ pub fn generate_component(
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
-                false, // invalidated,
+                __invalidated,
                 &__updates,
                 &mut ::hypp::patch::PatchBindCtx {
                     cur: __cursor,
@@ -220,11 +220,19 @@ pub fn generate_component(
                 type Props = #props_ident #props_gen_args;
                 type NS = __NS;
 
-                fn mount(#fn_props_destructuring, cursor: &mut #hypp_ident::Cursor<__NS>) -> Result<#handle_path<Self>, ::hypp::Error> {
+                fn mount(
+                    #fn_props_destructuring,
+                    cursor: &mut #hypp_ident::Cursor<__NS>
+                ) -> Result<#handle_path<Self>, ::hypp::Error> {
                     #mount_body
                 }
 
-                fn pass_props(&mut self, #fn_props_destructuring, __cursor: &mut #hypp_ident::Cursor<Self::NS>) {
+                fn pass_props(
+                    &mut self,
+                    __invalidated: ::hypp::Invalidated,
+                    #fn_props_destructuring,
+                    __cursor: &mut #hypp_ident::Cursor<Self::NS>
+                ) {
                     #props_updater
                     #pass_props_patch_call
                 }
@@ -576,7 +584,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                 __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
-                    false, // invalidated
+                    ::hypp::Invalidated(false),
                     &[#(#updates_array_items),*],
                     &mut ::hypp::patch::PatchBindCtx {
                         cur: &mut cursor,

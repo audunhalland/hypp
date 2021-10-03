@@ -30,7 +30,7 @@ where
     ) -> Result<(), crate::Error>
     where
         I: DoubleEndedIterator<Item = D>,
-        F: FnMut(Duplex<S>, D, bool, &mut C) -> Result<(), crate::Error>,
+        F: FnMut(Duplex<S>, D, Invalidated, &mut C) -> Result<(), crate::Error>,
         C: GetCursor<H, NS> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
@@ -44,7 +44,7 @@ where
                 inner_patch_fn(
                     Duplex::In(&mut self.spans[index]),
                     data_item,
-                    true, // invalidated.
+                    Invalidated(true),
                     ctx,
                 )?;
             } else {
@@ -52,7 +52,7 @@ where
                 inner_patch_fn(
                     Duplex::Out(&mut new_inner),
                     data_item,
-                    true, // invalidated.
+                    Invalidated(true),
                     ctx,
                 )?;
                 self.spans.push(new_inner.unwrap());
@@ -150,7 +150,7 @@ mod tests {
     ) {
         let patch_fake_span_inner = |inout: Duplex<FakeSpan>,
                                      data: &'static str,
-                                     _invalidated: bool,
+                                     _: Invalidated,
                                      _ctx: &mut PatchCtx<ServerHypp, Html>|
          -> Result<(), crate::Error> {
             match inout {

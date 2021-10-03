@@ -40,7 +40,7 @@ pub fn gen_patch_fn(
         pub fn __patch<#(#public_generic_params),*>(
             __root: ::hypp::Duplex<__RootSpan<#hypp_ident>>,
             __env: &__Env #env_gen_args,
-            __invalidated: bool,
+            __invalidated: ::hypp::Invalidated,
             __updates: &[bool],
             __ctx: &mut #patch_ctx_ty_root,
         ) -> Result<(), ::hypp::Error> {
@@ -298,6 +298,7 @@ fn compile_body<'c>(
                     patch_stmts.push(quote! {
                         if #test {
                             #field_expr.get_mut().pass_props(
+                                ::hypp::Invalidated(true),
                                 #props_path {
                                     #(#prop_list)*
                                 },
@@ -587,7 +588,7 @@ fn gen_iter_item_closure<'c>(
         args: quote! {
             __span: ::hypp::Duplex<#fixed_span_full_type>,
             #iter_variable: &String,
-            __invalidated: bool,
+            __invalidated: ::hypp::Invalidated,
         },
         body,
     }

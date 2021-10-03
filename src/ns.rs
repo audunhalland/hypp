@@ -72,7 +72,7 @@ mod experiment {
     }
 
     impl<N: TemplNS> Cur<N> for MyCur {
-        fn add(&mut self, element: N::EType) {}
+        fn add(&mut self, _element: N::EType) {}
     }
 
     struct A;
