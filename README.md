@@ -29,5 +29,7 @@ Hypp is a work in progress. The surface syntax is not written in stone. Examples
 - [x] Self-update
 - [x] For loops in template
 - [x] Reduce amount of generated code using closures in patch
-- [ ] Passing callbacks as props to other components
+- [x] Passing callbacks as props to other components
+- [ ] typed argument(s) in callback slots
+- [ ] use any type for lists
 - [ ] Avoid copying into env for non-self-updatable components
