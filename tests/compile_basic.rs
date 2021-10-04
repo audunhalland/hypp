@@ -186,7 +186,7 @@ component! {
     "num"
 }
 
-component! {
+component_dbg! {
     IfLet(opt_number: Option<u32>) {}
 
     <article>
@@ -449,8 +449,8 @@ component! {
 }
 
 component! {
-    BasicCallbackAsProp<Y: ::hypp::Hypp + 'static>(
-        function: &Y::Function<()>
+    BasicCallbackAsProp<H: ::hypp::Hypp + 'static>(
+        function: &H::Function<()>
     ) {}
 
     <button onClick={function}>
@@ -498,6 +498,20 @@ component! {
             </ul>
         }
     </div>
+}
+
+struct SomeStruct {
+    text: String,
+}
+
+component! {
+    StructInList() {
+        items: Vec<SomeStruct>
+    }
+
+    for item in items {
+        <div>{item.text}</div>
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]

@@ -211,7 +211,7 @@ pub fn generate_component(
                 }
             }
 
-            impl<'p, #(#public_generic_params),*> ::hypp::Component<'p, #hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
+            impl<'a, #(#public_generic_params),*> ::hypp::Component<'a, #hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
                 type Props = #props_ident #props_gen_args;
                 type NS = __NS;
 
@@ -249,26 +249,25 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
 
     let props_fields = params
         .iter()
-        .filter_map(|param| match &param.kind {
-            param::ParamKind::Prop(root_ty) => Some((&param.ident, root_ty)),
-            param::ParamKind::State(_) => None,
+        .filter_map(|param| match &param.triple.0 {
+            param::ParamKind::Prop => Some((&param.ident, &param.triple)),
+            param::ParamKind::State => None,
         })
-        .map(|(ident, root_ty)| {
-            let ty = match root_ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => quote! { #ty },
-                    param::ParamLeafType::Ref(ty) => {
-                        has_p_lifetime = true;
-                        quote! { &'p #ty }
-                    }
-                },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => quote! { Option<#ty> },
-                    param::ParamLeafType::Ref(ty) => {
-                        has_p_lifetime = true;
-                        quote! { Option<&'p #ty> }
-                    }
-                },
+        .map(|(ident, triple)| {
+            use param::*;
+
+            let ty = match triple {
+                (_, Quantifier::Unit, Ty::Owned(ty)) => quote! { #ty },
+                (_, Quantifier::Option(option), Ty::Owned(ty)) => quote! { #option<#ty> },
+
+                (_, Quantifier::Unit, Ty::Reference(r)) => {
+                    has_p_lifetime = true;
+                    quote! { #r }
+                }
+                (_, Quantifier::Option(option), Ty::Reference(r)) => {
+                    has_p_lifetime = true;
+                    quote! { #option<#r> }
+                }
             };
 
             quote! {
@@ -299,7 +298,7 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
     });
 
     let props_lifetime = if has_p_lifetime {
-        Some(quote! { 'p, })
+        Some(quote! { 'a, })
     } else {
         None
     };
@@ -371,15 +370,15 @@ fn gen_fn_props_destructuring(
 ) -> syn::FnArg {
     let props_ident = &comp_ctx.public_props_ident;
 
-    let fields = params.iter().filter_map(|param| match &param.kind {
-        param::ParamKind::Prop(_) => {
+    let fields = params.iter().filter_map(|param| match &param.triple.0 {
+        param::ParamKind::Prop => {
             let ident = &param.ident;
 
             Some(quote! {
                 #ident,
             })
         }
-        param::ParamKind::State(_) => None,
+        param::ParamKind::State => None,
     });
 
     syn::parse_quote! {
@@ -394,33 +393,30 @@ fn gen_env_locals(params: &[param::Param]) -> TokenStream {
     let bindings = params.iter().map(|param| {
         let ident = &param.ident;
 
-        match &param.kind {
-            param::ParamKind::Prop(root_ty) => match root_ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => {
-                        quote! { let #ident = __env.#ident; }
-                    }
-                    param::ParamLeafType::Ref(_) => {
-                        // Remember, when storing a _reference_ prop inside self,
-                        // we use the `<T as ToOwned>::Owned` type to store it..
-                        // so we can just take the reference to that again!
-                        quote! {
-                            let #ident = &__env.#ident;
-                        }
-                    }
-                },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => {
-                        quote! { let #ident = __env.#ident; }
-                    }
-                    param::ParamLeafType::Ref(_) => {
-                        quote! { let #ident = __env.#ident.as_deref(); }
-                    }
-                },
-            },
-            param::ParamKind::State(_) => quote! {
+        use param::*;
+
+        match &param.triple {
+            (ParamKind::State, _, _) => quote! {
                 // err... take reference maybe?
                 let #ident = &__env.#ident;
+            },
+
+            (ParamKind::Prop, Quantifier::Unit, Ty::Owned(_)) => quote! {
+                let #ident = __env.#ident;
+            },
+            (ParamKind::Prop, Quantifier::Unit, Ty::Reference(_)) => {
+                // Remember, when storing a _reference_ prop inside self,
+                // we use the `<T as ToOwned>::Owned` type to store it..
+                // so we can just take the reference to that again!
+                quote! {
+                    let #ident = &__env.#ident;
+                }
+            }
+            (ParamKind::Prop, Quantifier::Option(_), Ty::Owned(_)) => quote! {
+                let #ident = __env.#ident;
+            },
+            (ParamKind::Prop, Quantifier::Option(_), Ty::Reference(_)) => quote! {
+                let #ident = __env.#ident.as_deref();
             },
         }
     });
@@ -437,51 +433,29 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
         let id = param.id as usize;
         let ident = &param.ident;
 
-        match &param.kind {
-            param::ParamKind::Prop(root_ty) => {
-                /*
-                let prop_value_as_ref = match root_ty {
-                    param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident.value },
-                        param::ParamLeafType::Ref(_) => quote! { &self.0.env.#ident.value },
-                    },
-                    param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => quote! { self.0.env.#ident.value },
-                        param::ParamLeafType::Ref(_) => {
-                            quote! {self.0.env.#ident.value.as_deref() }
-                        }
-                    },
-                };
-                */
+        use param::*;
 
-                let write = match root_ty {
-                    param::ParamRootType::One(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => {
-                            quote! { self.0.env.#ident = #ident.0; }
-                        }
-                        param::ParamLeafType::Ref(_) => quote! {
-                            self.0.env.#ident = #ident.0.to_owned();
-                        },
-                    },
-                    param::ParamRootType::Option(ty) => match ty {
-                        param::ParamLeafType::Owned(_) => {
-                            quote! { self.0.env.#ident = #ident.0; }
-                        }
-                        param::ParamLeafType::Ref(_) => quote! {
-                            self.0.env.#ident = #ident.0.map(|val| val.to_owned());
-                        },
-                    },
-                };
+        let opt_write = match &param.triple {
+            (ParamKind::State, _, _) => None,
+            (_, _, Ty::Owned(_)) => Some(quote! {
+                self.0.env.#ident = #ident.0;
+            }),
+            (_, Quantifier::Unit, Ty::Reference(_)) => Some(quote! {
+                self.0.env.#ident = #ident.0.to_owned();
+            }),
+            (_, Quantifier::Option(_), Ty::Reference(_)) => Some(quote! {
+                self.0.env.#ident = #ident.0.map(|val| val.to_owned());
+            }),
+        };
 
-                Some(quote! {
-                    if #ident.1.0 {
-                        #write
-                        __refresh_params[#id] = true;
-                    }
-                })
+        opt_write.map(|write| {
+            quote! {
+                if #ident.1.0 {
+                    #write
+                    __refresh_params[#id] = true;
+                }
             }
-            param::ParamKind::State(_) => None,
-        }
+        })
     });
 
     quote! {
@@ -495,20 +469,23 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
 fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) -> TokenStream {
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
-        let ty = match &param.kind {
-            param::ParamKind::Prop(root_ty) => match root_ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => quote! { &'c #ty },
-                    param::ParamLeafType::Ref(ty) => quote! { &'c #ty },
-                },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => quote! { Option<&'p #ty> },
-                    param::ParamLeafType::Ref(ty) => quote! { Option<&'p #ty> },
-                },
+
+        use param::*;
+
+        let ty = match &param.triple {
+            (ParamKind::State, _, Ty::Owned(ty)) => quote! {
+                ::hypp::state_ref::StateRef<'a, #ty>
             },
-            param::ParamKind::State(ty) => quote! {
-                ::hypp::state_ref::StateRef<'c, #ty>
-            },
+            (ParamKind::State, _, Ty::Reference(r)) => unimplemented!("reference in state"),
+
+            (ParamKind::Prop, Quantifier::Unit, Ty::Owned(ty)) => quote! { &'a #ty },
+            (ParamKind::Prop, Quantifier::Unit, Ty::Reference(r)) => quote! { #r },
+            (ParamKind::Prop, Quantifier::Option(option), Ty::Owned(ty)) => {
+                quote! { #option<&'a #ty> }
+            }
+            (ParamKind::Prop, Quantifier::Option(option), Ty::Reference(r)) => {
+                quote! { #option<#r> }
+            }
         };
 
         quote! {
@@ -518,11 +495,11 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
 
     quote! {
         #[allow(dead_code)]
-        pub struct __Shim<'c> {
+        pub struct __Shim<'a> {
             #(#fields)*
         }
 
-        impl<'c> __Shim<'c> {
+        impl<'a> __Shim<'a> {
             #(#methods)*
         }
     }
@@ -536,9 +513,9 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
     let state_update_idents = params
         .iter()
-        .map(|param| match &param.kind {
-            param::ParamKind::Prop(_) => None,
-            param::ParamKind::State(_) => Some(quote::format_ident!("update_{}", param.id)),
+        .map(|param| match &param.triple.0 {
+            param::ParamKind::Prop => None,
+            param::ParamKind::State => Some(quote::format_ident!("update_{}", param.id)),
         })
         .collect::<Vec<_>>();
 
@@ -550,11 +527,11 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
     let env_fields = params.iter().map(|param| {
         let ident = &param.ident;
-        match &param.kind {
-            param::ParamKind::Prop(_) => quote! {
+        match &param.triple.0 {
+            param::ParamKind::Prop => quote! {
                 #ident: &self.0.env.#ident,
             },
-            param::ParamKind::State(_) => {
+            param::ParamKind::State => {
                 let update_ident = state_update_idents[param.id as usize].as_ref().unwrap();
 
                 quote! {
@@ -570,7 +547,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     });
 
     quote! {
-        impl<'p, #(#public_generic_params),*> ::hypp::shim::ShimTrampoline for #component_ident<#(#public_generic_arguments),*> {
+        impl<'a, #(#public_generic_params),*> ::hypp::shim::ShimTrampoline for #component_ident<#(#public_generic_arguments),*> {
             type Shim<'s> = __Shim<'s>;
 
             fn shim_trampoline(&mut self, method: &mut dyn for<'s> FnMut(&'s mut Self::Shim<'s>))

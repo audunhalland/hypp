@@ -750,27 +750,21 @@ impl ir::StructFieldType {
 impl param::Param {
     // Struct _fields_ for the param, owned version
     pub fn owned_ty_tokens(&self) -> TokenStream {
-        match &self.kind {
-            param::ParamKind::Prop(root_ty) => match root_ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => {
-                        quote! { #ty }
-                    }
-                    param::ParamLeafType::Ref(ty) => {
-                        quote! { <#ty as ToOwned>::Owned }
-                    }
-                },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(ty) => {
-                        quote! { Option<#ty> }
-                    }
-                    param::ParamLeafType::Ref(ty) => {
-                        quote! { Option<<#ty as ToOwned>::Owned> }
-                    }
-                },
-            },
-            param::ParamKind::State(ty) => {
-                quote! { #ty }
+        use param::*;
+
+        match &self.triple {
+            (ParamKind::State, _, Ty::Owned(ty)) => quote! { #ty },
+            (ParamKind::State, _, Ty::Reference(r)) => quote! { #r },
+
+            (_, Quantifier::Unit, Ty::Owned(ty)) => quote! { #ty },
+            (_, Quantifier::Unit, Ty::Reference(r)) => {
+                let elem = &r.elem;
+                quote! { <#elem as ToOwned>::Owned }
+            }
+            (_, Quantifier::Option(option), Ty::Owned(ty)) => quote! { #option<#ty> },
+            (_, Quantifier::Option(option), Ty::Reference(r)) => {
+                let elem = r.elem.as_ref();
+                quote! { #option<<#elem as ToOwned>::Owned> }
             }
         }
     }
@@ -778,22 +772,17 @@ impl param::Param {
     pub fn props_to_owned_struct_param_tokens(&self) -> TokenStream {
         let ident = &self.ident;
 
-        match &self.kind {
+        use param::*;
+
+        match &self.triple {
             // State variables should already be in scope
-            param::ParamKind::State(_) => quote! { #ident: Default::default(), },
+            (ParamKind::State, _, _) => quote! { #ident: Default::default(), },
             // Convert from generally borrowed props:
-            param::ParamKind::Prop(root_ty) => match root_ty {
-                param::ParamRootType::One(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => quote! { #ident: #ident.0, },
-                    param::ParamLeafType::Ref(_) => quote! { #ident: #ident.0.to_owned(), },
-                },
-                param::ParamRootType::Option(ty) => match ty {
-                    param::ParamLeafType::Owned(_) => quote! { #ident: #ident.0, },
-                    param::ParamLeafType::Ref(_) => {
-                        quote! { #ident: #ident.0.map(|val| val.to_owned()), }
-                    }
-                },
-            },
+            (_, Quantifier::Unit, Ty::Reference(_)) => quote! { #ident: #ident.0.to_owned(), },
+            (_, Quantifier::Option(_), Ty::Reference(_)) => {
+                quote! { #ident: #ident.0.map(|val| val.to_owned()), }
+            }
+            (_, _, Ty::Owned(_)) => quote! { #ident: #ident.0, },
         }
     }
 }

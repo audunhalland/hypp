@@ -210,34 +210,29 @@ impl ItemGenerics {
     }
 }
 
-struct IsProp(bool);
-
 fn parse_prop(input: ParseStream) -> syn::Result<param::Param> {
-    parse_param(IsProp(true), input)
+    parse_param(param::ParamKind::Prop, input)
 }
 
 fn parse_state(input: ParseStream) -> syn::Result<param::Param> {
-    parse_param(IsProp(false), input)
+    parse_param(param::ParamKind::State, input)
 }
 
-fn parse_param(is_prop: IsProp, input: ParseStream) -> syn::Result<param::Param> {
+fn parse_param(kind: param::ParamKind, input: ParseStream) -> syn::Result<param::Param> {
     let ident = input.parse()?;
     let _: syn::token::Colon = input.parse()?;
-    let kind = if is_prop.0 {
-        let root_ty =
-            param::ParamRootType::try_from_type(input.parse()?).map_err(|param_error| {
-                match param_error {
-                    param::ParamError::UnparseableType(span) => {
-                        syn::Error::new(span, "Incomprehensible type")
-                    }
-                }
-            })?;
 
-        ParamKind::Prop(root_ty)
-    } else {
-        let ty = input.parse()?;
-        ParamKind::State(ty)
-    };
+    let triple = param::ParamParser::new(kind)
+        .parse_triple(input.parse()?)
+        .map_err(|param_error| match param_error {
+            param::ParamError::UnparseableType(span) => {
+                syn::Error::new(span, "Incomprehensible type")
+            }
+        })?;
 
-    Ok(param::Param { id: 0, kind, ident })
+    Ok(param::Param {
+        id: 0,
+        ident,
+        triple,
+    })
 }
