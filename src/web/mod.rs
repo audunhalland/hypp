@@ -361,6 +361,8 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
     fn attribute_slot<Args: 'static>(
         &mut self,
     ) -> Result<Rc<RefCell<callback::WebCallbackSlot<Args>>>, Error> {
+        use std::any::TypeId;
+
         let attribute_name = self
             .loaded_attribute_name
             .expect("needs an attribute name loaded");
@@ -368,6 +370,8 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
         match attribute_name {
             "onclick" => {
                 let slot = callback::new_slot();
+
+                if TypeId::of::<Args>() == TypeId::of::<()>() {}
 
                 {
                     let borrow = slot.borrow();

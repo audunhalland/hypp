@@ -33,12 +33,10 @@ impl<H: Hypp + 'static, T: ShimTrampoline + 'static> ClosureEnv<H, T> {
         &self,
         method: &'static dyn for<'s> Fn(&'s mut T::Shim<'s>, Args),
     ) -> H::Function<Args> {
-        let closure = ShimClosure::<H, T, Args> {
+        H::make_function(Box::new(ShimClosure::<H, T, Args> {
             env: self.clone(),
             method,
-        };
-
-        H::make_function(Box::new(closure))
+        }))
     }
 
     fn as_strong(
