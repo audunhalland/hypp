@@ -212,7 +212,7 @@ fn compile_body<'c>(
                         mutability: Mutability::Let,
                         field_ident: Some(closure_field),
                         init: quote! {
-                            __ctx.closure_env.bind(|shim, _args| {
+                            __ctx.closure_env.bind(&|shim, _args| {
                                 shim.#method_ident();
                             });
                         },
@@ -298,7 +298,7 @@ fn compile_body<'c>(
                                 mutability: Mutability::Let,
                                 field_ident: Some(closure_field),
                                 init: quote! {
-                                    __ctx.closure_env.bind(|shim, _args| {
+                                    __ctx.closure_env.bind(&|shim, _args| {
                                         shim.#method_ident();
                                     });
                                 },

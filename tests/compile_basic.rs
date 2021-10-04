@@ -450,7 +450,7 @@ component! {
 
 component! {
     BasicCallbackAsProp<Y: ::hypp::Hypp + 'static>(
-        function: &::hypp::Function<Y, ()>
+        function: &Y::Function<()>
     ) {}
 
     <button onClick={function}>

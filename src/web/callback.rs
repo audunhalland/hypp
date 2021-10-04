@@ -2,24 +2,22 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
-use super::WebHypp;
-use crate::{CallbackSlot, Function};
+use super::{WebFunction, WebHypp};
+use crate::{Call, CallbackSlot};
 
 pub struct WebCallbackSlot<Args: 'static> {
     web_closure: Option<Closure<dyn Fn()>>,
-    function: Option<Function<WebHypp, Args>>,
+    function: Option<WebFunction<Args>>,
 }
 
 impl<Args> WebCallbackSlot<Args> {
-    fn call(&self) {
+    fn call(&self, args: Args) {
         let function = self
             .function
             .as_ref()
             .expect("No Rust function defined in callback");
 
-        unimplemented!("Don't know how to make args");
-
-        // function.call();
+        function.call(args);
     }
 
     pub fn web_closure(&self) -> &Closure<dyn Fn()> {
@@ -30,7 +28,7 @@ impl<Args> WebCallbackSlot<Args> {
 impl<Args> Drop for WebCallbackSlot<Args> {
     fn drop(&mut self) {
         // Logging..
-        // console::log_1(&"Dropping callback!".into());
+        // console::log_1(&"Dropping callback slot!".into());
     }
 }
 
@@ -42,7 +40,8 @@ pub fn new_slot<Args>() -> Rc<RefCell<WebCallbackSlot<Args>>> {
     let js_ref = callback.clone();
 
     let web_closure = Closure::wrap(Box::new(move || {
-        js_ref.borrow().call();
+        unimplemented!("Figure out how to use 'dynamic' types here");
+        //js_ref.borrow().call();
     }) as Box<dyn Fn()>);
 
     callback.borrow_mut().web_closure = Some(web_closure);
@@ -51,7 +50,7 @@ pub fn new_slot<Args>() -> Rc<RefCell<WebCallbackSlot<Args>>> {
 }
 
 impl<Args> CallbackSlot<WebHypp, Args> for WebCallbackSlot<Args> {
-    fn bind(&mut self, function: Function<WebHypp, Args>) {
+    fn bind(&mut self, function: WebFunction<Args>) {
         self.function = Some(function);
     }
 

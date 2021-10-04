@@ -29,34 +29,17 @@ impl<H: Hypp + 'static, T: ShimTrampoline + 'static> ClosureEnv<H, T> {
         *self.0.get_mut() = Some(instance);
     }
 
-    pub fn bind<M, Args>(&self, method: &'static M) -> Function<H, Args>
-    where
-        M: for<'s> Fn(&'s mut T::Shim<'s>, Args) + 'static,
-    {
-        let closure = ShimClosure::<H, T, M> {
-            env: self.clone(),
-            method,
-        };
-
-        let shared_closure: H::Shared<Box<dyn Call<Args>>> = H::make_shared(Box::new(closure));
-        Function::from_shared(shared_closure)
-    }
-
-    /*
     pub fn bind<Args>(
         &self,
         method: &'static dyn for<'s> Fn(&'s mut T::Shim<'s>, Args),
-    ) -> Function<H, Args>
-    {
-        let closure = ShimClosure::<H, T, M> {
+    ) -> H::Function<Args> {
+        let closure = ShimClosure::<H, T, Args> {
             env: self.clone(),
             method,
         };
 
-        let shared_closure: H::Shared<Box<dyn Call<Args>>> = H::make_shared(Box::new(closure));
-        Function::from_shared(shared_closure)
+        H::make_function(Box::new(closure))
     }
-    */
 
     fn as_strong(
         &self,
@@ -79,15 +62,14 @@ impl<H: Hypp, T: ShimTrampoline + 'static> Clone for ClosureEnv<H, T> {
 ///
 /// Shim closure - a weak ShimTrampoline instance paired with a ShimMethod
 ///
-pub struct ShimClosure<H: Hypp, T: ShimTrampoline + 'static, M: 'static> {
+pub struct ShimClosure<H: Hypp, T: ShimTrampoline + 'static, Args: 'static> {
     env: ClosureEnv<H, T>,
-    method: &'static M,
+    method: &'static dyn for<'s> Fn(&'s mut T::Shim<'s>, Args),
 }
 
-impl<H, M, T, Args> Call<Args> for ShimClosure<H, T, M>
+impl<H, T, Args> Call<Args> for ShimClosure<H, T, Args>
 where
     H: Hypp + 'static,
-    M: for<'s> Fn(&'s mut T::Shim<'s>, Args) + 'static,
     T: ShimTrampoline + 'static,
     Args: 'static,
 {

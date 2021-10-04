@@ -73,7 +73,7 @@ impl CompCtx {
                 ::hypp::patch::PatchCtx<#hypp_ident, __NS>
             },
             ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::patch::PatchBindCtx<#hypp_ident, __NS, _>
+                ::hypp::patch::PatchBindCtx<#hypp_ident, __NS, #component_ident<#hypp_ident>>
             },
         };
 

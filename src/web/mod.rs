@@ -1,8 +1,6 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{
-    AsNode, Component, ConstOpCode, Cursor, Function, Hypp, NSCursor, Name, Span, TemplNS,
-};
+use crate::{AsNode, Call, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -92,10 +90,14 @@ impl Hypp for WebHypp {
     = std::rc::Rc<std::cell::RefCell<T>>;
 
     type CallbackSlot<Args: 'static> = callback::WebCallbackSlot<Args>;
-    type Function<Args: 'static> = Function<Self, Args>;
+    type Function<Args: 'static> = WebFunction<Args>;
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
         Rc::new(RefCell::new(value))
+    }
+
+    fn make_function<Args>(call: Box<dyn Call<Args>>) -> Self::Function<Args> {
+        WebFunction(Rc::new(call))
     }
 
     fn mount<'p, C>(&mut self) -> Result<(), Error>
@@ -356,7 +358,7 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
         result
     }
 
-    fn attribute_slot<Args>(
+    fn attribute_slot<Args: 'static>(
         &mut self,
     ) -> Result<Rc<RefCell<callback::WebCallbackSlot<Args>>>, Error> {
         let attribute_name = self
@@ -469,5 +471,19 @@ impl NodeExt for web_sys::Node {
 impl crate::Anchor<WebHypp> for WebBuilder {
     fn create_cursor<NS>(&self) -> WebBuilder {
         self.clone()
+    }
+}
+
+pub struct WebFunction<Args: 'static>(Rc<Box<dyn Call<Args>>>);
+
+impl<Args> Clone for WebFunction<Args> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<Args: 'static> Call<Args> for WebFunction<Args> {
+    fn call(&self, args: Args) {
+        self.0.call(args);
     }
 }
