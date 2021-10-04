@@ -58,7 +58,8 @@ impl Hypp for ServerHypp {
     = Arc<Mutex<T>>;
 
     /// Server has no real callback slots
-    type CallbackSlot = ();
+    type CallbackSlot<Args: 'static> = ();
+    type Function<Args: 'static> = Function<Self, Args>;
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
         Arc::new(Mutex::new(value))
@@ -110,8 +111,8 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
     }
 }
 
-impl CallbackSlot<ServerHypp> for () {
-    fn bind(&mut self, _function: Function<ServerHypp>) {}
+impl<Args> CallbackSlot<ServerHypp, Args> for () {
+    fn bind(&mut self, _function: Function<ServerHypp, Args>) {}
     fn release(&mut self) {}
 }
 
@@ -291,7 +292,7 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
         <ServerBuilder as NSCursor<ServerHypp, NS>>::const_exec_element(self, program)
     }
 
-    fn attribute_slot(&mut self) -> Result<Arc<Mutex<()>>, Error> {
+    fn attribute_slot<Args>(&mut self) -> Result<Arc<Mutex<()>>, Error> {
         // Callbacks do nothing on the server
         Ok(Arc::new(Mutex::new(())))
     }

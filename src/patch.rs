@@ -1,4 +1,4 @@
-use super::shim::{MakeClosure, ShimTrampoline};
+use super::shim::{ClosureEnv, ShimTrampoline};
 use super::{GetCursor, Hypp, TemplNS};
 
 ///
@@ -17,9 +17,9 @@ impl<'a, H: Hypp, NS: TemplNS> GetCursor<H, NS> for PatchCtx<'a, H, NS> {
 ///
 /// Patching context _with_ `bind` functionality
 ///
-pub struct PatchBindCtx<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> {
+pub struct PatchBindCtx<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline + 'static> {
     pub cur: &'a mut H::Cursor<NS>,
-    pub bind: &'a mut dyn MakeClosure<H, T>,
+    pub closure_env: ClosureEnv<H, T>,
 }
 
 impl<'a, H: Hypp, NS: TemplNS, T: ShimTrampoline> GetCursor<H, NS> for PatchBindCtx<'a, H, NS, T> {

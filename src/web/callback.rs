@@ -3,21 +3,23 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
 use super::WebHypp;
-use crate::{Call, CallbackSlot, Function};
+use crate::{CallbackSlot, Function};
 
-pub struct WebCallbackSlot {
+pub struct WebCallbackSlot<Args: 'static> {
     web_closure: Option<Closure<dyn Fn()>>,
-    function: Option<Function<WebHypp>>,
+    function: Option<Function<WebHypp, Args>>,
 }
 
-impl WebCallbackSlot {
+impl<Args> WebCallbackSlot<Args> {
     fn call(&self) {
         let function = self
             .function
             .as_ref()
             .expect("No Rust function defined in callback");
 
-        function.call();
+        unimplemented!("Don't know how to make args");
+
+        // function.call();
     }
 
     pub fn web_closure(&self) -> &Closure<dyn Fn()> {
@@ -25,14 +27,14 @@ impl WebCallbackSlot {
     }
 }
 
-impl Drop for WebCallbackSlot {
+impl<Args> Drop for WebCallbackSlot<Args> {
     fn drop(&mut self) {
         // Logging..
         // console::log_1(&"Dropping callback!".into());
     }
 }
 
-pub fn new_slot() -> Rc<RefCell<WebCallbackSlot>> {
+pub fn new_slot<Args>() -> Rc<RefCell<WebCallbackSlot<Args>>> {
     let callback = Rc::new(RefCell::new(WebCallbackSlot {
         web_closure: None,
         function: None,
@@ -48,8 +50,8 @@ pub fn new_slot() -> Rc<RefCell<WebCallbackSlot>> {
     callback
 }
 
-impl CallbackSlot<WebHypp> for WebCallbackSlot {
-    fn bind(&mut self, function: Function<WebHypp>) {
+impl<Args> CallbackSlot<WebHypp, Args> for WebCallbackSlot<Args> {
+    fn bind(&mut self, function: Function<WebHypp, Args>) {
         self.function = Some(function);
     }
 

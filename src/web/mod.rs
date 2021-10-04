@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS};
+use crate::{
+    AsNode, Component, ConstOpCode, Cursor, Function, Hypp, NSCursor, Name, Span, TemplNS,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -89,7 +91,8 @@ impl Hypp for WebHypp {
         T: 'static,
     = std::rc::Rc<std::cell::RefCell<T>>;
 
-    type CallbackSlot = callback::WebCallbackSlot;
+    type CallbackSlot<Args: 'static> = callback::WebCallbackSlot<Args>;
+    type Function<Args: 'static> = Function<Self, Args>;
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
         Rc::new(RefCell::new(value))
@@ -353,7 +356,9 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
         result
     }
 
-    fn attribute_slot(&mut self) -> Result<Rc<RefCell<callback::WebCallbackSlot>>, Error> {
+    fn attribute_slot<Args>(
+        &mut self,
+    ) -> Result<Rc<RefCell<callback::WebCallbackSlot<Args>>>, Error> {
         let attribute_name = self
             .loaded_attribute_name
             .expect("needs an attribute name loaded");

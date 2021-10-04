@@ -7,8 +7,6 @@ pub use crate::Hypp;
 pub use crate::NSCursor;
 pub use crate::Span;
 
-pub use crate::shim::MakeClosure;
-
 pub use crate::handle::Handle;
 pub use crate::handle::SharedHandle;
 pub use crate::handle::ToHandle;

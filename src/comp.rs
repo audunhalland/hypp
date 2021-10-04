@@ -12,7 +12,7 @@ pub struct SharedInner<H: crate::Hypp, C: ShimTrampoline + 'static, Env, Span> {
     pub env: Env,
     pub root_span: Span,
     pub anchor: H::Anchor,
-    pub weak_self: Option<<H::Shared<C> as SharedHandle<C>>::Weak>,
+    pub closure_env: Option<shim::ClosureEnv<H, C>>,
 }
 
 impl<Env, Span> UniqueInner<Env, Span> {
@@ -44,12 +44,11 @@ impl<Env, Span> UniqueInner<Env, Span> {
 impl<H: crate::Hypp + 'static, C: ShimTrampoline + 'static, Env, Span>
     SharedInner<H, C, Env, Span>
 {
-    pub fn mount<NS: TemplNS, Patch, Wrap, SaveWeak>(
+    pub fn mount<NS: TemplNS, Patch, Wrap>(
         env: Env,
         cursor: &mut H::Cursor<NS>,
         patch: Patch,
         wrap: Wrap,
-        save_weak: SaveWeak,
     ) -> Result<H::Shared<C>, crate::Error>
     where
         Patch: Fn(
@@ -59,11 +58,9 @@ impl<H: crate::Hypp + 'static, C: ShimTrampoline + 'static, Env, Span>
             &mut PatchBindCtx<H, NS, C>,
         ) -> Result<(), crate::Error>,
         Wrap: Fn(Self) -> C,
-        SaveWeak: Fn(&mut C, <H::Shared<C> as SharedHandle<C>>::Weak),
     {
         let anchor = cursor.anchor();
-        let mut binder: crate::shim::DeferredSelfBinder<H, C> =
-            crate::shim::DeferredSelfBinder::new();
+        let mut closure_env = crate::shim::ClosureEnv::deferred();
         let mut root_span = None;
         patch(
             Duplex::Out(&mut root_span),
@@ -71,18 +68,16 @@ impl<H: crate::Hypp + 'static, C: ShimTrampoline + 'static, Env, Span>
             Deviation::Full,
             &mut PatchBindCtx {
                 cur: cursor,
-                bind: &mut binder,
+                closure_env: closure_env.clone(),
             },
         )?;
-        let mut handle = H::make_shared(wrap(Self {
+        let handle = H::make_shared(wrap(Self {
             env,
             root_span: root_span.unwrap(),
             anchor,
-            weak_self: None,
+            closure_env: Some(closure_env.clone()),
         }));
-        let weak = handle.downgrade();
-        binder.register_instance(weak.clone());
-        save_weak(&mut handle.get_mut(), weak);
+        closure_env.finalize(handle.downgrade());
         Ok(handle)
     }
 }
@@ -115,7 +110,7 @@ impl<H: crate::Hypp, C: ShimTrampoline + 'static, Env, S: Span<H>> Span<H>
     }
 
     fn erase(&mut self, cursor: &mut dyn Cursor<H>) -> bool {
-        self.weak_self = None;
+        self.closure_env = None;
         self.pass(cursor, SpanOp::Erase)
     }
 }

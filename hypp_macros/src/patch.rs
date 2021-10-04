@@ -206,16 +206,15 @@ fn compile_body<'c>(
                     method_ident,
                 } => {
                     let field = stmt.field.as_ref().unwrap();
-                    let component_ident = &comp_ctx.component_ident;
 
                     // Closure:
                     field_inits.push(FieldInit {
                         mutability: Mutability::Let,
                         field_ident: Some(closure_field),
                         init: quote! {
-                            __ctx.bind.make_closure(::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
+                            __ctx.closure_env.bind(|shim, _args| {
                                 shim.#method_ident();
-                            }));
+                            });
                         },
                         post_init: None,
                     });
@@ -288,7 +287,6 @@ fn compile_body<'c>(
                         }
                         template_ast::AttrValue::SelfMethod(method_ident) => {
                             // Construct a callback wrapping the self method
-                            let component_ident = &comp_ctx.component_ident;
 
                             let closure_field = prop_arg
                                 .local_field
@@ -300,9 +298,9 @@ fn compile_body<'c>(
                                 mutability: Mutability::Let,
                                 field_ident: Some(closure_field),
                                 init: quote! {
-                                    __ctx.bind.make_closure(::hypp::shim::ShimMethod::<#component_ident<#hypp_ident>>(&|shim| {
+                                    __ctx.closure_env.bind(|shim, _args| {
                                         shim.#method_ident();
-                                    }));
+                                    });
                                 },
                                 post_init: None,
                             });

@@ -53,7 +53,9 @@ pub trait Hypp: Sized {
     ///
     /// Type of the callback slot used for connecting with functions
     ///
-    type CallbackSlot: CallbackSlot<Self> + 'static;
+    type CallbackSlot<Args: 'static>: CallbackSlot<Self, Args> + 'static;
+
+    type Function<Args: 'static>: Call<Args>;
 
     /// How to share something.
     /// Different hypp implementations may have different thread-safety requirements.
@@ -185,7 +187,7 @@ pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
     fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<H::Text, Error>;
 
     /// Set up a callback slot connected to the current attribute.
-    fn attribute_slot(&mut self) -> Result<H::Shared<H::CallbackSlot>, Error>;
+    fn attribute_slot<Args>(&mut self) -> Result<H::Shared<H::CallbackSlot<Args>>, Error>;
 
     /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.
@@ -375,9 +377,9 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 /// Releasing the references involves setting those `Option` values in the
 /// diagram to None.
 ///
-pub trait CallbackSlot<H: Hypp> {
+pub trait CallbackSlot<H: Hypp, Args> {
     /// Bind the slot to an actual function
-    fn bind(&mut self, function: Function<H>);
+    fn bind(&mut self, function: Function<H, Args>);
 
     /// Release the bound callback from the slot
     fn release(&mut self);
@@ -386,34 +388,34 @@ pub trait CallbackSlot<H: Hypp> {
 ///
 /// Something that can be called
 ///
-pub trait Call {
-    fn call(&self);
+pub trait Call<Args>: 'static {
+    fn call(&self, args: Args);
 }
 
 ///
 /// Function - a shared reference to something callable.
 ///
-pub struct Function<H: Hypp>(H::Shared<Box<dyn Call>>);
+pub struct Function<H: Hypp, Args: 'static>(H::Shared<Box<dyn Call<Args>>>);
 
-impl<H: Hypp> Function<H> {
-    pub fn from_call(call: Box<dyn Call>) -> Self {
+impl<H: Hypp, Args> Function<H, Args> {
+    pub fn from_call(call: Box<dyn Call<Args>>) -> Self {
         Self(H::make_shared(call))
     }
 
-    pub fn from_shared(call: H::Shared<Box<dyn Call>>) -> Self {
+    pub fn from_shared(call: H::Shared<Box<dyn Call<Args>>>) -> Self {
         Self(call)
     }
 }
 
-impl<H: Hypp> Clone for Function<H> {
+impl<H: Hypp, Args> Clone for Function<H, Args> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<H: Hypp> Call for Function<H> {
-    fn call(&self) {
-        self.0.get().call();
+impl<H: Hypp + 'static, Args: 'static> Call<Args> for Function<H, Args> {
+    fn call(&self, args: Args) {
+        self.0.get().call(args);
     }
 }
 

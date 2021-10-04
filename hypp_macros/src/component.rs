@@ -128,12 +128,11 @@ pub fn generate_component(
             )
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            ::hypp::comp::SharedInner::mount::<_, _, _, _>(
+            ::hypp::comp::SharedInner::mount::<_, _, _>(
                 #env_expr,
                 cursor,
                 __patch,
                 |inner| Self(inner),
-                |outer, weak_self| outer.0.weak_self = Some(weak_self),
             )
         },
     };
@@ -169,14 +168,13 @@ pub fn generate_component(
             ).unwrap();
         },
         ir::ComponentKind::SelfUpdatable => quote! {
-            let mut binder = ::hypp::shim::SelfBinder::from_opt_weak(&self.0.weak_self);
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
                 &self.0.env,
                 ::hypp::Deviation::Partial(&__refresh_params),
                 &mut ::hypp::patch::PatchBindCtx {
                     cur: __cursor,
-                    bind: &mut binder,
+                    closure_env: self.0.closure_env.clone().unwrap(),
                 }
             ).unwrap();
         },
@@ -575,7 +573,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
         impl<'p, #(#public_generic_params),*> ::hypp::shim::ShimTrampoline for #component_ident<#(#public_generic_arguments),*> {
             type Shim<'s> = __Shim<'s>;
 
-            fn shim_trampoline(&mut self, method: ::hypp::shim::ShimMethod<Self>)
+            fn shim_trampoline(&mut self, method: &mut dyn for<'s> FnMut(&'s mut Self::Shim<'s>))
             {
                 #(#updates_locals)*
 
@@ -583,17 +581,16 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
                     #(#env_fields)*
                 };
 
-                method.0(&mut shim);
+                method(&mut shim);
 
                 let mut cursor = self.0.anchor.create_cursor();
-                let mut binder = ::hypp::shim::SelfBinder::from_opt_weak(&self.0.weak_self);
                 __patch(
                     ::hypp::Duplex::In(&mut self.0.root_span),
                     &self.0.env,
                     ::hypp::Deviation::Partial(&[#(#updates_array_items),*]),
                     &mut ::hypp::patch::PatchBindCtx {
                         cur: &mut cursor,
-                        bind: &mut binder,
+                        closure_env: self.0.closure_env.clone().unwrap(),
                     }
                 ).unwrap();
             }
