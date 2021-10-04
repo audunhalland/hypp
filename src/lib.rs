@@ -53,17 +53,20 @@ pub trait Hypp: Sized {
     ///
     type CallbackSlot<Args: 'static>: CallbackSlot<Self, Args> + 'static;
 
-    type Function<Args: 'static>: Call<Args> + Clone;
+    /// How to share something, without mutation ability.
+    type Shared<T>: Clone
+    where
+        T: ?Sized + 'static;
 
-    /// How to share something.
+    /// How to share something, with mutation ability.
     /// Different hypp implementations may have different thread-safety requirements.
-    type Shared<T>: handle::SharedHandle<T>
+    type SharedMut<T>: handle::SharedHandle<T>
     where
         T: 'static;
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T>;
-
-    fn make_function<Args>(call: Box<dyn Call<Args>>) -> Self::Function<Args>;
+    fn make_box_shared<T: ?Sized + 'static>(value: Box<T>) -> Self::Shared<T>;
+    fn make_shared_mut<T: 'static>(value: T) -> Self::SharedMut<T>;
 
     /// Mount a component accepting default props exclusively at the root.
     fn mount<'p, C>(&mut self) -> Result<(), Error>
@@ -187,7 +190,9 @@ pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
     fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<H::Text, Error>;
 
     /// Set up a callback slot connected to the current attribute.
-    fn attribute_slot<Args: 'static>(&mut self) -> Result<H::Shared<H::CallbackSlot<Args>>, Error>;
+    fn attribute_slot<Args: 'static>(
+        &mut self,
+    ) -> Result<H::SharedMut<H::CallbackSlot<Args>>, Error>;
 
     /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.
@@ -379,18 +384,25 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 ///
 pub trait CallbackSlot<H: Hypp, Args> {
     /// Bind the slot to an actual function
-    fn bind(&mut self, function: H::Function<Args>);
+    fn bind(&mut self, function: H::Shared<dyn Fn()>);
 
     /// Release the bound callback from the slot
     fn release(&mut self);
 }
 
-///
-/// Something that can be called
-///
-pub trait Call<Args>: 'static {
-    fn call(&self, args: Args);
+trait Test {
+    type Slot<T>;
+
+    fn slot<T>() -> Self::Slot<T>;
 }
+
+pub trait Slot<T> {}
+
+/*
+pub trait Bind<H: Hypp, Args> {
+    fn bind(&mut self, function: H::Function<Args>);
+}
+*/
 
 ///
 /// A function parameter that can function dynamically as either an input or an output parameter

@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, Call, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS};
+use crate::{AsNode, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -86,18 +86,26 @@ impl Hypp for WebHypp {
 
     type Shared<T>
     where
+        T: ?Sized + 'static,
+    = std::rc::Rc<T>;
+
+    type SharedMut<T>
+    where
         T: 'static,
     = std::rc::Rc<std::cell::RefCell<T>>;
 
-    type CallbackSlot<Args: 'static> = callback::WebCallbackSlot<Args>;
-    type Function<Args: 'static> = WebFunction<Args>;
+    type CallbackSlot<Args: 'static> = callback::WebCallbackSlot;
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
-        Rc::new(RefCell::new(value))
+        Rc::new(value)
     }
 
-    fn make_function<Args>(call: Box<dyn Call<Args>>) -> Self::Function<Args> {
-        WebFunction(Rc::new(call))
+    fn make_box_shared<T: ?Sized + 'static>(value: Box<T>) -> Self::Shared<T> {
+        value.into()
+    }
+
+    fn make_shared_mut<T: 'static>(value: T) -> Self::SharedMut<T> {
+        Rc::new(RefCell::new(value))
     }
 
     fn mount<'p, C>(&mut self) -> Result<(), Error>
@@ -360,7 +368,7 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
 
     fn attribute_slot<Args: 'static>(
         &mut self,
-    ) -> Result<Rc<RefCell<callback::WebCallbackSlot<Args>>>, Error> {
+    ) -> Result<Rc<RefCell<callback::WebCallbackSlot>>, Error> {
         use std::any::TypeId;
 
         let attribute_name = self
@@ -475,19 +483,5 @@ impl NodeExt for web_sys::Node {
 impl crate::Anchor<WebHypp> for WebBuilder {
     fn create_cursor<NS>(&self) -> WebBuilder {
         self.clone()
-    }
-}
-
-pub struct WebFunction<Args: 'static>(Rc<Box<dyn Call<Args>>>);
-
-impl<Args> Clone for WebFunction<Args> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<Args: 'static> Call<Args> for WebFunction<Args> {
-    fn call(&self, args: Args) {
-        self.0.call(args);
     }
 }

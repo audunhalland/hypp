@@ -3,7 +3,7 @@ use crate::error::Error;
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{
-    AsNode, Call, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS,
+    AsNode, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS,
 };
 
 use parking_lot::Mutex;
@@ -53,19 +53,27 @@ impl Hypp for ServerHypp {
 
     type Shared<T>
     where
+        T: ?Sized + 'static,
+    = Arc<T>;
+
+    type SharedMut<T>
+    where
         T: 'static,
     = Arc<Mutex<T>>;
 
     /// Server has no real callback slots
     type CallbackSlot<Args: 'static> = ();
-    type Function<Args: 'static> = ServerFunction<Args>;
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
-        Arc::new(Mutex::new(value))
+        Arc::new(value)
     }
 
-    fn make_function<Args>(call: Box<dyn Call<Args>>) -> Self::Function<Args> {
-        ServerFunction(Arc::new(call))
+    fn make_box_shared<T: ?Sized + 'static>(value: Box<T>) -> Self::Shared<T> {
+        value.into()
+    }
+
+    fn make_shared_mut<T: 'static>(value: T) -> Self::SharedMut<T> {
+        Arc::new(Mutex::new(value))
     }
 
     fn mount<'p, C>(&mut self) -> Result<(), Error>
@@ -115,7 +123,7 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
 }
 
 impl<Args> CallbackSlot<ServerHypp, Args> for () {
-    fn bind(&mut self, _function: ServerFunction<Args>) {}
+    fn bind(&mut self, _function: Arc<dyn Fn()>) {}
     fn release(&mut self) {}
 }
 
@@ -336,20 +344,6 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
 impl crate::Anchor<ServerHypp> for ServerBuilder {
     fn create_cursor<NS>(&self) -> ServerBuilder {
         self.clone()
-    }
-}
-
-pub struct ServerFunction<Args: 'static>(Arc<Box<dyn Call<Args>>>);
-
-impl<Args> Clone for ServerFunction<Args> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<Args: 'static> Call<Args> for ServerFunction<Args> {
-    fn call(&self, args: Args) {
-        self.0.call(args);
     }
 }
 

@@ -718,7 +718,7 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { #hypp_ident::Element },
             Self::DomText => quote! { #hypp_ident::Text },
-            Self::CallbackSlot => quote! { #hypp_ident::Shared<#hypp_ident::CallbackSlot<()>> },
+            Self::CallbackSlot => quote! { #hypp_ident::SharedMut<#hypp_ident::CallbackSlot<()>> },
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {
@@ -793,7 +793,7 @@ impl ir::HandleKind {
 
         match self {
             Self::Unique => quote! { ::hypp::handle::Unique },
-            Self::Shared => quote! { #hypp_ident::Shared },
+            Self::Shared => quote! { #hypp_ident::SharedMut },
         }
     }
 }

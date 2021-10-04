@@ -49,7 +49,7 @@ impl<H: crate::Hypp + 'static, C: ShimTrampoline + 'static, Env, Span>
         cursor: &mut H::Cursor<NS>,
         patch: Patch,
         wrap: Wrap,
-    ) -> Result<H::Shared<C>, crate::Error>
+    ) -> Result<H::SharedMut<C>, crate::Error>
     where
         Patch: Fn(
             Duplex<Span>,
@@ -71,7 +71,7 @@ impl<H: crate::Hypp + 'static, C: ShimTrampoline + 'static, Env, Span>
                 closure_env: closure_env.clone(),
             },
         )?;
-        let handle = H::make_shared(wrap(Self {
+        let handle = H::make_shared_mut(wrap(Self {
             env,
             root_span: root_span.unwrap(),
             anchor,

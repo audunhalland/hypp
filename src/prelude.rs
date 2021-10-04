@@ -12,6 +12,8 @@ pub use crate::handle::SharedHandle;
 pub use crate::handle::ToHandle;
 pub use crate::handle::WeakHandle;
 
+pub use crate::shim::NewClosure;
+
 pub use crate::span::AsSpan;
 
 pub use hypp_macros::*;
