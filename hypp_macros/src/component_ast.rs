@@ -7,7 +7,6 @@ use syn::spanned::Spanned;
 
 use crate::namespace::Namespace;
 use crate::param;
-use crate::param::ParamKind;
 use crate::template_ast;
 
 pub struct Component {

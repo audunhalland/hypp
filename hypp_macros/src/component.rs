@@ -476,7 +476,7 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
             (ParamKind::State, _, Ty::Owned(ty)) => quote! {
                 ::hypp::state_ref::StateRef<'a, #ty>
             },
-            (ParamKind::State, _, Ty::Reference(r)) => unimplemented!("reference in state"),
+            (ParamKind::State, _, Ty::Reference(_)) => unimplemented!("reference in state"),
 
             (ParamKind::Prop, Quantifier::Unit, Ty::Owned(ty)) => quote! { &'a #ty },
             (ParamKind::Prop, Quantifier::Unit, Ty::Reference(r)) => quote! { #r },

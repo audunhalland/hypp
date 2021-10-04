@@ -5,8 +5,6 @@ pub enum ParamError {
     UnparseableType(proc_macro2::Span),
 }
 
-pub struct IsProp(pub bool);
-
 pub type Triple = (ParamKind, Quantifier, Ty);
 
 /// A parameter to a component
