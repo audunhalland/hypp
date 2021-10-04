@@ -95,7 +95,7 @@ impl ClosureSig {
 
         let ident = match kind {
             ClosureKind::Match => quote::format_ident!("__patch_f{}", field.0),
-            ClosureKind::IterItem => quote::format_ident!("__elem_f{}", field.0),
+            ClosureKind::ListSpan => quote::format_ident!("__list_f{}", field.0),
             ClosureKind::String => quote::format_ident!("__string_f{}", field.0),
         };
 
@@ -108,8 +108,8 @@ enum ClosureKind {
     // Closure for patching a `Match` statement
     Match,
 
-    // Closure for patching one span in an iteration
-    IterItem,
+    // Closure for patching a list span using an iteration
+    ListSpan,
 
     // Closure for producing a string value (that may use env variables)
     String,
@@ -400,10 +400,11 @@ fn compile_body<'c>(
                 inner_block,
                 ..
             } => {
-                let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::IterItem);
-                let closure = gen_iter_item_closure(
+                let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::ListSpan);
+                let closure = gen_list_span_closure(
                     span_type,
                     closure_sig,
+                    expr,
                     variable,
                     inner_block,
                     comp_ctx,
@@ -421,11 +422,11 @@ fn compile_body<'c>(
                     field_ident: stmt.field.as_ref(),
                     init: quote! { ::hypp::list::SimpleListSpan::new(); },
                     post_init: Some(quote! {
-                        #field.patch(#expr.iter(), #closure_ident, __deviation, __ctx)?;
+                        #closure_ident(&mut #field, __ctx)?;
                     }),
                 });
                 patch_stmts.push(quote! {
-                    #field.patch(#expr.iter(), #closure_ident, __deviation, __ctx)?;
+                    #closure_ident(#field, __ctx)?;
                 });
                 closures.push(closure);
             }
@@ -593,9 +594,10 @@ fn gen_match_closure<'c>(
     }
 }
 
-fn gen_iter_item_closure<'c>(
+fn gen_list_span_closure<'c>(
     span_type: &ir::StructFieldType,
     closure_sig: ClosureSig,
+    iter_expr: &syn::Expr,
     iter_variable: &syn::Ident,
     inner_block: &ir::Block,
     comp_ctx: &'c CompCtx,
@@ -613,6 +615,7 @@ fn gen_iter_item_closure<'c>(
         SpanConstructorKind::FixedSpan(Some(span_type)),
     );
 
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
     let fixed_span_path_segment =
         span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
 
@@ -622,19 +625,21 @@ fn gen_iter_item_closure<'c>(
         .map(ir::StructField::mut_pattern_tokens);
 
     let body = quote! {
-        #(#closures)*
+        __span.patch(#iter_expr.iter(), __deviation, __ctx, |#iter_variable, __span, __deviation, __ctx| {
+            #(#closures)*
 
-        match __span {
-            ::hypp::Duplex::Out(__span) => {
-                #mount_locals
-                *__span = Some(#mount_expr);
+            match __span {
+                ::hypp::Duplex::Out(__span) => {
+                    #mount_locals
+                    *__span = Some(#mount_expr);
+                }
+                ::hypp::Duplex::In(#fixed_span_path_segment { #(#fields)* .. }) => {
+                    #patch
+                }
             }
-            ::hypp::Duplex::In(#fixed_span_path_segment { #(#fields)* .. }) => {
-                #patch
-            }
-        }
 
-        Ok(())
+            Ok(())
+        })
     };
 
     let fixed_span_full_type =
@@ -644,9 +649,7 @@ fn gen_iter_item_closure<'c>(
         comp_ctx,
         sig: closure_sig,
         args: quote! {
-            __span: ::hypp::Duplex<#fixed_span_full_type>,
-            #iter_variable: &String,
-            __deviation: ::hypp::Deviation,
+            __span: &mut ::hypp::list::SimpleListSpan<#hypp_ident, __NS, #fixed_span_full_type>,
         },
         body,
     }
@@ -660,14 +663,14 @@ impl<'c> quote::ToTokens for Closure<'c> {
         let body = &self.body;
 
         let ctx_arg = match self.sig.kind {
-            ClosureKind::Match | ClosureKind::IterItem => Some(quote! {
+            ClosureKind::Match | ClosureKind::ListSpan => Some(quote! {
                 __ctx: &mut #patch_ctx_ty_inner
             }),
             ClosureKind::String => None,
         };
 
         let return_type = match self.sig.kind {
-            ClosureKind::Match | ClosureKind::IterItem => Some(quote! { -> ::hypp::Void }),
+            ClosureKind::Match | ClosureKind::ListSpan => Some(quote! { -> ::hypp::Void }),
             ClosureKind::String => None,
         };
 

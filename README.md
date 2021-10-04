@@ -31,6 +31,6 @@ Hypp is a work in progress. The surface syntax is not written in stone. Examples
 - [x] Reduce amount of generated code using closures in patch
 - [x] Passing callbacks as props to other components
 - [ ] typed argument(s) in callback slots
-- [ ] use any type for lists
+- [x] support iterating any type
 - [ ] Avoid copying into env for non-self-updatable components
 - [ ] Support namespace with `type` syntax

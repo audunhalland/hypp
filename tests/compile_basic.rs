@@ -186,7 +186,7 @@ component! {
     "num"
 }
 
-component_dbg! {
+component! {
     IfLet(opt_number: Option<u32>) {}
 
     <article>
@@ -500,7 +500,7 @@ component! {
     </div>
 }
 
-struct SomeStruct {
+pub struct SomeStruct {
     text: String,
 }
 
@@ -510,7 +510,7 @@ component! {
     }
 
     for item in items {
-        <div>{item.text}</div>
+        <div>{&item.text}</div>
     }
 }
 

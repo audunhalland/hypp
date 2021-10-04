@@ -22,16 +22,16 @@ where
         }
     }
 
-    pub fn patch<'a, I, D, F, C>(
+    pub fn patch<'a, I, D, C, F>(
         &mut self,
         mut data_iterator: I,
-        mut inner_patch_fn: F,
         _deviation: Deviation,
         ctx: &mut C,
+        mut inner_patch_fn: F,
     ) -> Result<(), crate::Error>
     where
         I: DoubleEndedIterator<Item = D>,
-        F: FnMut(Duplex<S>, D, Deviation, &mut C) -> Result<(), crate::Error>,
+        F: FnMut(D, Duplex<S>, Deviation, &mut C) -> Result<(), crate::Error>,
         C: GetCursor<H, NS> + 'a,
     {
         let next_data_item = match H::traversal_direction() {
@@ -43,14 +43,14 @@ where
         while let Some(data_item) = next_data_item(&mut data_iterator) {
             if index < self.spans.len() {
                 inner_patch_fn(
-                    Duplex::In(&mut self.spans[index]),
                     data_item,
+                    Duplex::In(&mut self.spans[index]),
                     Deviation::Full,
                     ctx,
                 )?;
             } else {
                 let mut new_inner = None;
-                inner_patch_fn(Duplex::Out(&mut new_inner), data_item, Deviation::Full, ctx)?;
+                inner_patch_fn(data_item, Duplex::Out(&mut new_inner), Deviation::Full, ctx)?;
                 self.spans.push(new_inner.unwrap());
             }
             index += 1;
@@ -144,8 +144,8 @@ mod tests {
         fake_patcher: &mut FakePatcher,
         data: Vec<&'static str>,
     ) {
-        let patch_fake_span_inner = |inout: Duplex<FakeSpan>,
-                                     data: &'static str,
+        let patch_fake_span_inner = |data: &'static str,
+                                     inout: Duplex<FakeSpan>,
                                      _: Deviation,
                                      _ctx: &mut PatchCtx<ServerHypp, Html>|
          -> Result<(), crate::Error> {
@@ -170,9 +170,9 @@ mod tests {
         list_span
             .patch(
                 data.into_iter(),
-                patch_fake_span_inner,
                 Deviation::Full,
                 &mut patch_ctx,
+                patch_fake_span_inner,
             )
             .unwrap();
     }
