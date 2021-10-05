@@ -1,5 +1,5 @@
 /// Trait for converting a type into a Handle.
-pub trait ToHandle: Sized {
+pub trait ToHandle<H: crate::Hypp>: Sized {
     /// The type of handle that must be used when owning an instance of this type.
     type Handle: Handle<Self> + 'static;
 
@@ -253,25 +253,30 @@ mod test {
         _prop: &'p str,
     }
 
-    struct CompA {}
+    struct CompA<H: Hypp> {
+        phantom: std::marker::PhantomData<H>,
+    }
 
-    impl CompA {
+    impl<H: Hypp + 'static> CompA<H> {
         fn mount() -> Unique<Self> {
-            CompA {}.to_handle()
+            Self {
+                phantom: std::marker::PhantomData,
+            }
+            .to_handle()
         }
     }
 
-    impl ToHandle for CompA {
+    impl<H: Hypp + 'static> ToHandle<H> for CompA<H> {
         type Handle = Unique<Self>;
     }
 
-    impl<H: Hypp> Span<H> for CompA {
+    impl<H: Hypp> Span<H> for CompA<H> {
         fn is_anchored(&self) -> bool {
             true
         }
     }
 
-    impl<'p, H: Hypp> Component<'p, H> for CompA {
+    impl<'p, H: Hypp + 'static> Component<'p, H> for CompA<H> {
         type Props = LolProps<'p>;
         type NS = crate::html::Html;
 
@@ -281,11 +286,11 @@ mod test {
         fn pass_props(&mut self, _: Self::Props, _: &mut H::Cursor<Self::NS>) {}
     }
 
-    struct CompB {
-        _comp_a: <CompA as ToHandle>::Handle,
+    struct CompB<H: Hypp + 'static> {
+        _comp_a: <CompA<H> as ToHandle<H>>::Handle,
     }
 
-    impl CompB {
+    impl<H: Hypp> CompB<H> {
         fn mount() -> Shared<Self> {
             CompB {
                 _comp_a: CompA::mount(),
@@ -294,17 +299,17 @@ mod test {
         }
     }
 
-    impl ToHandle for CompB {
+    impl<H: Hypp + 'static> ToHandle<H> for CompB<H> {
         type Handle = Shared<Self>;
     }
 
-    impl<H: Hypp> Span<H> for CompB {
+    impl<H: Hypp> Span<H> for CompB<H> {
         fn is_anchored(&self) -> bool {
             true
         }
     }
 
-    impl<'p, H: Hypp> Component<'p, H> for CompB {
+    impl<'p, H: Hypp + 'static> Component<'p, H> for CompB<H> {
         type Props = LolProps<'p>;
         type NS = crate::html::Html;
 
@@ -316,18 +321,22 @@ mod test {
 
     #[test]
     fn test_handles_compile() {
-        let mut a: <CompA as ToHandle>::Handle = CompA::mount();
+        use crate::server::ServerHypp;
+
+        let mut a: <CompA<ServerHypp> as ToHandle<ServerHypp>>::Handle = CompA::mount();
         a.get_mut();
 
-        let mut a2: <<CompA as ToHandle>::Handle as Handle<CompA>>::Boxed =
-            CompA::mount().into_boxed();
+        let mut a2: <<CompA<ServerHypp> as ToHandle<ServerHypp>>::Handle as Handle<
+            CompA<ServerHypp>,
+        >>::Boxed = CompA::mount().into_boxed();
         a2.get_mut();
 
-        let mut b: <CompB as ToHandle>::Handle = CompB::mount();
+        let mut b: <CompB<ServerHypp> as ToHandle<ServerHypp>>::Handle = CompB::mount();
         b.get_mut();
 
-        let mut b2: <<CompB as ToHandle>::Handle as Handle<CompB>>::Boxed =
-            CompB::mount().into_boxed();
+        let mut b2: <<CompB<ServerHypp> as ToHandle<ServerHypp>>::Handle as Handle<
+            CompB<ServerHypp>,
+        >>::Boxed = CompB::mount().into_boxed();
 
         b2.get_mut();
     }

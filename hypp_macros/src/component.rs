@@ -98,7 +98,7 @@ pub fn generate_component(
     let env_locals = gen_env_locals(&params);
     let props_updater = gen_props_updater(&params);
     let shim = if comp_ctx.kind.is_self_updatable() {
-        gen_shim_struct_and_impl(&params, methods)
+        gen_shim_struct_and_impl(&params, methods, &comp_ctx)
     } else {
         quote! {}
     };
@@ -197,7 +197,7 @@ pub fn generate_component(
             #env_struct
             #shim
 
-            impl<#(#public_generic_params),*> ::hypp::handle::ToHandle for #component_ident<#(#public_generic_arguments),*> {
+            impl<#(#public_generic_params),*> ::hypp::handle::ToHandle<#hypp_ident> for #component_ident<#(#public_generic_arguments),*> {
                 type Handle = #handle_path<Self>;
             }
 
@@ -466,7 +466,11 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) -> TokenStream {
+fn gen_shim_struct_and_impl(
+    params: &[param::Param],
+    methods: Vec<syn::ItemFn>,
+    comp_ctx: &CompCtx,
+) -> TokenStream {
     let fields = params.iter().map(|param| {
         let ident = &param.ident;
 
@@ -493,13 +497,16 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
         }
     });
 
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
+
     quote! {
         #[allow(dead_code)]
-        pub struct __Shim<'a> {
+        pub struct __Shim<'a, #hypp_ident: ::hypp::Hypp> {
             #(#fields)*
+            __phantom: std::marker::PhantomData<#hypp_ident>,
         }
 
-        impl<'a> __Shim<'a> {
+        impl<'a, #hypp_ident: ::hypp::Hypp> __Shim<'a, #hypp_ident> {
             #(#methods)*
         }
     }
@@ -507,6 +514,7 @@ fn gen_shim_struct_and_impl(params: &[param::Param], methods: Vec<syn::ItemFn>) 
 
 fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
     let component_ident = &comp_ctx.component_ident;
+    let hypp_ident = &comp_ctx.generics.hypp_ident;
 
     let public_generic_params = &comp_ctx.generics.public.params;
     let public_generic_arguments = &comp_ctx.generics.public.arguments;
@@ -548,7 +556,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
     quote! {
         impl<'a, #(#public_generic_params),*> ::hypp::shim::ShimTrampoline for #component_ident<#(#public_generic_arguments),*> {
-            type Shim<'s> = __Shim<'s>;
+            type Shim<'s> = __Shim<'s, #hypp_ident>;
 
             fn shim_trampoline(&mut self, method: &mut dyn for<'s> FnMut(&'s mut Self::Shim<'s>))
             {
@@ -556,6 +564,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
 
                 let mut shim = __Shim {
                     #(#env_fields)*
+                    __phantom: std::marker::PhantomData
                 };
 
                 method(&mut shim);

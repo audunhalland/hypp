@@ -449,11 +449,25 @@ component! {
 }
 
 component! {
-    BasicCallbackAsProp<H: ::hypp::Hypp + 'static>(
-        function: &H::Shared<dyn Fn() + 'static>
+    BasicCallbackWithParameterAsProp<H: ::hypp::Hypp + 'static>(
+        id: usize,
+        callback: &H::Shared<dyn Fn(usize) + 'static>
     ) {}
 
-    <button onClick={function}>
+    fn handle_click(&mut self) {
+        (self.callback)(*self.id);
+    }
+
+    <button onClick={Self::handle_click}>
+    </button>
+}
+
+component! {
+    BasicCallbackAsProp<H: ::hypp::Hypp + 'static>(
+        callback: &H::Shared<dyn Fn() + 'static>
+    ) {}
+
+    <button onClick={callback}>
     </button>
 }
 
@@ -465,7 +479,7 @@ component! {
 
     fn do_stuff(&mut self) {}
 
-    <BasicCallbackAsProp function={Self::do_stuff} />
+    <BasicCallbackAsProp callback={Self::do_stuff} />
 }
 
 component! {

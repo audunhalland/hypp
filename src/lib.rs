@@ -323,7 +323,7 @@ impl Default for Refresh {
 /// and that method implementation must 'pass' the cursor over
 /// the component's current span.
 ///
-pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
+pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle<H> {
     /// The type of properties this component receives
     type Props: 'p;
 
@@ -332,7 +332,7 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     fn mount(
         props: Self::Props,
         cursor: &mut H::Cursor<Self::NS>,
-    ) -> Result<<Self as ToHandle>::Handle, Error>;
+    ) -> Result<<Self as ToHandle<H>>::Handle, Error>;
 
     ///
     /// Set new props on the component instance, causing an immediate, synchronous
@@ -348,6 +348,10 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     ///   it must point _after_ the component (depending on traversal direction)
     ///
     fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor<Self::NS>);
+
+    fn as_dyn_span_mut(&mut self) -> &mut dyn Span<H> {
+        self
+    }
 }
 
 pub trait EventKind<NS: TemplNS> {

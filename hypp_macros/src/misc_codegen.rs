@@ -610,7 +610,7 @@ impl ir::Block {
                         sub_spans.push(FieldCode {
                             field: Some(field),
                             code: quote! {
-                                #field_expr.get_mut()
+                                #field_expr.get_mut().as_dyn_span_mut()
                             },
                         });
                     }
@@ -725,10 +725,10 @@ impl ir::StructFieldType {
                 let type_path = &path.type_path;
                 match scope {
                     Scope::Component | Scope::Iter => {
-                        quote! { <#type_path #generics as ::hypp::handle::ToHandle>::Handle }
+                        quote! { <#type_path #generics as ::hypp::handle::ToHandle<#hypp_ident>>::Handle }
                     }
                     Scope::DynamicSpan => quote! {
-                        <<#type_path #generics as ::hypp::handle::ToHandle>::Handle as ::hypp::handle::Handle<#type_path #generics>>::Boxed
+                        <<#type_path #generics as ::hypp::handle::ToHandle<#hypp_ident>>::Handle as ::hypp::handle::Handle<#type_path #generics>>::Boxed
                     },
                 }
             }

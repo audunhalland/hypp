@@ -216,7 +216,7 @@ fn compile_body<'c>(
                         mutability: Mutability::Let,
                         field_ident: Some(closure_field),
                         init: quote! {
-                            __ctx.closure_env.new_closure(&|shim: &mut __Shim| {
+                            __ctx.closure_env.new_closure(&|shim: &mut __Shim<#hypp_ident>| {
                                 shim.#method_ident();
                             });
                         },
@@ -306,7 +306,7 @@ fn compile_body<'c>(
                                 mutability: Mutability::Let,
                                 field_ident: Some(closure_field),
                                 init: quote! {
-                                    __ctx.closure_env.new_closure(&|shim: &mut __Shim| {
+                                    __ctx.closure_env.new_closure(&|shim: &mut __Shim<#hypp_ident>| {
                                         shim.#method_ident();
                                     });
                                 },
