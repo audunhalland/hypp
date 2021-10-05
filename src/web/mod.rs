@@ -29,6 +29,9 @@ extern "C" {
     fn store_global_hypp(hypp: JsValue);
 }
 
+// Just a test...
+pub struct ClickEvent;
+
 impl WebHypp {
     pub fn new() -> Self {
         let window = web_sys::window().unwrap();

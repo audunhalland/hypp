@@ -349,28 +349,29 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 ///
 /// Callback Slot
 ///
-/// Ownership structure:
+/// Ownership diagram:
 ///
 /// ```text
 ///
-///                        [Handle::Weak] <---------------- [Option]
-///                              |                              ^
-///                              |                              |
-/// [  Parent   ]                v                        ******************
-/// [ Component ] -> [H::Shared] -----------------------> * THIS COMPONENT *
-///                              ^                        ******************
-///                              |                              |
-///                              |                              v
-///                       [Handle::Weak]                   [H::Shared] <------ [wasm/JS closure] <-- [DOM node]
-///                              ^                              |
-///                              |                              v
-///  DeferredSelfBinder --> [H::Shared]                    [CallbackSlot]
-///                              ^                              |
-///                              |                              v
-///                       [ShimClosure] <-- [H::Shared] <-- [Function]
-///                                              ^
-///                                              |
-///                                          [Function] <--- {callbacks shared to child components}
+///  [Parent component]
+///        |
+///        v                                      ******************
+///  [H::SharedMut] ----------------------------> * THIS COMPONENT *
+///                ^                              ******************
+///                |                                 |         |
+///              [Weak]          [Option] <---------´          |
+///                ^                |                          |
+///                |                v                          v
+///                |           [ClosureEnv]              [H::SharedMut] <------ [wasm/JS closure] <-- [DOM node]
+///                |                |                          |
+///                |                v                          v
+///             [Option] <---- [H::SharedMut]            [CallbackSlot]
+///                                 ^                          |
+///                                 |                          v
+///                            [ClosureEnv] <--- [Fn] <--- [H::Shared]
+///                                                            ^
+///                                                            |
+///                                             {callbacks shared to child components, etc}
 /// ```
 ///
 ///

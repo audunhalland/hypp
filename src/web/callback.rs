@@ -40,8 +40,8 @@ pub fn new_slot() -> Rc<RefCell<WebCallbackSlot>> {
     let js_ref = callback.clone();
 
     let web_closure = Closure::wrap(Box::new(move || {
-        unimplemented!("Figure out how to use 'dynamic' types here");
-        //js_ref.borrow().call();
+        //unimplemented!("Figure out how to use 'dynamic' types here");
+        js_ref.borrow().call();
     }) as Box<dyn Fn()>);
 
     callback.borrow_mut().web_closure = Some(web_closure);
