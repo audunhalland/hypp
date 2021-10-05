@@ -30,6 +30,9 @@ pub struct ClosureEnv<H: Hypp, T: ShimTrampoline + 'static>(
     H::SharedMut<Option<<H::SharedMut<T> as handle::SharedHandle<T>>::Weak>>,
 );
 
+///
+/// How to wrap any ShimTrampoline method to obtain a shared closure.
+///
 pub trait NewClosure<H: Hypp, T: ShimTrampoline, F, Args> {
     type Output: ?Sized;
 
@@ -54,6 +57,12 @@ impl<H: Hypp + 'static, T: ShimTrampoline + 'static> ClosureEnv<H, T> {
             .expect("Tried to call uninitialized closure")
             .upgrade()
             .expect("Closure invoked, but instance was dropped")
+    }
+}
+
+impl<H: Hypp, T: ShimTrampoline + 'static> Clone for ClosureEnv<H, T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }
 
@@ -95,80 +104,5 @@ where
                 func(shim, a0.take().unwrap());
             });
         }))
-    }
-}
-
-impl<H: Hypp, T: ShimTrampoline + 'static> Clone for ClosureEnv<H, T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::server::ServerHypp;
-
-    struct Foo {
-        stuff: String,
-    }
-    struct Bar<'s> {
-        stuff: &'s str,
-    }
-
-    impl<'s> Bar<'s> {
-        fn f0(&mut self) {}
-        fn f1(&mut self, arg: u8) {}
-    }
-
-    impl ShimTrampoline for Foo {
-        type Shim<'s> = Bar<'s>;
-
-        fn shim_trampoline(&mut self, method: &mut dyn for<'s> FnMut(&'s mut Self::Shim<'s>)) {
-            let mut bar = Bar {
-                stuff: self.stuff.as_str(),
-            };
-            method(&mut bar);
-        }
-    }
-
-    #[test]
-    fn test_it() {
-        let env = ClosureEnv::<ServerHypp, Foo>::deferred();
-
-        //let f0 = env.bind_fn(&<<Foo as ShimTrampoline>::Shim<'_>>::f0);
-
-        //let f0 = (&<<Foo as ShimTrampoline>::Shim>::f0).bind_env(env.clone());
-        //let f0 = (&Bar::f0).bind_env(env.clone());
-        // let f1 = (&<<Foo as ShimTrampoline>::Shim<'_>>::f1).bind_env(env);
-
-        let f0 = env.new_closure(&|shim: &mut Bar| {
-            shim.f0();
-        });
-
-        let f1 = env.new_closure(&|shim: &mut Bar, arg| {
-            shim.f1(arg);
-        });
-
-        f0();
-        f1(42);
-        //f1(42);
-    }
-
-    #[test]
-    fn test_rc_fn() {
-        let dummy = 42;
-
-        let rc_fn = std::rc::Rc::new(move || {
-            println!("{}", dummy);
-        });
-
-        with_rc_fn(rc_fn);
-
-        // rc_fn();
-    }
-
-    fn with_rc_fn(rc: std::rc::Rc<dyn Fn()>) {
-        rc();
     }
 }

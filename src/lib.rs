@@ -358,36 +358,45 @@ pub trait EventKind<NS: TemplNS> {
 ///
 /// # Listen
 ///
-/// Ownership diagram:
+/// Ownership diagram of a component with one registered event function in a web context:
 ///
 /// ```text
 ///
 ///  [Parent component]
 ///        |
-///        v                                      ******************
-///  [H::SharedMut] ----------------------------> * THIS COMPONENT *
-///                ^                              ******************
-///                |                                 |         |
-///              [Weak]          [Option] <---------´          |
-///                ^                |                          |
-///                |                v                          v
-///                |           [ClosureEnv]              [H::SharedMut] <------ [wasm/JS closure] <-- [DOM node]
+///        v                    ####################################
+///  [H::SharedMut] ----------> #         THIS COMPONENT           #
+///                ^            ####################################
 ///                |                |                          |
 ///                |                v                          v
-///             [Option] <---- [H::SharedMut]           [EventSlot/Listen]
+///              [Weak]          [Option]             [Slot(Box<dyn Listen>)]
+///                ^                |                          |
+///                |                v                          v
+///                |           [ClosureEnv]              [H::SharedMut] <--- [wasm/JS closure] <-- [DOM node]
+///                |                |                          |
+///                |                v                          v
+///             [Option] <---- [H::SharedMut]             [WebCallback]
 ///                                 ^                          |
 ///                                 |                          v
-///                            [ClosureEnv] <--- [Fn] <--- [H::Shared]
+///                            [ClosureEnv]                 [Option]
+///                                 ^                          |
+///                                 |                          v
+///                                [Fn] <---------------- [H::Shared]
 ///                                                            ^
 ///                                                            |
-///                                             {callbacks shared to child components, etc}
+///                                         {callbacks shared with child components, etc}
 /// ```
 ///
+/// When an event is fired from the DOM, it notifies the `WebCallback`.
+/// The `WebCallback` is owned through `Slot`, to prevent the JS closure from being garbage collected.
+/// `WebCallback`, which implements `Listen`, has an optional shared pointer to a registered shared `Fn`.
+/// The shared `Fn` owns a `ClosureEnv`, which contains the weak reference back to the component.
+/// The event invokes the `Fn`, the weak reference is upgraded to a strong one, and the component shim method
+/// is executed.
 ///
-/// [Option A] is used when setting up a new callback during patch.
-/// [Option B] is used within an existing callback.
+/// New closures are made from the `Option -> ClosureEnv` owned by the component.
 ///
-/// When a component is unmounted, it must release() all its circular
+/// When the component is unmounted, it must release() all its circular
 /// references.
 /// Releasing the references involves setting those `Option` values in the
 /// diagram to None.
@@ -400,11 +409,19 @@ pub trait Listen<H: Hypp, Event> {
     fn forget(&mut self);
 }
 
-/// Subscribe to something given a shared function
+///
+/// Subscribe to something given a shared function.
+///
 pub trait Subscribe<H: Hypp, F: ?Sized + 'static> {
     fn subscribe(&mut self, f: H::Shared<F>);
 }
 
+///
+/// # Slot
+///
+/// Facade for listening to events.
+///
+///
 pub struct Slot<H: Hypp, NS: TemplNS, EK: EventKind<NS>>(Box<dyn Listen<H, EK::Event>>);
 
 impl<H: Hypp, NS: TemplNS, EK: EventKind<NS>> Slot<H, NS, EK> {
