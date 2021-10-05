@@ -17,10 +17,7 @@ hypp::component! {
 }
 
 hypp::component_dbg! {
-    DoWithId() {
-        // BUG: need to have a field
-        dummy: usize,
-    }
+    DoWithId() {}
 
     fn handle_id_click(&mut self, id: usize) {}
 
@@ -96,10 +93,7 @@ component! {
 }
 
 component! {
-    PassCallbackToChildComponent() {
-        // BUG: it breaks without this (unused lifetime on Shim)
-        some_state: u32,
-    }
+    PassCallbackToChildComponent() {}
 
     fn do_stuff(&mut self) {}
 

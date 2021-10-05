@@ -444,7 +444,7 @@ fn gen_shim_struct_and_impl(comp: &Component) -> TokenStream {
         #[allow(dead_code)]
         pub struct __Shim<'a, #hypp_ident: ::hypp::Hypp> {
             #(#fields)*
-            __phantom: std::marker::PhantomData<#hypp_ident>,
+            __phantom: std::marker::PhantomData<&'a #hypp_ident>,
         }
 
         impl<'a, #hypp_ident: ::hypp::Hypp> __Shim<'a, #hypp_ident> {
