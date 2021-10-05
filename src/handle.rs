@@ -273,7 +273,7 @@ mod test {
 
     impl<'p, H: Hypp> Component<'p, H> for CompA {
         type Props = LolProps<'p>;
-        type NS = crate::ns::Html;
+        type NS = crate::html::Html;
 
         fn mount(_props: Self::Props, _: &mut H::Cursor<Self::NS>) -> Result<Unique<Self>, Error> {
             panic!()
@@ -306,7 +306,7 @@ mod test {
 
     impl<'p, H: Hypp> Component<'p, H> for CompB {
         type Props = LolProps<'p>;
-        type NS = crate::ns::Html;
+        type NS = crate::html::Html;
 
         fn mount(_props: Self::Props, _: &mut H::Cursor<Self::NS>) -> Result<Shared<Self>, Error> {
             panic!()

@@ -55,11 +55,8 @@ impl<H: crate::Hypp> crate::Subscribe<H, dyn Fn(&'static str) + 'static>
     }
 }
 
-// TODO: if cfg html
-pub mod html {
-    pub use ::web_ns::html5::HtmlAttr;
-    pub use ::web_ns::html5::HtmlTag;
-}
+pub use web_ns::html5::HtmlAttr;
+pub use web_ns::html5::HtmlTag;
 
 #[cfg(test)]
 mod experiment {

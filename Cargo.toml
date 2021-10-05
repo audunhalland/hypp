@@ -19,3 +19,4 @@ web-ns = { git = "https://github.com/audunhalland/web-ns" }
 default = []
 web = ["web-sys", "wasm-bindgen"]
 server = ["parking_lot"]
+html = []

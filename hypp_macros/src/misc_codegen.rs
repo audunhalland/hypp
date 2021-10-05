@@ -719,7 +719,7 @@ impl ir::StructFieldType {
             Self::DomElement => quote! { #hypp_ident::Element },
             Self::DomText => quote! { #hypp_ident::Text },
             Self::EventSlot => {
-                quote! { ::hypp::Slot<#hypp_ident, __NS, ::hypp::ns::HtmlEventKind> }
+                quote! { ::hypp::Slot<#hypp_ident, __NS, ::hypp::html::HtmlEventKind> }
             }
             Self::Component(path) => {
                 let type_path = &path.type_path;

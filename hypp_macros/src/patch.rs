@@ -194,11 +194,11 @@ fn compile_body<'c>(
                         mutability: Mutability::LetMut,
                         field_ident: stmt.field.as_ref(),
                         init: quote! {
-                            __ctx.cur.attribute_slot::<::hypp::ns::HtmlEventKind>()?;
+                            __ctx.cur.attribute_slot::<::hypp::html::HtmlEventKind>()?;
                         },
                         post_init: Some(quote! {
                             <
-                                ::hypp::Slot<#hypp_ident, __NS, ::hypp::ns::HtmlEventKind>
+                                ::hypp::Slot<#hypp_ident, __NS, ::hypp::html::HtmlEventKind>
                                 as
                                 ::hypp::Subscribe<#hypp_ident, _>
                             >::subscribe(&mut #field, #expr.clone());
@@ -228,12 +228,12 @@ fn compile_body<'c>(
                         mutability: Mutability::LetMut,
                         field_ident: stmt.field.as_ref(),
                         init: quote! {
-                            __ctx.cur.attribute_slot::<::hypp::ns::HtmlEventKind>()?;
+                            __ctx.cur.attribute_slot::<::hypp::html::HtmlEventKind>()?;
                         },
                         // Associate the slot with the closure:
                         post_init: Some(quote! {
                             <
-                                ::hypp::Slot<#hypp_ident, __NS, ::hypp::ns::HtmlEventKind>
+                                ::hypp::Slot<#hypp_ident, __NS, ::hypp::html::HtmlEventKind>
                                 as
                                 ::hypp::Subscribe<#hypp_ident, _>
                             >::subscribe(&mut #field, #closure_field);

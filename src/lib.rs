@@ -12,7 +12,6 @@ pub mod comp;
 pub mod error;
 pub mod handle;
 pub mod list;
-pub mod ns;
 pub mod patch;
 pub mod shim;
 pub mod span;
@@ -23,6 +22,9 @@ pub mod web;
 
 #[cfg(feature = "server")]
 pub mod server;
+
+#[cfg(feature = "html")]
+pub mod html;
 
 use std::ops::Deref;
 

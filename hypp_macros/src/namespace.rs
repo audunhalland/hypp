@@ -56,7 +56,7 @@ impl Namespace {
 
     pub fn hypp_ns(&self) -> TokenStream {
         quote! {
-            ::hypp::ns::Html
+            ::hypp::html::Html
         }
     }
 
@@ -211,7 +211,7 @@ impl OpcodeValue for NSName<NSTagName> {
                 let ident = quote::format_ident!("{}", format!("{:?}", tag_name));
 
                 syn::parse_quote! {
-                    ::hypp::ns::html::HtmlTag::#ident
+                    ::hypp::html::HtmlTag::#ident
                 }
             }
         }
@@ -225,7 +225,7 @@ impl OpcodeValue for NSName<NSAttrName> {
                 let ident = quote::format_ident!("{}", format!("{:?}", attr_name));
 
                 syn::parse_quote! {
-                    ::hypp::ns::html::HtmlAttr::#ident
+                    ::hypp::html::HtmlAttr::#ident
                 }
             }
         }

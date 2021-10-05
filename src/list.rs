@@ -104,7 +104,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ns::Html;
+    use crate::html::Html;
     use crate::patch::PatchCtx;
     use crate::server::ServerHypp;
 
