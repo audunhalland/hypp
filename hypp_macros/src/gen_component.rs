@@ -9,7 +9,7 @@ use crate::component::Component;
 use crate::ir;
 use crate::param;
 
-use crate::misc_codegen::*;
+use crate::gen_misc::*;
 
 struct PropsEnvStructs {
     props_struct: TokenStream,
@@ -21,43 +21,39 @@ struct PropsEnvStructs {
     env_gen_args: Option<TokenStream>,
 }
 
-pub fn generate_component(
-    Component {
-        comp_ctx,
-        dom_programs,
-        params,
-        root_block,
-        span_typedefs,
-        fn_stmts,
-        methods,
-    }: Component,
-) -> TokenStream {
-    let component_ident = &comp_ctx.component_ident;
-    let props_ident = &comp_ctx.public_props_ident;
-    let mod_ident = &comp_ctx.mod_ident;
-    let hypp_ns = comp_ctx.namespace.hypp_ns();
+pub fn generate_component(comp: Component) -> TokenStream {
+    let component_ident = &comp.component_ident;
+    let props_ident = &comp.public_props_ident;
+    let mod_ident = &comp.mod_ident;
+    let hypp_ns = comp.namespace.hypp_ns();
+
+    let mut dom_programs = vec![];
+    collect_dom_programs(&comp.root_block.statements, &mut dom_programs);
+
+    let mut span_typedefs = vec![];
+    collect_span_typedefs(&comp.root_block, None, &comp, &mut span_typedefs);
 
     let PropsEnvStructs {
         props_struct,
         props_gen_args,
         env_struct,
         env_gen_args,
-    } = gen_props_env_structs(&params, &comp_ctx);
-    let fn_props_destructuring = gen_fn_props_destructuring(&params, &env_gen_args, &comp_ctx);
-    let env_locals = gen_env_locals(&params);
-    let props_updater = gen_props_updater(&params);
-    let shim = if comp_ctx.kind.is_self_updatable() {
-        gen_shim_struct_and_impl(&params, methods, &comp_ctx)
+    } = gen_props_env_structs(&comp);
+    let fn_props_destructuring = gen_fn_props_destructuring(&env_gen_args, &comp);
+    let env_locals = gen_env_locals(&comp.params);
+    let props_updater = gen_props_updater(&comp.params);
+    let shim = if comp.kind.is_self_updatable() {
+        gen_shim_struct_and_impl(&comp)
     } else {
         quote! {}
     };
 
     // Ident `H` in `H: ::hypp::Hypp`
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
-    let public_generic_params = &comp_ctx.generics.public.params;
-    let public_generic_arguments = &comp_ctx.generics.public.arguments;
+    let hypp_ident = &comp.generics.hypp_ident;
+    let public_generic_params = &comp.generics.public.params;
+    let public_generic_arguments = &comp.generics.public.arguments;
 
-    let component_inner_ty = match comp_ctx.kind {
+    let component_inner_ty = match comp.kind {
         ir::ComponentKind::Basic => quote! {
             ::hypp::comp::UniqueInner<#mod_ident::__Env #env_gen_args, #mod_ident::__RootSpan<#hypp_ident>>
         },
@@ -66,8 +62,8 @@ pub fn generate_component(
         },
     };
 
-    let env_expr = gen_env_expr(&params);
-    let mount_body = match comp_ctx.kind {
+    let env_expr = gen_env_expr(&comp.params);
+    let mount_body = match comp.kind {
         ir::ComponentKind::Basic => quote! {
             ::hypp::comp::UniqueInner::mount::<_, _, _, _, _>(
                 #env_expr,
@@ -86,26 +82,25 @@ pub fn generate_component(
         },
     };
 
-    let shim_impls = if comp_ctx.kind.is_self_updatable() {
-        Some(gen_shim_impls(&params, &comp_ctx))
+    let shim_impls = if comp.kind.is_self_updatable() {
+        Some(gen_shim_impls(&comp))
     } else {
         None
     };
 
     let patch_fn = crate::gen_patch::gen_patch_fn(
-        &root_block,
-        &comp_ctx,
+        &comp.root_block,
+        &comp,
         env_locals,
         &env_gen_args,
-        fn_stmts,
         CodegenCtx {
-            component_kind: comp_ctx.kind,
+            component_kind: comp.kind,
             function: Function::Patch,
             scope: Scope::Component,
         },
     );
 
-    let pass_props_patch_call = match comp_ctx.kind {
+    let pass_props_patch_call = match comp.kind {
         ir::ComponentKind::Basic => quote! {
             __patch(
                 ::hypp::Duplex::In(&mut self.0.root_span),
@@ -129,7 +124,7 @@ pub fn generate_component(
         },
     };
 
-    let handle_path = root_block.handle_kind.handle_path(&comp_ctx);
+    let handle_path = comp.root_block.handle_kind.handle_path(&comp);
 
     quote! {
         #props_struct
@@ -191,12 +186,13 @@ pub fn generate_component(
     }
 }
 
-fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEnvStructs {
-    let props_ident = &comp_ctx.public_props_ident;
+fn gen_props_env_structs(comp: &Component) -> PropsEnvStructs {
+    let props_ident = &comp.public_props_ident;
 
     let mut has_p_lifetime = false;
 
-    let props_fields = params
+    let props_fields = comp
+        .params
         .iter()
         .filter_map(|param| match &param.triple.0 {
             param::ParamKind::Prop => Some((&param.ident, &param.triple)),
@@ -237,7 +233,7 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
         None
     };
 
-    let env_fields = params.iter().map(|param| {
+    let env_fields = comp.params.iter().map(|param| {
         let ident = &param.ident;
         let ty = param.owned_ty_tokens();
 
@@ -252,7 +248,7 @@ fn gen_props_env_structs(params: &[param::Param], comp_ctx: &CompCtx) -> PropsEn
         None
     };
 
-    let item_generics = &comp_ctx.generics.internal;
+    let item_generics = &comp.generics.internal;
 
     match (props_lifetime, item_generics) {
         // Simple case, no generics at all
@@ -312,23 +308,22 @@ fn gen_env_expr(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn gen_fn_props_destructuring(
-    params: &[param::Param],
-    env_gen_args: &Option<TokenStream>,
-    comp_ctx: &CompCtx,
-) -> syn::FnArg {
-    let props_ident = &comp_ctx.public_props_ident;
+fn gen_fn_props_destructuring(env_gen_args: &Option<TokenStream>, comp: &Component) -> syn::FnArg {
+    let props_ident = &comp.public_props_ident;
 
-    let fields = params.iter().filter_map(|param| match &param.triple.0 {
-        param::ParamKind::Prop => {
-            let ident = &param.ident;
+    let fields = comp
+        .params
+        .iter()
+        .filter_map(|param| match &param.triple.0 {
+            param::ParamKind::Prop => {
+                let ident = &param.ident;
 
-            Some(quote! {
-                #ident,
-            })
-        }
-        param::ParamKind::State => None,
-    });
+                Some(quote! {
+                    #ident,
+                })
+            }
+            param::ParamKind::State => None,
+        });
 
     syn::parse_quote! {
         #props_ident {
@@ -415,12 +410,9 @@ fn gen_props_updater(params: &[param::Param]) -> TokenStream {
     }
 }
 
-fn gen_shim_struct_and_impl(
-    params: &[param::Param],
-    methods: Vec<syn::ItemFn>,
-    comp_ctx: &CompCtx,
-) -> TokenStream {
-    let fields = params.iter().map(|param| {
+fn gen_shim_struct_and_impl(comp: &Component) -> TokenStream {
+    let methods = &comp.methods;
+    let fields = comp.params.iter().map(|param| {
         let ident = &param.ident;
 
         use param::*;
@@ -446,7 +438,7 @@ fn gen_shim_struct_and_impl(
         }
     });
 
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let hypp_ident = &comp.generics.hypp_ident;
 
     quote! {
         #[allow(dead_code)]
@@ -461,14 +453,15 @@ fn gen_shim_struct_and_impl(
     }
 }
 
-fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
-    let component_ident = &comp_ctx.component_ident;
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
+fn gen_shim_impls(comp: &Component) -> TokenStream {
+    let component_ident = &comp.component_ident;
+    let hypp_ident = &comp.generics.hypp_ident;
 
-    let public_generic_params = &comp_ctx.generics.public.params;
-    let public_generic_arguments = &comp_ctx.generics.public.arguments;
+    let public_generic_params = &comp.generics.public.params;
+    let public_generic_arguments = &comp.generics.public.arguments;
 
-    let state_update_idents = params
+    let state_update_idents = comp
+        .params
         .iter()
         .map(|param| match &param.triple.0 {
             param::ParamKind::Prop => None,
@@ -482,7 +475,7 @@ fn gen_shim_impls(params: &[param::Param], comp_ctx: &CompCtx) -> TokenStream {
             .map(|ident| quote! { let mut #ident = false; })
     });
 
-    let env_fields = params.iter().map(|param| {
+    let env_fields = comp.params.iter().map(|param| {
         let ident = &param.ident;
         match &param.triple.0 {
             param::ParamKind::Prop => quote! {

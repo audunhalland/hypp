@@ -6,29 +6,30 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::component::Component;
+use crate::gen_misc::*;
 use crate::ir;
-use crate::misc_codegen::*;
 use crate::template_ast;
 
 pub fn gen_patch_fn(
     block: &ir::Block,
-    comp_ctx: &CompCtx,
+    comp: &Component,
     env_locals: TokenStream,
     env_gen_args: &Option<TokenStream>,
-    fn_stmts: Vec<syn::Stmt>,
     ctx: CodegenCtx,
 ) -> TokenStream {
-    let patch_ctx_ty_root = &comp_ctx.patch_ctx_ty_root;
+    let patch_ctx_ty_root = &comp.patch_ctx_ty_root;
 
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
-    let public_generic_params = &comp_ctx.generics.public.params;
+    let hypp_ident = &comp.generics.hypp_ident;
+    let public_generic_params = &comp.generics.public.params;
+    let fn_stmts = &comp.fn_stmts;
 
     let Body {
         closures,
         mount_locals,
         mount_expr,
         patch,
-    } = compile_body(block, comp_ctx, ctx, SpanConstructorKind::FixedSpan(None));
+    } = compile_body(block, comp, ctx, SpanConstructorKind::FixedSpan(None));
 
     let fields = block
         .struct_fields
@@ -78,7 +79,7 @@ struct Body<'c> {
 }
 
 struct Closure<'c> {
-    comp_ctx: &'c CompCtx,
+    comp: &'c Component,
     sig: ClosureSig,
     args: TokenStream,
     body: TokenStream,
@@ -117,7 +118,7 @@ enum ClosureKind {
 
 fn compile_body<'c>(
     block: &ir::Block,
-    comp_ctx: &'c CompCtx,
+    comp: &'c Component,
     ctx: CodegenCtx,
     constructor_kind: SpanConstructorKind<'_>,
 ) -> Body<'c> {
@@ -126,7 +127,7 @@ fn compile_body<'c>(
         LetMut,
     }
 
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let hypp_ident = &comp.generics.hypp_ident;
 
     struct FieldInit<'b> {
         mutability: Mutability,
@@ -246,7 +247,7 @@ fn compile_body<'c>(
                 let refresh_expr = stmt.param_deps.param_refresh_expr();
 
                 let closure = Closure {
-                    comp_ctx,
+                    comp,
                     sig: ClosureSig::from_stmt(stmt, ClosureKind::String),
                     args: quote! {},
                     body: quote! { #expr },
@@ -382,7 +383,7 @@ fn compile_body<'c>(
             } => {
                 let closure_sig = ClosureSig::from_stmt(stmt, ClosureKind::Match);
                 let closure =
-                    gen_match_closure(stmt, span_type, closure_sig, expr, arms, comp_ctx, ctx);
+                    gen_match_closure(stmt, span_type, closure_sig, expr, arms, comp, ctx);
 
                 let field = stmt.field.as_ref().unwrap();
                 let closure_ident = &closure.sig.ident;
@@ -415,7 +416,7 @@ fn compile_body<'c>(
                     expr,
                     variable,
                     inner_block,
-                    comp_ctx,
+                    comp,
                     CodegenCtx {
                         scope: Scope::Iter,
                         ..ctx
@@ -466,7 +467,7 @@ fn compile_body<'c>(
         SpanConstructorKind::FixedSpan(opt_span_type) => match opt_span_type {
             Some(span_type) => {
                 let path_segment =
-                    span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
+                    span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp);
                 quote! {
                     #path_segment
                 }
@@ -476,8 +477,7 @@ fn compile_body<'c>(
             }
         },
         SpanConstructorKind::DynamicSpan { span_type, variant } => {
-            let span_ident =
-                span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
+            let span_ident = span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp);
 
             quote! {
                 #span_ident::#variant
@@ -519,13 +519,13 @@ fn gen_match_closure<'c>(
     closure_sig: ClosureSig,
     expr: &syn::Expr,
     arms: &[ir::Arm],
-    comp_ctx: &'c CompCtx,
+    comp: &'c Component,
     ctx: CodegenCtx,
 ) -> Closure<'c> {
     let field = statement.field.unwrap();
     let field_expr = FieldExpr(field, ctx);
     let dynamic_span_path_segment =
-        span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
+        span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp);
 
     let pattern_arms = arms.iter().map(
         |ir::Arm {
@@ -541,7 +541,7 @@ fn gen_match_closure<'c>(
                 patch,
             } = compile_body(
                 &block,
-                comp_ctx,
+                comp,
                 CodegenCtx {
                     scope: Scope::DynamicSpan,
                     ..ctx
@@ -590,10 +590,10 @@ fn gen_match_closure<'c>(
     };
 
     let dynamic_span_full_type =
-        span_type.to_tokens(ctx.scope, StructFieldFormat::TypeInStruct, comp_ctx);
+        span_type.to_tokens(ctx.scope, StructFieldFormat::TypeInStruct, comp);
 
     Closure {
-        comp_ctx,
+        comp,
         sig: closure_sig,
         args: quote! {
             mut #field: &mut #dynamic_span_full_type,
@@ -608,7 +608,7 @@ fn gen_list_span_closure<'c>(
     iter_expr: &syn::Expr,
     iter_variable: &syn::Ident,
     inner_block: &ir::Block,
-    comp_ctx: &'c CompCtx,
+    comp: &'c Component,
     ctx: CodegenCtx,
 ) -> Closure<'c> {
     let Body {
@@ -618,14 +618,14 @@ fn gen_list_span_closure<'c>(
         patch,
     } = compile_body(
         inner_block,
-        comp_ctx,
+        comp,
         ctx,
         SpanConstructorKind::FixedSpan(Some(span_type)),
     );
 
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let hypp_ident = &comp.generics.hypp_ident;
     let fixed_span_path_segment =
-        span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp_ctx);
+        span_type.to_tokens(ctx.scope, StructFieldFormat::PathSegment, comp);
 
     let fields = inner_block
         .struct_fields
@@ -650,11 +650,10 @@ fn gen_list_span_closure<'c>(
         })
     };
 
-    let fixed_span_full_type =
-        span_type.to_tokens(ctx.scope, StructFieldFormat::InnerType, comp_ctx);
+    let fixed_span_full_type = span_type.to_tokens(ctx.scope, StructFieldFormat::InnerType, comp);
 
     Closure {
-        comp_ctx,
+        comp,
         sig: closure_sig,
         args: quote! {
             __span: &mut ::hypp::list::SimpleListSpan<#hypp_ident, __NS, #fixed_span_full_type>,
@@ -667,7 +666,7 @@ impl<'c> quote::ToTokens for Closure<'c> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ident = &self.sig.ident;
         let args = &self.args;
-        let patch_ctx_ty_inner = &self.comp_ctx.patch_ctx_ty_inner;
+        let patch_ctx_ty_inner = &self.comp.patch_ctx_ty_inner;
         let body = &self.body;
 
         let ctx_arg = match self.sig.kind {

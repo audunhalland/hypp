@@ -5,9 +5,8 @@
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 
-use crate::component_ast;
+use crate::component::Component;
 use crate::ir;
-use crate::namespace;
 use crate::param;
 
 #[derive(Copy, Clone)]
@@ -29,65 +28,6 @@ pub struct CodegenCtx {
     pub component_kind: ir::ComponentKind,
     pub function: Function,
     pub scope: Scope,
-}
-
-/// Context for one whole component
-pub struct CompCtx {
-    pub component_ident: syn::Ident,
-    pub generics: component_ast::ComponentGenerics,
-    pub kind: ir::ComponentKind,
-    pub public_props_ident: syn::Ident,
-    pub namespace: namespace::Namespace,
-
-    pub mod_ident: syn::Ident,
-    pub patch_ctx_ty_root: TokenStream,
-    pub patch_ctx_ty_inner: TokenStream,
-}
-
-impl CompCtx {
-    pub fn new(
-        component_ident: syn::Ident,
-        generics: component_ast::ComponentGenerics,
-        kind: ir::ComponentKind,
-        namespace: namespace::Namespace,
-    ) -> Self {
-        let comp_string = component_ident.clone().to_string();
-
-        let hypp_ident = &generics.hypp_ident;
-
-        let public_props_ident = quote::format_ident!("__{}Props", component_ident);
-        let mod_ident = quote::format_ident!("__{}", comp_string.to_lowercase());
-
-        let patch_ctx_ty_root = match kind {
-            ir::ComponentKind::Basic => quote! {
-                ::hypp::patch::PatchCtx<#hypp_ident, __NS>
-            },
-            ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::patch::PatchBindCtx<#hypp_ident, __NS, #component_ident<#hypp_ident>>
-            },
-        };
-
-        // PatchCtx type used in closures where last parameter may be inferred
-        let patch_ctx_ty_inner = match kind {
-            ir::ComponentKind::Basic => quote! {
-                ::hypp::patch::PatchCtx<#hypp_ident, __NS>
-            },
-            ir::ComponentKind::SelfUpdatable => quote! {
-                ::hypp::patch::PatchBindCtx<#hypp_ident, __NS, #component_ident<#hypp_ident>>
-            },
-        };
-
-        Self {
-            component_ident,
-            generics,
-            kind,
-            namespace,
-            public_props_ident,
-            mod_ident,
-            patch_ctx_ty_root,
-            patch_ctx_ty_inner,
-        }
-    }
 }
 
 pub enum SpanConstructorKind<'a> {
@@ -256,16 +196,16 @@ pub fn generate_dom_program(program: &ir::ConstDomProgram) -> TokenStream {
 pub fn collect_span_typedefs(
     block: &ir::Block,
     span_type: Option<&ir::StructFieldType>,
-    comp_ctx: &CompCtx,
+    comp: &Component,
     output: &mut Vec<TokenStream>,
 ) {
-    output.push(gen_fixed_span_struct(block, span_type, comp_ctx));
-    collect_stmt_span_typedefs(&block.statements, comp_ctx, output);
+    output.push(gen_fixed_span_struct(block, span_type, comp));
+    collect_stmt_span_typedefs(&block.statements, comp, output);
 }
 
 fn collect_stmt_span_typedefs(
     statements: &[ir::Statement],
-    comp_ctx: &CompCtx,
+    comp: &Component,
     output: &mut Vec<TokenStream>,
 ) {
     for statement in statements {
@@ -277,10 +217,10 @@ fn collect_stmt_span_typedefs(
                     span_type,
                     arms,
                     statement.dom_depth,
-                    comp_ctx,
+                    comp,
                 ));
                 for arm in arms {
-                    collect_stmt_span_typedefs(&arm.block.statements, comp_ctx, output);
+                    collect_stmt_span_typedefs(&arm.block.statements, comp, output);
                 }
             }
             ir::Expression::Iter {
@@ -288,7 +228,7 @@ fn collect_stmt_span_typedefs(
                 inner_block,
                 ..
             } => {
-                collect_span_typedefs(inner_block, Some(span_type), comp_ctx, output);
+                collect_span_typedefs(inner_block, Some(span_type), comp, output);
             }
             _ => {}
         }
@@ -298,11 +238,11 @@ fn collect_stmt_span_typedefs(
 fn gen_fixed_span_struct(
     block: &ir::Block,
     span_type: Option<&ir::StructFieldType>,
-    comp_ctx: &CompCtx,
+    comp: &Component,
 ) -> TokenStream {
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let hypp_ident = &comp.generics.hypp_ident;
     let span_ident = if let Some(span_type) = span_type {
-        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment, comp_ctx)
+        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment, comp)
     } else {
         quote! { __RootSpan }
     };
@@ -316,21 +256,21 @@ fn gen_fixed_span_struct(
     let struct_field_defs = block
         .struct_fields
         .iter()
-        .map(|field| field.field_def_tokens(Scope::Component, comp_ctx));
+        .map(|field| field.field_def_tokens(Scope::Component, comp));
 
     let span_pass = block.gen_span_pass(
         ir::DomDepth(0),
         CodegenCtx {
-            component_kind: comp_ctx.kind,
+            component_kind: comp.kind,
             function: Function::SpanPass,
             scope: Scope::Component,
         },
-        comp_ctx,
+        comp,
     );
 
     let fn_span_erase = block
         .gen_span_erase(CodegenCtx {
-            component_kind: comp_ctx.kind,
+            component_kind: comp.kind,
             function: Function::Erase,
             scope: Scope::Component,
         })
@@ -367,12 +307,11 @@ fn gen_dynamic_span_enum(
     span_type: &ir::StructFieldType,
     arms: &[ir::Arm],
     dom_depth: ir::DomDepth,
-    comp_ctx: &CompCtx,
+    comp: &Component,
 ) -> TokenStream {
-    let span_ident =
-        span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment, comp_ctx);
+    let span_ident = span_type.to_tokens(Scope::DynamicSpan, StructFieldFormat::PathSegment, comp);
 
-    let hypp_ident = &comp_ctx.generics.hypp_ident;
+    let hypp_ident = &comp.generics.hypp_ident;
 
     let variant_defs = arms.iter().map(|arm| {
         let variant = &arm.variant;
@@ -380,7 +319,7 @@ fn gen_dynamic_span_enum(
             .block
             .struct_fields
             .iter()
-            .map(|field| field.field_def_tokens(Scope::DynamicSpan, comp_ctx));
+            .map(|field| field.field_def_tokens(Scope::DynamicSpan, comp));
 
         quote! {
             #variant {
@@ -393,11 +332,11 @@ fn gen_dynamic_span_enum(
         let span_pass = block.gen_span_pass(
             dom_depth,
             CodegenCtx {
-                component_kind: comp_ctx.kind,
+                component_kind: comp.kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             },
-            comp_ctx,
+            comp,
         );
         let pat_fields = block
             .struct_fields
@@ -418,7 +357,7 @@ fn gen_dynamic_span_enum(
         .iter()
         .map(|ir::Arm { variant, block, .. }| {
             let opt_span_erase = block.gen_span_erase(CodegenCtx {
-                component_kind: comp_ctx.kind,
+                component_kind: comp.kind,
                 function: Function::SpanPass,
                 scope: Scope::DynamicSpan,
             });
@@ -485,11 +424,11 @@ fn gen_dynamic_span_enum(
 }
 
 impl ir::StructField {
-    pub fn field_def_tokens(&self, scope: Scope, comp_ctx: &CompCtx) -> TokenStream {
+    pub fn field_def_tokens(&self, scope: Scope, comp: &Component) -> TokenStream {
         let ident = &self.ident;
         let ty = self
             .ty
-            .to_tokens(scope, StructFieldFormat::TypeInStruct, comp_ctx);
+            .to_tokens(scope, StructFieldFormat::TypeInStruct, comp);
 
         quote! { #ident: #ty, }
     }
@@ -551,9 +490,9 @@ impl ir::Block {
         &self,
         base_dom_depth: ir::DomDepth,
         ctx: CodegenCtx,
-        comp_ctx: &CompCtx,
+        comp: &Component,
     ) -> JoinedFieldCode {
-        let hypp_ident = &comp_ctx.generics.hypp_ident;
+        let hypp_ident = &comp.generics.hypp_ident;
         let mut sub_spans: Vec<FieldCode> = vec![];
 
         for statement in &self.statements {
@@ -705,9 +644,9 @@ impl ir::StructFieldType {
         &self,
         scope: Scope,
         format: StructFieldFormat,
-        comp_ctx: &CompCtx,
+        comp: &Component,
     ) -> TokenStream {
-        let hypp_ident = &comp_ctx.generics.hypp_ident;
+        let hypp_ident = &comp.generics.hypp_ident;
         let generics = match format {
             StructFieldFormat::TypeInStruct | StructFieldFormat::InnerType => {
                 quote! { <#hypp_ident> }
@@ -790,8 +729,8 @@ impl param::Param {
 }
 
 impl ir::HandleKind {
-    pub fn handle_path(&self, comp_ctx: &CompCtx) -> TokenStream {
-        let hypp_ident = &comp_ctx.generics.hypp_ident;
+    pub fn handle_path(&self, comp: &Component) -> TokenStream {
+        let hypp_ident = &comp.generics.hypp_ident;
 
         match self {
             Self::Unique => quote! { ::hypp::handle::Unique },
