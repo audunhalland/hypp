@@ -7,13 +7,14 @@ use proc_macro::TokenStream;
 mod component;
 mod component_ast;
 mod flow;
+mod gen_component;
+mod gen_patch;
 mod ir;
 mod lowering;
 mod misc_codegen;
 mod name;
 mod namespace;
 mod param;
-mod patch;
 mod template_ast;
 
 ///
@@ -22,7 +23,7 @@ mod template_ast;
 #[proc_macro]
 pub fn component(input: TokenStream) -> proc_macro::TokenStream {
     let output =
-        component::generate_component(syn::parse_macro_input!(input as component::Component));
+        gen_component::generate_component(syn::parse_macro_input!(input as component::Component));
 
     TokenStream::from(output)
 }
@@ -33,7 +34,7 @@ pub fn component(input: TokenStream) -> proc_macro::TokenStream {
 #[proc_macro]
 pub fn component_dbg(input: TokenStream) -> proc_macro::TokenStream {
     let output =
-        component::generate_component(syn::parse_macro_input!(input as component::Component));
+        gen_component::generate_component(syn::parse_macro_input!(input as component::Component));
 
     println!("// macro output: \n{}", output);
 
