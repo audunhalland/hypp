@@ -28,22 +28,30 @@ impl crate::Name for &'static str {
 pub struct HtmlEventKind;
 
 impl crate::EventKind<Html> for HtmlEventKind {
-    type Event = ();
+    type Event = &'static str;
 
     #[cfg(feature = "web")]
     #[cfg(feature = "web")]
-    fn from_web_event<W: wasm_bindgen::convert::FromWasmAbi>(web_event: &W) -> () {
-        ()
+    fn from_web_event<W: wasm_bindgen::convert::FromWasmAbi>(_web_event: &W) -> &'static str {
+        "TODO: make a real event :)"
     }
 }
 
-impl<H: crate::Hypp> crate::Subscribe<H::Shared<dyn Fn() + 'static>>
+impl<H: crate::Hypp> crate::Subscribe<H, dyn Fn() + 'static>
     for crate::Slot<H, Html, HtmlEventKind>
 {
     fn subscribe(&mut self, func: H::Shared<dyn Fn() + 'static>) {
         self.0.listen(H::make_box_shared(Box::new(move |_| {
             func();
         })));
+    }
+}
+
+impl<H: crate::Hypp> crate::Subscribe<H, dyn Fn(&'static str) + 'static>
+    for crate::Slot<H, Html, HtmlEventKind>
+{
+    fn subscribe(&mut self, func: H::Shared<dyn Fn(&'static str) + 'static>) {
+        self.0.listen(func);
     }
 }
 

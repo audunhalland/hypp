@@ -401,8 +401,8 @@ pub trait Listen<H: Hypp, Event> {
 }
 
 /// Subscribe to something given a shared function
-pub trait Subscribe<F: ?Sized + 'static> {
-    fn subscribe(&mut self, f: F);
+pub trait Subscribe<H: Hypp, F: ?Sized + 'static> {
+    fn subscribe(&mut self, f: H::Shared<F>);
 }
 
 pub struct Slot<H: Hypp, NS: TemplNS, EK: EventKind<NS>>(Box<dyn Listen<H, EK::Event>>);

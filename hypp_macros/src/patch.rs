@@ -197,7 +197,11 @@ fn compile_body<'c>(
                             __ctx.cur.attribute_slot::<::hypp::ns::HtmlEventKind>()?;
                         },
                         post_init: Some(quote! {
-                            #field.subscribe(#expr.clone());
+                            <
+                                ::hypp::Slot<#hypp_ident, __NS, ::hypp::ns::HtmlEventKind>
+                                as
+                                ::hypp::Subscribe<#hypp_ident, _>
+                            >::subscribe(&mut #field, #expr.clone());
                         }),
                     });
                 }
@@ -228,7 +232,11 @@ fn compile_body<'c>(
                         },
                         // Associate the slot with the closure:
                         post_init: Some(quote! {
-                            #field.subscribe(#closure_field);
+                            <
+                                ::hypp::Slot<#hypp_ident, __NS, ::hypp::ns::HtmlEventKind>
+                                as
+                                ::hypp::Subscribe<#hypp_ident, _>
+                            >::subscribe(&mut #field, #closure_field);
                         }),
                     });
                 }
