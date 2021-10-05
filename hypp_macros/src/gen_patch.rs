@@ -212,14 +212,14 @@ fn compile_body<'c>(
                 } => {
                     let field = stmt.field.as_ref().unwrap();
 
+                    let closure_hack = gen_closure_hack_for_self_method(comp, &method_ident);
+
                     // Closure:
                     field_inits.push(FieldInit {
                         mutability: Mutability::Let,
                         field_ident: Some(closure_field),
                         init: quote! {
-                            __ctx.closure_env.new_closure(&|shim: &mut __Shim<#hypp_ident>| {
-                                shim.#method_ident();
-                            });
+                            __ctx.closure_env.new_closure(&#closure_hack);
                         },
                         post_init: None,
                     });
@@ -302,14 +302,15 @@ fn compile_body<'c>(
                                 .as_ref()
                                 .expect("Expected a local for closure creation");
 
+                            let closure_hack =
+                                gen_closure_hack_for_self_method(comp, &method_ident);
+
                             // Push field init for the creation of the closure
                             field_inits.push(FieldInit {
                                 mutability: Mutability::Let,
                                 field_ident: Some(closure_field),
                                 init: quote! {
-                                    __ctx.closure_env.new_closure(&|shim: &mut __Shim<#hypp_ident>| {
-                                        shim.#method_ident();
-                                    });
+                                    __ctx.closure_env.new_closure(&#closure_hack);
                                 },
                                 post_init: None,
                             });
@@ -328,7 +329,7 @@ fn compile_body<'c>(
                 });
 
                 let mount_expr = quote! {
-                    #component_path::mount(
+                    #component_path::<#hypp_ident>::mount(
                         #props_path {
                             #(#mount_props),*
                         },
@@ -659,6 +660,69 @@ fn gen_list_span_closure<'c>(
             __span: &mut ::hypp::list::SimpleListSpan<#hypp_ident, __NS, #fixed_span_full_type>,
         },
         body,
+    }
+}
+
+///
+/// Basically a hack for https://github.com/rust-lang/rust/issues/89573
+///
+fn gen_closure_hack_for_self_method(comp: &Component, method_ident: &syn::Ident) -> TokenStream {
+    let hypp_ident = &comp.generics.hypp_ident;
+    let item_fn = comp
+        .methods
+        .iter()
+        .find(|item_fn| &item_fn.sig.ident == method_ident);
+
+    if let Some(item_fn) = item_fn {
+        // Found the method, copy its arguments (except self) over to the closure
+
+        struct HackInput<'a> {
+            fake_ident: syn::Ident,
+            ty: &'a syn::Type,
+        }
+
+        let typed_inputs = item_fn
+            .sig
+            .inputs
+            .iter()
+            .filter_map(|arg| match arg {
+                syn::FnArg::Receiver(_) => None,
+                syn::FnArg::Typed(pat_type) => Some(pat_type),
+            })
+            .enumerate()
+            .map(|(index, pat_type)| HackInput {
+                fake_ident: quote::format_ident!("a{}", index),
+                ty: pat_type.ty.as_ref(),
+            })
+            .collect::<Vec<_>>();
+        let params = typed_inputs.iter().map(|hack_input| {
+            let fake_ident = &hack_input.fake_ident;
+            let ty = &hack_input.ty;
+
+            quote! {
+                #fake_ident: #ty
+            }
+        });
+        let args = typed_inputs.iter().map(|hack_input| {
+            let fake_ident = &hack_input.fake_ident;
+            quote! {
+                #fake_ident
+            }
+        });
+
+        quote! {
+            |shim: &mut __Shim<#hypp_ident>, #(#params),*| {
+                shim.#method_ident(#(#args),*);
+            }
+        }
+    } else {
+        let hypp_ident = &comp.generics.hypp_ident;
+
+        quote! {
+            |shim: &mut __Shim<#hypp_ident>| {
+                shim.#method_ident();
+            }
+        }
     }
 }
 

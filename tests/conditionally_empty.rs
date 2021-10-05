@@ -31,7 +31,9 @@ component! {
 
 struct Test {
     hypp: hypp::server::ServerHypp,
-    comp: <ComponentBeforeConditional<hypp::server::ServerHypp> as ToHandle>::Handle,
+    comp: <ComponentBeforeConditional<hypp::server::ServerHypp> as ToHandle<
+        hypp::server::ServerHypp,
+    >>::Handle,
 }
 
 fn props_from(props: (u8, u8, u8)) -> __ComponentBeforeConditionalProps<'static> {
