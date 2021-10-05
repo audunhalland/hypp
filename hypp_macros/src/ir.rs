@@ -57,7 +57,7 @@ pub struct FieldIdent(pub u16);
 pub enum StructFieldType {
     DomElement,
     DomText,
-    CallbackSlot,
+    EventSlot,
     Component(ComponentPath),
     Span(u16, SpanKind),
 }

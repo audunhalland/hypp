@@ -3,7 +3,8 @@ use crate::error::Error;
 use super::server_dom::{ArcNode, AttributeValue, Node, NodeKind};
 use crate::span::{AsSpan, SpanAdapter};
 use crate::{
-    AsNode, CallbackSlot, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS,
+    AsNode, Component, ConstOpCode, Cursor, EventKind, Hypp, Listen, NSCursor, Name, Slot, Span,
+    TemplNS,
 };
 
 use parking_lot::Mutex;
@@ -62,7 +63,7 @@ impl Hypp for ServerHypp {
     = Arc<Mutex<T>>;
 
     /// Server has no real callback slots
-    type CallbackSlot<Args: 'static> = ();
+    //type EventSlot<Args: 'static> = ();
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
         Arc::new(value)
@@ -122,9 +123,9 @@ impl<'a> Span<ServerHypp> for SpanAdapter<'a, ArcNode> {
     }
 }
 
-impl<Args> CallbackSlot<ServerHypp, Args> for () {
-    fn bind(&mut self, _function: Arc<dyn Fn()>) {}
-    fn release(&mut self) {}
+impl<Event> Listen<ServerHypp, Event> for () {
+    fn listen(&mut self, _function: Arc<dyn Fn(Event)>) {}
+    fn forget(&mut self) {}
 }
 
 #[derive(Clone)]
@@ -303,9 +304,11 @@ impl<NS: TemplNS> NSCursor<ServerHypp, NS> for ServerBuilder {
         <ServerBuilder as NSCursor<ServerHypp, NS>>::const_exec_element(self, program)
     }
 
-    fn attribute_slot<Args>(&mut self) -> Result<Arc<Mutex<()>>, Error> {
-        // Callbacks do nothing on the server
-        Ok(Arc::new(Mutex::new(())))
+    fn attribute_slot<E: 'static>(&mut self) -> Result<Slot<ServerHypp, NS, E>, Error>
+    where
+        E: EventKind<NS>,
+    {
+        Ok(Slot::new(Box::new(())))
     }
 
     fn skip_const_program(&mut self, _program: &[ConstOpCode<NS>]) {
@@ -346,6 +349,3 @@ impl crate::Anchor<ServerHypp> for ServerBuilder {
         self.clone()
     }
 }
-
-#[cfg(test)]
-mod tests {}

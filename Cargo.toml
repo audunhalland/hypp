@@ -10,7 +10,7 @@ license = "MIT"
 [dependencies]
 hypp_macros = { path = "hypp_macros", version = "0.1.0" }
 tracing = "0.1"
-web-sys = { version = "0.3", features = [ "Document", "Element", "HtmlElement", "Node", "Window", "Text"], optional = true }
+web-sys = { version = "0.3", features = [ "Document", "Element", "HtmlElement", "Node", "Window", "Text", "Event"], optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 parking_lot = { version = "0.11", optional = true }
 web-ns = { git = "https://github.com/audunhalland/web-ns" }

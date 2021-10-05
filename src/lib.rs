@@ -24,6 +24,8 @@ pub mod web;
 #[cfg(feature = "server")]
 pub mod server;
 
+use std::ops::Deref;
+
 pub use error::Error;
 pub use hypp_macros::component;
 pub use hypp_macros::component_dbg;
@@ -49,12 +51,12 @@ pub trait Hypp: Sized {
     type Cursor<NS: TemplNS>: NSCursor<Self, NS> + Cursor<Self>;
 
     ///
-    /// Type of the callback slot used for connecting with functions
+    /// Type of event slot used for connecting with functions
     ///
-    type CallbackSlot<Args: 'static>: CallbackSlot<Self, Args> + 'static;
+    // type EventSlot<Args: 'static>: Listen<Self, Args> + 'static;
 
     /// How to share something, without mutation ability.
-    type Shared<T>: Clone
+    type Shared<T>: Clone + Deref<Target = T> + 'static
     where
         T: ?Sized + 'static;
 
@@ -189,10 +191,10 @@ pub trait NSCursor<H: Hypp, NS: TemplNS>: Cursor<H> {
     /// The last node opcode must produce a text node.
     fn const_exec_text(&mut self, program: &'static [ConstOpCode<NS>]) -> Result<H::Text, Error>;
 
-    /// Set up a callback slot connected to the current attribute.
-    fn attribute_slot<Args: 'static>(
-        &mut self,
-    ) -> Result<H::SharedMut<H::CallbackSlot<Args>>, Error>;
+    /// Set up an event slot connected to the current attribute.
+    fn attribute_slot<EK: 'static>(&mut self) -> Result<Slot<H, NS, EK>, Error>
+    where
+        EK: EventKind<NS>;
 
     /// Advance the cursor, according to the const program passed.
     /// Don't mutate anything.
@@ -346,8 +348,15 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
     fn pass_props(&mut self, props: Self::Props, cursor: &mut H::Cursor<Self::NS>);
 }
 
+pub trait EventKind<NS: TemplNS> {
+    type Event;
+
+    #[cfg(feature = "web")]
+    fn from_web_event<W: wasm_bindgen::convert::FromWasmAbi>(web_event: &W) -> Self::Event;
+}
+
 ///
-/// Callback Slot
+/// # Listen
 ///
 /// Ownership diagram:
 ///
@@ -365,7 +374,7 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 ///                |           [ClosureEnv]              [H::SharedMut] <------ [wasm/JS closure] <-- [DOM node]
 ///                |                |                          |
 ///                |                v                          v
-///             [Option] <---- [H::SharedMut]            [CallbackSlot]
+///             [Option] <---- [H::SharedMut]           [EventSlot/Listen]
 ///                                 ^                          |
 ///                                 |                          v
 ///                            [ClosureEnv] <--- [Fn] <--- [H::Shared]
@@ -383,27 +392,30 @@ pub trait Component<'p, H: Hypp>: Sized + Span<H> + ToHandle {
 /// Releasing the references involves setting those `Option` values in the
 /// diagram to None.
 ///
-pub trait CallbackSlot<H: Hypp, Args> {
-    /// Bind the slot to an actual function
-    fn bind(&mut self, function: H::Shared<dyn Fn()>);
+pub trait Listen<H: Hypp, Event> {
+    /// Listen to when some event is fired
+    fn listen(&mut self, function: H::Shared<dyn Fn(Event)>);
 
-    /// Release the bound callback from the slot
-    fn release(&mut self);
+    /// Forget the listener
+    fn forget(&mut self);
 }
 
-trait Test {
-    type Slot<T>;
-
-    fn slot<T>() -> Self::Slot<T>;
+/// Subscribe to something given a shared function
+pub trait Subscribe<F: ?Sized + 'static> {
+    fn subscribe(&mut self, f: F);
 }
 
-pub trait Slot<T> {}
+pub struct Slot<H: Hypp, NS: TemplNS, EK: EventKind<NS>>(Box<dyn Listen<H, EK::Event>>);
 
-/*
-pub trait Bind<H: Hypp, Args> {
-    fn bind(&mut self, function: H::Function<Args>);
+impl<H: Hypp, NS: TemplNS, EK: EventKind<NS>> Slot<H, NS, EK> {
+    pub fn new(listen: Box<dyn Listen<H, EK::Event>>) -> Self {
+        Self(listen)
+    }
+
+    pub fn forget(&mut self) {
+        self.0.forget();
+    }
 }
-*/
 
 ///
 /// A function parameter that can function dynamically as either an input or an output parameter

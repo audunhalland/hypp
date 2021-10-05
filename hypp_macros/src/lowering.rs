@@ -280,7 +280,7 @@ impl BlockBuilder {
 
                 self.struct_fields.push(ir::StructField {
                     ident: slot_field.clone(),
-                    ty: ir::StructFieldType::CallbackSlot,
+                    ty: ir::StructFieldType::EventSlot,
                 });
 
                 // Break the DOM program to produce a callback here:
@@ -307,7 +307,7 @@ impl BlockBuilder {
 
                 self.struct_fields.push(ir::StructField {
                     ident: slot_field.clone(),
-                    ty: ir::StructFieldType::CallbackSlot,
+                    ty: ir::StructFieldType::EventSlot,
                 });
 
                 self.push_statement(

@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::span::{AsSpan, SpanAdapter};
-use crate::{AsNode, Component, ConstOpCode, Cursor, Hypp, NSCursor, Name, Span, TemplNS};
+use crate::{
+    AsNode, Component, ConstOpCode, Cursor, EventKind, Hypp, NSCursor, Name, Slot, Span, TemplNS,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -97,7 +99,7 @@ impl Hypp for WebHypp {
         T: 'static,
     = std::rc::Rc<std::cell::RefCell<T>>;
 
-    type CallbackSlot<Args: 'static> = callback::WebCallbackSlot;
+    // type EventSlot<Args: 'static> = ();
 
     fn make_shared<T: 'static>(value: T) -> Self::Shared<T> {
         Rc::new(value)
@@ -369,29 +371,26 @@ impl<NS: crate::TemplNS> NSCursor<WebHypp, NS> for WebBuilder {
         result
     }
 
-    fn attribute_slot<Args: 'static>(
-        &mut self,
-    ) -> Result<Rc<RefCell<callback::WebCallbackSlot>>, Error> {
-        use std::any::TypeId;
-
+    fn attribute_slot<EK: 'static>(&mut self) -> Result<Slot<WebHypp, NS, EK>, Error>
+    where
+        EK: EventKind<NS>,
+    {
         let attribute_name = self
             .loaded_attribute_name
             .expect("needs an attribute name loaded");
 
         match attribute_name {
             "onclick" => {
-                let slot = callback::new_slot();
-
-                if TypeId::of::<Args>() == TypeId::of::<()>() {}
+                let callback = callback::new_callback::<NS, EK, web_sys::Event>();
 
                 {
-                    let borrow = slot.borrow();
+                    let borrow = callback.borrow();
 
                     self.html_element()
                         .set_onclick(Some(borrow.web_closure().as_ref().unchecked_ref()));
                 }
 
-                Ok(slot)
+                Ok(Slot::new(Box::new(callback)))
             }
             _ => {
                 tracing::error!(

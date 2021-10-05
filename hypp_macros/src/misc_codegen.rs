@@ -507,7 +507,7 @@ impl ir::StructField {
         match &self.ty {
             // mutable types
             ir::StructFieldType::Component(_)
-            | ir::StructFieldType::CallbackSlot
+            | ir::StructFieldType::EventSlot
             | ir::StructFieldType::Span(_, _) => quote! {
                 ref mut #ident,
             },
@@ -662,7 +662,7 @@ impl ir::Block {
                     Some(FieldCode {
                         field: Some(field),
                         code: quote! {
-                            #field_expr.get_mut().release();
+                            #field_expr.forget();
                         },
                     })
                 }
@@ -718,7 +718,9 @@ impl ir::StructFieldType {
         match self {
             Self::DomElement => quote! { #hypp_ident::Element },
             Self::DomText => quote! { #hypp_ident::Text },
-            Self::CallbackSlot => quote! { #hypp_ident::SharedMut<#hypp_ident::CallbackSlot<()>> },
+            Self::EventSlot => {
+                quote! { ::hypp::Slot<#hypp_ident, __NS, ::hypp::ns::HtmlEventKind> }
+            }
             Self::Component(path) => {
                 let type_path = &path.type_path;
                 match scope {

@@ -1,11 +1,12 @@
 pub use crate::Anchor;
 pub use crate::AsNode;
-pub use crate::CallbackSlot;
 pub use crate::Component;
 pub use crate::Cursor;
 pub use crate::Hypp;
+pub use crate::Listen;
 pub use crate::NSCursor;
 pub use crate::Span;
+pub use crate::Subscribe;
 
 pub use crate::handle::Handle;
 pub use crate::handle::SharedHandle;

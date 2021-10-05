@@ -194,10 +194,10 @@ fn compile_body<'c>(
                         mutability: Mutability::LetMut,
                         field_ident: stmt.field.as_ref(),
                         init: quote! {
-                            __ctx.cur.attribute_slot()?;
+                            __ctx.cur.attribute_slot::<::hypp::ns::HtmlEventKind>()?;
                         },
                         post_init: Some(quote! {
-                            #field.get_mut().bind(#expr.clone());
+                            #field.subscribe(#expr.clone());
                         }),
                     });
                 }
@@ -224,11 +224,11 @@ fn compile_body<'c>(
                         mutability: Mutability::LetMut,
                         field_ident: stmt.field.as_ref(),
                         init: quote! {
-                            __ctx.cur.attribute_slot()?;
+                            __ctx.cur.attribute_slot::<::hypp::ns::HtmlEventKind>()?;
                         },
                         // Associate the slot with the closure:
                         post_init: Some(quote! {
-                            #field.get_mut().bind(#closure_field);
+                            #field.subscribe(#closure_field);
                         }),
                     });
                 }
