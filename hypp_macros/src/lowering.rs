@@ -394,30 +394,11 @@ impl BlockBuilder {
     ) -> Result<(), syn::Error> {
         let component_path = ir::ComponentPath::new(component.type_path);
 
-        let prop_args: Vec<_> = component
+        let prop_args = component
             .attrs
             .into_iter()
-            .map(|attr| {
-                let (param_deps, local_field) = match &attr.value {
-                    template_ast::AttrValue::ImplicitTrue => (ir::ParamDeps::Const, None),
-                    template_ast::AttrValue::Literal(_) => (ir::ParamDeps::Const, None),
-                    template_ast::AttrValue::Expr(expr) => {
-                        (scope.lookup_params_deps_for_expr(expr), None)
-                    }
-                    template_ast::AttrValue::SelfMethod(_) => {
-                        ctx.used_method_count += 1;
-                        (ir::ParamDeps::Const, Some(ctx.next_field_id()))
-                    }
-                };
-
-                ir::ComponentPropArg {
-                    ident: attr.name,
-                    local_field,
-                    value: attr.value,
-                    param_deps,
-                }
-            })
-            .collect();
+            .map(|attr| self.lower_component_attr(attr, scope, ctx))
+            .collect::<syn::Result<Vec<_>>>()?;
 
         let field = ctx.next_field_id();
         self.struct_fields.push(ir::StructField {
@@ -446,6 +427,48 @@ impl BlockBuilder {
         );
 
         Ok(())
+    }
+
+    fn lower_component_attr<'p>(
+        &mut self,
+        attr: template_ast::Attr<syn::Ident>,
+        scope: &flow::FlowScope<'p>,
+        ctx: &mut Context,
+    ) -> Result<ir::ComponentPropArg, syn::Error> {
+        match &attr.value {
+            template_ast::AttrValue::ImplicitTrue | template_ast::AttrValue::Literal(_) => {
+                Ok(ir::ComponentPropArg {
+                    ident: attr.name,
+                    local_field: None,
+                    value: attr.value,
+                    param_deps: ir::ParamDeps::Const,
+                })
+            }
+            template_ast::AttrValue::Expr(expr) => Ok(ir::ComponentPropArg {
+                ident: attr.name,
+                local_field: None,
+                param_deps: scope.lookup_params_deps_for_expr(expr),
+                value: attr.value,
+            }),
+            template_ast::AttrValue::SelfMethod(method_ident) => {
+                ctx.used_method_count += 1;
+
+                // This must be stored because the component might be patched
+                let field = ctx.next_field_id();
+
+                self.struct_fields.push(ir::StructField {
+                    ident: field.clone(),
+                    ty: ir::StructFieldType::SelfClosure(method_ident.clone()),
+                });
+
+                Ok(ir::ComponentPropArg {
+                    ident: attr.name,
+                    local_field: Some(field),
+                    value: attr.value,
+                    param_deps: ir::ParamDeps::Const,
+                })
+            }
+        }
     }
 
     fn lower_match<'p>(

@@ -42,7 +42,7 @@ pub trait Handle<T>: Sized {
         Self: 'a;
 
     /// Boxed version of this handle
-    type Boxed;
+    type Boxed: Handle<T>;
 
     fn new(val: T) -> Self;
 

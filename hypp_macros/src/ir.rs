@@ -58,6 +58,7 @@ pub enum StructFieldType {
     DomElement,
     DomText,
     EventSlot,
+    SelfClosure(syn::Ident),
     Component(ComponentPath),
     Span(u16, SpanKind),
 }

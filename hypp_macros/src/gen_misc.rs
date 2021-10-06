@@ -451,9 +451,13 @@ impl ir::StructField {
                 ref mut #ident,
             },
             // immutable types
-            ir::StructFieldType::DomElement | ir::StructFieldType::DomText => quote! {
-                ref #ident,
-            },
+            ir::StructFieldType::DomElement
+            | ir::StructFieldType::DomText
+            | ir::StructFieldType::SelfClosure(_) => {
+                quote! {
+                    ref #ident,
+                }
+            }
         }
     }
 }
@@ -659,6 +663,33 @@ impl ir::StructFieldType {
             Self::DomText => quote! { #hypp_ident::Text },
             Self::EventSlot => {
                 quote! { ::hypp::Slot<#hypp_ident, __NS, ::hypp::html::HtmlEventKind> }
+            }
+            Self::SelfClosure(method_ident) => {
+                let method = comp
+                    .methods
+                    .iter()
+                    .find(|item_fn| &item_fn.sig.ident == method_ident);
+
+                if let Some(method) = method {
+                    let param_tys = method
+                        .sig
+                        .inputs
+                        .iter()
+                        .filter_map(|arg| match arg {
+                            syn::FnArg::Receiver(_) => None,
+                            syn::FnArg::Typed(pat_type) => Some(pat_type),
+                        })
+                        .map(|pat_type| &pat_type.ty);
+
+                    quote! {
+                        #hypp_ident::Shared<dyn Fn(#(#param_tys),*) + 'static>
+                    }
+                } else {
+                    // Did not find the method, just use a type with no parameters
+                    quote! {
+                        #hypp_ident::Shared<dyn Fn() + 'static>
+                    }
+                }
             }
             Self::Component(path) => {
                 let type_path = &path.type_path;

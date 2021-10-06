@@ -16,7 +16,7 @@ hypp::component! {
     </button>
 }
 
-hypp::component_dbg! {
+hypp::component! {
     DoWithId() {}
 
     fn handle_id_click(&mut self, id: usize) {}
@@ -130,4 +130,50 @@ component! {
             </ul>
         }
     </div>
+}
+
+pub struct TodoModel {
+    id: usize,
+    description: String,
+    resolved: bool,
+}
+
+hypp::component! {
+    PatchChildWithCallback() {
+        todo_items: Vec<TodoModel>,
+    }
+
+    fn on_resolve(&mut self, id: usize) {
+    }
+
+    for item in todo_items {
+        <div>
+            <ResolveButton todo_id={item.id} on_resolve={Self::on_resolve} />
+        </div>
+    }
+}
+
+hypp::component! {
+    // This time the ResolveButton will be ::Boxed, because of the conditional
+    ConditionalCallbackToChildComponent() {}
+
+    fn on_resolve(&mut self, id: usize) {}
+
+    if true {
+        <ResolveButton todo_id={42} on_resolve={Self::on_resolve} />
+    }
+}
+
+hypp::component! {
+    ResolveButton<H: ::hypp::Hypp + 'static>(
+        todo_id: usize,
+        on_resolve: &H::Shared<dyn Fn(usize) + 'static>
+    ) {}
+
+    fn handle_click(&mut self) {
+        (self.on_resolve)(*self.todo_id);
+    }
+
+    <button onClick={Self::handle_click}>
+    </button>
 }
