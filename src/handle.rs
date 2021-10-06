@@ -156,7 +156,13 @@ impl<T> Handle<T> for Shared<T> {
     }
 
     fn get_mut<'a>(&'a mut self) -> Self::RefMut<'a> {
-        self.borrow_mut()
+        match self.try_borrow_mut() {
+            Ok(val) => val,
+            Err(_err) => {
+                tracing::error!("Concurrent mutation!");
+                panic!();
+            }
+        }
     }
 }
 

@@ -34,7 +34,7 @@ where
 impl<NS: TemplNS, EK: EventKind<NS>, W> Drop for WebCallback<NS, EK, W> {
     fn drop(&mut self) {
         // Logging..
-        // console::log_1(&"Dropping callback slot!".into());
+        tracing::debug!("Dropping callback slot!");
     }
 }
 

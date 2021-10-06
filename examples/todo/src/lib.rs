@@ -4,15 +4,39 @@ use hypp::prelude::*;
 
 use wasm_bindgen::prelude::*;
 
-hypp::component! {
+pub struct TodoModel {
+    id: usize,
+    description: String,
+    resolved: bool,
+}
+
+hypp::component_dbg! {
     App() {
-        todo_items: Vec<String>,
+        todo_items: Vec<TodoModel>,
         id_counter: usize,
     }
 
     fn add_item(&mut self) {
         *self.id_counter += 1;
-        self.todo_items.push(format!("Item {}", *self.id_counter));
+        self.todo_items.push(TodoModel {
+            id: *self.id_counter,
+            description: format!("Item {}", *self.id_counter),
+            resolved: false,
+        });
+    }
+
+    fn on_resolve(&mut self, id: usize) {
+        tracing::debug!("App::on_resolve");
+
+        let todo_item = self.todo_items
+            .iter_mut()
+            .find(|todo_item| todo_item.id == id);
+
+        if let Some(todo_item) = todo_item {
+            todo_item.resolved = true;
+        }
+
+        tracing::debug!("App::on_resolve DONE");
     }
 
     <div>
@@ -27,11 +51,39 @@ hypp::component! {
         } else {
             <ul>
                 for item in todo_items {
-                    <li>{item}</li>
+                    <li>
+                        <div>
+                            {&item.description}
+                            if item.resolved {
+                                <span style="color:green;">" Resolved"</span>
+                            } else {
+                                <>
+                                    <span style="color:red;">" Pending"</span>
+                                    <ResolveButton todo_id={item.id} on_resolve={Self::on_resolve} />
+                                </>
+                            }
+                        </div>
+                    </li>
                 }
             </ul>
         }
     </div>
+}
+
+hypp::component_dbg! {
+    ResolveButton<H: ::hypp::Hypp + 'static>(
+        todo_id: usize,
+        on_resolve: &H::Shared<dyn Fn(usize) + 'static>
+    ) {}
+
+    fn handle_click(&mut self) {
+        tracing::debug!("ResolveButton::handle_click");
+        (self.on_resolve)(*self.todo_id);
+    }
+
+    <button onClick={Self::handle_click}>
+        "Set done!"
+    </button>
 }
 
 hypp::component! {
